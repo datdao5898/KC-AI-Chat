@@ -20,7 +20,17 @@ router.post('/facebook', async (req, res) => {
   try {
     if (!verifySignature(req)) return res.status(process.env.FACEBOOK_APP_SECRET ? 401 : 503).json({ error: process.env.FACEBOOK_APP_SECRET ? 'invalid_signature' : 'facebook_secret_not_configured' });
     const body = req.body;
-    if (body.object !== 'page') return res.sendStatus(404);
+    const entryCount = Array.isArray(body?.entry) ? body.entry.length : 0;
+    console.log('[FB WEBHOOK]', JSON.stringify({
+      object: body?.object,
+      keys: body && typeof body === 'object' ? Object.keys(body) : [],
+      entryCount,
+      hasSignature: Boolean(req.headers['x-hub-signature-256'])
+    }));
+    if (body.object !== 'page') {
+      console.warn('[FB WEBHOOK] rejected_non_page_object', body?.object);
+      return res.sendStatus(404);
+    }
     res.status(200).send('EVENT_RECEIVED');
     for (const entry of body.entry || []) {
       for (const event of entry.messaging || []) {
