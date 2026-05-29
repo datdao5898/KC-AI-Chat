@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "init-db": "node src/init-db.js"
+    "init-db": "node src/init-db.js",
+    "hash-admin-password": "node src/hash-admin-password.js"
   },
   "dependencies": {
     "axios": "latest",

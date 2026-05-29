@@ -18,6 +18,10 @@ node_modules/
 data/*.log
 tools/logs/
 
+# Local working copies
+backups/
+temp/
+
 # Local tunnels/tools
 tools/
 ngrok.exe

@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { markProcessed } = require('../db');
+const { markProcessed, listWebsiteConversationMessages } = require('../db');
 const { processIncoming } = require('../messagePipeline');
-const { sendFacebookMessage, verifySignature, requireSignedWebhook } = require('../channels/facebook');
+const { sendFacebookMessage, getFacebookUserProfile, verifySignature, requireSignedWebhook } = require('../channels/facebook');
 const { sendZaloMessage } = require('../channels/zalo');
 const { sendHaravanMessage } = require('../channels/haravan');
 
@@ -38,7 +38,16 @@ router.post('/facebook', async (req, res) => {
         if (!msg || !msg.text || msg.is_echo) continue;
         const mid = msg.mid || `${event.sender?.id}-${event.timestamp}`;
         if (!markProcessed('facebook', mid)) continue;
-        await processIncoming({ channel: 'facebook', externalUserId: event.sender.id, text: msg.text, externalMessageId: mid, raw: event, sendFn: sendFacebookMessage });
+        const profile = await getFacebookUserProfile(event.sender.id, { raw: event });
+        await processIncoming({
+          channel: 'facebook',
+          externalUserId: event.sender.id,
+          text: msg.text,
+          externalMessageId: mid,
+          raw: event,
+          customerAttrs: profile?.name ? { name: profile.name } : {},
+          sendFn: sendFacebookMessage
+        });
       }
     }
   } catch (e) { console.error('Facebook webhook error:', e); }
@@ -73,18 +82,25 @@ router.post('/haravan', async (req, res) => {
 
 router.post('/website-chat', async (req, res) => {
   try {
-    const { visitorId, message, name, phone, email } = req.body;
+    const { visitorId, message, name, phone, email, siteName, siteHost, siteUrl, origin, referrer } = req.body;
     const result = await processIncoming({
       channel: 'haravan_website',
       externalUserId: visitorId || phone || 'web-' + Date.now(),
       text: message,
       externalMessageId: 'web-' + Date.now(),
-      raw: req.body,
+      raw: { ...req.body, siteName, siteHost, siteUrl, origin, referrer },
       customerAttrs: { name, phone, email },
       sendFn: null
     });
     res.json(result);
   } catch (e) { console.error('Website chat error:', e); res.status(500).json({ error: e.message }); }
+});
+
+router.get('/website-chat/messages', (req, res) => {
+  const visitorId = String(req.query.visitorId || '').trim();
+  if (!visitorId) return res.status(400).json({ error: 'visitor_id_required' });
+  const result = listWebsiteConversationMessages(visitorId, req.query.since || '', req.query.limit || 20);
+  res.json({ ok: true, ...result });
 });
 
 module.exports = router;

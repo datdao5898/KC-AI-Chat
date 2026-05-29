@@ -3,12 +3,22 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { initDb } = require('./db');
+const { backfillFacebookCustomerNames } = require('./channels/facebook');
 const webhooks = require('./routes/webhooks');
 const admin = require('./routes/admin');
+const {
+  getAdminUsername,
+  verifyAdminPassword,
+  getSessionFromRequest,
+  setSessionCookie,
+  clearSessionCookie,
+  isPasswordLoginConfigured
+} = require('./adminAuth');
 
 initDb();
 const app = express();
 const PORT = Number(process.env.PORT || 8660);
+app.set('trust proxy', 1);
 
 function configuredOrigins() {
   const values = [
@@ -22,6 +32,7 @@ function configuredOrigins() {
 
 const allowedOrigins = configuredOrigins();
 app.use(cors({
+  credentials: true,
   origin(origin, cb) {
     if (!origin || process.env.CORS_ALLOW_ALL === 'true' || allowedOrigins.has(origin)) return cb(null, true);
     return cb(new Error('cors_not_allowed'));
@@ -41,13 +52,45 @@ app.use('/webhooks', webhooks);
 // Alias tương thích với prototype cũ: /webhook/facebook
 app.use('/webhook', webhooks);
 
+app.get('/auth/me', (req, res) => {
+  if (process.env.ADMIN_AUTH_DISABLED === 'true') return res.json({ ok: true, username: 'disabled' });
+  const session = getSessionFromRequest(req);
+  if (session) return res.json({ ok: true, username: session.username });
+  return res.status(401).json({ error: 'unauthorized' });
+});
+
+app.post('/auth/login', (req, res) => {
+  if (process.env.ADMIN_AUTH_DISABLED === 'true') return res.json({ ok: true, username: 'disabled' });
+  if (!isPasswordLoginConfigured()) return res.status(503).json({ error: 'admin_login_not_configured' });
+
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
+  if (username !== getAdminUsername() || !verifyAdminPassword(password)) {
+    return res.status(401).json({ error: 'invalid_login' });
+  }
+
+  setSessionCookie(res, username);
+  return res.json({ ok: true, username });
+});
+
+app.post('/auth/logout', (req, res) => {
+  clearSessionCookie(res);
+  return res.json({ ok: true });
+});
+
 function requireAdminAuth(req, res, next) {
   if (process.env.ADMIN_AUTH_DISABLED === 'true') return next();
+  const session = getSessionFromRequest(req);
+  if (session) {
+    req.adminUser = session.username;
+    return next();
+  }
+
   const token = process.env.ADMIN_TOKEN || process.env.DASHBOARD_TOKEN || '';
-  if (!token) return res.status(503).json({ error: 'admin_token_not_configured' });
   const header = req.headers.authorization || '';
   const supplied = header.startsWith('Bearer ') ? header.slice(7) : (req.headers['x-admin-token'] || '');
   if (supplied && supplied === token) return next();
+  if (!isPasswordLoginConfigured() && !token) return res.status(503).json({ error: 'admin_login_not_configured' });
   return res.status(401).json({ error: 'unauthorized' });
 }
 
@@ -69,4 +112,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📌 Zalo webhook: /webhooks/zalo`);
   console.log(`📌 Haravan webhook: /webhooks/haravan`);
   console.log(`📌 Website chat API: /webhooks/website-chat`);
+  setTimeout(() => {
+    backfillFacebookCustomerNames()
+      .then(result => console.log('[FB PROFILE] backfill_done', JSON.stringify(result)))
+      .catch(err => console.warn('[FB PROFILE] backfill_failed', err.message));
+  }, 2000);
 });

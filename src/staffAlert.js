@@ -38,19 +38,46 @@ async function getLarkTenantToken() {
   return data.tenant_access_token;
 }
 
+function parseLarkReceiveIds() {
+  const raw = [
+    process.env.LARK_RECEIVE_IDS || '',
+    process.env.LARK_RECEIVE_ID || '',
+    process.env.LARK_CHAT_ID || '',
+    process.env.FEISHU_RECEIVE_IDS || '',
+    process.env.FEISHU_RECEIVE_ID || '',
+    process.env.FEISHU_CHAT_ID || ''
+  ].filter(Boolean).join(',');
+  return [...new Set(raw.split(',').map(v => v.trim()).filter(Boolean))];
+}
+
 async function sendLarkMessage(message) {
-  const receiveId = process.env.LARK_RECEIVE_ID || process.env.LARK_CHAT_ID || process.env.FEISHU_RECEIVE_ID || process.env.FEISHU_CHAT_ID || '';
+  const receiveIds = parseLarkReceiveIds();
   const receiveIdType = process.env.LARK_RECEIVE_ID_TYPE || process.env.FEISHU_RECEIVE_ID_TYPE || 'chat_id';
-  if (!receiveId) throw new Error('LARK_RECEIVE_ID not configured');
+  if (!receiveIds.length) throw new Error('LARK_RECEIVE_ID not configured');
   const token = await getLarkTenantToken();
-  const body = await requestJson(`https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=${encodeURIComponent(receiveIdType)}`, {
-    receive_id: receiveId,
-    msg_type: 'text',
-    content: JSON.stringify({ text: message })
-  }, { Authorization: `Bearer ${token}` });
-  const data = JSON.parse(body);
-  if (data.code !== 0) throw new Error(`Lark send error: ${body}`);
-  return data.data?.message_id || 'sent';
+  const results = [];
+  const errors = [];
+
+  for (const receiveId of receiveIds) {
+    try {
+      const body = await requestJson(`https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=${encodeURIComponent(receiveIdType)}`, {
+        receive_id: receiveId,
+        msg_type: 'text',
+        content: JSON.stringify({ text: message })
+      }, { Authorization: `Bearer ${token}` });
+      const data = JSON.parse(body);
+      if (data.code !== 0) throw new Error(`Lark send error: ${body}`);
+      results.push({ receiveId, messageId: data.data?.message_id || 'sent' });
+    } catch (e) {
+      errors.push({ receiveId, error: e.message });
+    }
+  }
+
+  if (!results.length) {
+    throw new Error(errors.map(e => `${e.receiveId}: ${e.error}`).join(' | ') || 'Lark send error');
+  }
+
+  return results;
 }
 
 function buildDashboardUrl(conversationId) {
@@ -58,13 +85,37 @@ function buildDashboardUrl(conversationId) {
   return `${base}/?conversation=${encodeURIComponent(conversationId)}`;
 }
 
-function formatAlert({ channel, externalUserId, intent, reason, text, conversationId }) {
+function formatWebsiteMessageAlert({ externalUserId, text, conversationId, sourceName, sourceKey, customer }) {
+  const name = String(customer?.name || '').trim();
+  const phone = String(customer?.phone || '').trim();
+  const email = String(customer?.email || '').trim();
+  const contactLine = [
+    name ? `Name: ${name}` : '',
+    phone ? `Phone: ${phone}` : '',
+    email ? `Email: ${email}` : ''
+  ].filter(Boolean).join('\n');
+
+  return `KingCom website message
+
+Source: ${sourceName || sourceKey || 'Website'}
+Visitor: ${externalUserId}
+${contactLine ? `${contactLine}\n` : ''}
+Customer message:
+"${text}"
+
+Dashboard:
+${buildDashboardUrl(conversationId)}`;
+}
+
+function formatAlert({ channel, externalUserId, intent, reason, text, conversationId, sourceGroup, sourceName, sourceKey }) {
+  const sourceLine = [sourceGroup ? `Source group: ${sourceGroup}` : '', sourceName ? `Source name: ${sourceName}` : '', sourceKey ? `Source key: ${sourceKey}` : ''].filter(Boolean).join('\n');
   return `KingCom needs staff support
 
 Channel: ${channel}
 Customer: ${externalUserId}
 Intent: ${intent || 'unknown'}
 Reason: ${reason}
+${sourceLine ? `\n${sourceLine}` : ''}
 
 Customer message:
 "${text}"
@@ -75,6 +126,23 @@ ${buildDashboardUrl(conversationId)}
 Tip: check products/FAQ data, reply manually, or update knowledge if something is missing.`;
 }
 
+async function notifyWebsiteMessage(payload) {
+  if (process.env.LARK_ALERT_ENABLED === 'false') return { ok: true, skipped: 'lark_disabled' };
+  if (process.env.WEBSITE_MESSAGE_LARK_ALERT_ENABLED === 'false') return { ok: true, skipped: 'website_message_lark_disabled' };
+
+  const message = formatWebsiteMessageAlert(payload);
+  fs.mkdirSync(path.dirname(ALERT_LOG), { recursive: true });
+  fs.appendFileSync(ALERT_LOG, `[${new Date().toISOString()}] website_message=${payload.conversationId || ''}\n${message}\n\n`, 'utf8');
+
+  try {
+    const result = await sendLarkMessage(message);
+    return { ok: true, mode: 'lark', result };
+  } catch (e) {
+    console.error('Lark website message alert failed:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 async function notifyStaff(alertId, payload) {
   const message = formatAlert(payload);
   fs.mkdirSync(path.dirname(ALERT_LOG), { recursive: true });
@@ -83,7 +151,7 @@ async function notifyStaff(alertId, payload) {
   if (process.env.LARK_ALERT_ENABLED !== 'false') {
     try {
       const result = await sendLarkMessage(message);
-      updateAlertDelivery(alertId, 'sent_lark', String(result).slice(0, 500));
+      updateAlertDelivery(alertId, 'sent_lark', JSON.stringify(result).slice(0, 500));
       return { ok: true, mode: 'lark', result };
     } catch (e) {
       console.error('Lark staff alert failed:', e.message);
@@ -113,4 +181,4 @@ async function notifyStaff(alertId, payload) {
   }
 }
 
-module.exports = { notifyStaff, formatAlert, sendLarkMessage };
+module.exports = { notifyStaff, notifyWebsiteMessage, formatAlert, formatWebsiteMessageAlert, sendLarkMessage };

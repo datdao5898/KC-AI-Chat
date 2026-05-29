@@ -1,22 +1,42 @@
 const fs = require('fs');
 const path = require('path');
-
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const {
+  DATA_DIR,
+  SOURCES_DIR,
+  getSourceCandidates,
+  readFirstExistingText
+} = require('./sourceRegistry');
 
 const STOPWORDS = new Set([
-  'anh','chị','em','ban','bạn','minh','mình','toi','tôi','cho','can','cần','tim','tìm','mua','gia','giá','bao','nhieu','nhiêu','duoi','dưới','tren','trên','san','sản','pham','phẩm','hang','hàng','link','gui','gửi','kem','kèm','xem','tham','khao','khảo','muon','muốn','tu','tư','van','vấn','giup','giúp','voi','với','co','có','khong','không','nay','này','do','đó','la','là','cai','cái','mot','một','cac','các','va','và','hoac','hoặc','chiec','chiếc','sp','shop','kingcom','hien','hiện','tai','tại','trong','he','hệ','thong','thống','du','dữ','lieu','liệu','chua','chưa','khop','khớp','chinh','chính','xac','xác','model','ma','mã'
+  'anh', 'chi', 'em', 'ban', 'minh', 'toi', 'cho', 'can', 'tim', 'mua', 'gia', 'bao', 'nhieu',
+  'duoi', 'tren', 'san', 'pham', 'hang', 'link', 'gui', 'kem', 'xem', 'tham', 'khao', 'muon', 'tu',
+  'van', 'giup', 'voi', 'co', 'khong', 'nay', 'do', 'la', 'cai', 'mot', 'cac', 'va', 'hoac', 'chiec',
+  'sp', 'shop', 'kingcom', 'hien', 'tai', 'trong', 'he', 'thong', 'du', 'lieu', 'chua', 'khop',
+  'chinh', 'xac', 'model', 'ma',
+  'please', 'pls', 'i', 'im', 'i-m', 'am', 'looking', 'look', 'for', 'need', 'want', 'to', 'buy',
+  'one', 'a', 'an', 'the', 'of', 'with', 'me', 'my', 'your', 'you'
 ]);
 
 function parseCsvLine(line) {
-  const out = []; let cur = ''; let q = false;
-  for (let i=0;i<line.length;i++) {
+  const out = [];
+  let cur = '';
+  let q = false;
+  for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === '"' && line[i+1] === '"') { cur += '"'; i++; }
-    else if (ch === '"') q = !q;
-    else if (ch === ',' && !q) { out.push(cur); cur=''; }
-    else cur += ch;
+    if (ch === '"' && line[i + 1] === '"') {
+      cur += '"';
+      i++;
+    } else if (ch === '"') {
+      q = !q;
+    } else if (ch === ',' && !q) {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
   }
-  out.push(cur); return out;
+  out.push(cur);
+  return out;
 }
 
 function normalize(s) {
@@ -24,7 +44,7 @@ function normalize(s) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
+    .replace(/[đĐ]/g, 'd')
     .replace(/[^a-z0-9\s\-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -41,14 +61,78 @@ function parsePriceNumber(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function productsWithPrice() {
-  return loadProducts()
+function extractMaxPrice(query) {
+  const norm = normalize(query);
+  const m1 = norm.match(/(?:duoi|toi da|max|nho hon|be hon)\s*(\d+(?:[\.,]\d+)?)\s*(trieu|tr|m|k|nghin|ngan)?/);
+  const m2 = norm.match(/(\d+(?:[\.,]\d+)?)\s*(trieu|tr|m|k|nghin|ngan)\s*(?:tro xuong|do lai|do ve|quay dau)/);
+  const m = m1 || m2;
+  if (!m) return null;
+  const val = Number(m[1].replace(',', '.'));
+  const unit = m[2] || '';
+  if (['trieu', 'tr', 'm'].includes(unit)) return Math.round(val * 1000000);
+  if (['k', 'nghin', 'ngan'].includes(unit)) return Math.round(val * 1000);
+  return val > 10000 ? Math.round(val) : Math.round(val * 1000000);
+}
+
+function fileRows(file) {
+  if (!fs.existsSync(file)) return [];
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]).map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const vals = parseCsvLine(line);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+    return obj;
+  });
+}
+
+function dedupeProducts(products) {
+  const seen = new Set();
+  const out = [];
+  for (const p of products) {
+    const key = normalize([p.sku, p.url || p.link || p.product_url || '', p.name || p.title || ''].join('|'));
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out;
+}
+
+function loadProducts(options = {}) {
+  const sourceKey = options.sourceKey || '';
+  const candidates = getSourceCandidates(sourceKey);
+  const products = [];
+
+  for (const candidate of candidates) {
+    const file = candidate === 'common'
+      ? path.join(SOURCES_DIR, 'common', 'products.csv')
+      : candidate
+        ? path.join(SOURCES_DIR, ...candidate.split('/'), 'products.csv')
+        : '';
+    if (!file) continue;
+    const rows = fileRows(file);
+    if (rows.length) {
+      products.push(...rows);
+      return dedupeProducts(products);
+    }
+  }
+
+  const legacyFile = path.join(DATA_DIR, 'products.csv');
+  if (fs.existsSync(legacyFile)) {
+    products.push(...fileRows(legacyFile));
+  }
+  return dedupeProducts(products);
+}
+
+function productsWithPrice(options = {}) {
+  return loadProducts(options)
     .map(p => ({ ...p, _price: parsePriceNumber(p.price || p.compare_at_price || p.gia || '') }))
     .filter(p => p._price > 0);
 }
 
-function getPriceExtremes() {
-  const products = productsWithPrice().sort((a, b) => b._price - a._price);
+function getPriceExtremes(options = {}) {
+  const products = productsWithPrice(options).sort((a, b) => b._price - a._price);
   return {
     mostExpensive: products[0] || null,
     cheapest: [...products].sort((a, b) => a._price - b._price)[0] || null
@@ -68,64 +152,44 @@ function requestedPriceExtremes(query) {
 }
 
 function extractExactPrice(query) {
-  const raw = String(query || '');
-  const matches = raw.match(/\d{1,3}(?:[.,]\d{3})+|\d{5,}/g) || [];
-  const prices = matches
-    .map(v => parsePriceNumber(v))
-    .filter(v => v >= 10000);
+  const matches = String(query || '').match(/\d{1,3}(?:[.,]\d{3})+|\d{5,}/g) || [];
+  const prices = matches.map(v => parsePriceNumber(v)).filter(v => v >= 10000);
   return prices[0] || null;
 }
 
-function findProductsByExactPrice(query, limit = 5) {
+function findProductsByExactPrice(query, limit = 5, options = {}) {
   const price = extractExactPrice(query);
   if (!price) return [];
-  return productsWithPrice()
+  return productsWithPrice(options)
     .filter(p => p._price === price)
     .slice(0, limit);
 }
 
-function extractMaxPrice(query) {
-  const raw = String(query || '').toLowerCase();
-  const norm = normalize(raw);
-  const m1 = norm.match(/(?:duoi|toi da|max|nho hon|be hon)\s*(\d+(?:[\.,]\d+)?)\s*(trieu|tr|m|k|nghin|ngan)?/);
-  const m2 = norm.match(/(\d+(?:[\.,]\d+)?)\s*(trieu|tr|m|k|nghin|ngan)\s*(?:tro xuong|do lai|do ve|quay dau)/);
-  const m = m1 || m2;
-  if (!m) return null;
-  const val = Number(m[1].replace(',', '.'));
-  const unit = m[2] || '';
-  if (['trieu','tr','m'].includes(unit)) return Math.round(val * 1000000);
-  if (['k','nghin','ngan'].includes(unit)) return Math.round(val * 1000);
-  return val > 10000 ? Math.round(val) : Math.round(val * 1000000);
-}
-
-function loadProducts() {
-  const file = path.join(DATA_DIR, 'products.csv');
-  if (!fs.existsSync(file)) return [];
-  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean);
-  if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]).map(h => h.trim());
-  return lines.slice(1).map(line => {
-    const vals = parseCsvLine(line); const obj = {};
-    headers.forEach((h,i) => obj[h] = vals[i] || '');
-    return obj;
-  });
-}
-
-function searchProducts(query, topK = 8) {
-  const products = loadProducts();
+function searchProducts(query, topK = 8, options = {}) {
+  const products = loadProducts(options);
   const words = queryWords(query);
+  const normQuery = normalize(query);
   const maxPrice = extractMaxPrice(query);
   const codeWords = words.filter(w => w.length >= 4 && /[a-z]/.test(w) && /\d/.test(w));
+  const wantsTripod = /\b(tripod|chan may|chan den|gia do)\b/i.test(normQuery);
+  const wantsPhone = /\b(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)\b/i.test(normQuery);
   if (!words.length) return [];
+
   const scored = [];
   for (const p of products) {
     const price = parsePriceNumber(p.price || p.compare_at_price || p.gia || '');
     if (maxPrice && price && price > maxPrice) continue;
+
     const name = normalize(p.name || p.title || '');
     const sku = normalize(p.sku || '');
     const vendor = normalize(p.vendor || p.brand || '');
     const desc = normalize(`${p.description || ''} ${p.tags || ''}`);
+    const haystack = `${name} ${desc}`;
+
+    if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
+
     if (codeWords.length && !codeWords.some(w => sku.includes(w) || name.includes(w))) continue;
+
     let score = 0;
     let strongMatches = 0;
     for (const w of words) {
@@ -135,42 +199,51 @@ function searchProducts(query, topK = 8) {
       if (name.includes(w)) { score += 5; strongMatches++; }
       if (desc.includes(w)) score += 1;
     }
-    // Chặn kết quả rác chỉ khớp mô tả/tag với từ quá chung.
+
+    if (wantsTripod && /(tripod|chan may|chan den|gia do)/i.test(name)) score += 8;
+    if (wantsPhone && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 6;
+    if (wantsTripod && wantsPhone && /(tripod|chan may|chan den|gia do)/i.test(haystack) && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 10;
+
     if (score >= 4 && strongMatches > 0) scored.push({ ...p, score });
   }
-  return scored.sort((a,b) => b.score - a.score).slice(0, topK);
+
+  return scored.sort((a, b) => b.score - a.score).slice(0, topK);
 }
 
-function loadTextFile(name) {
-  const file = path.join(DATA_DIR, name);
-  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').slice(0, 4000) : '';
+function loadTextFile(name, options = {}) {
+  return readFirstExistingText(name, options.sourceKey || '', 4000);
 }
 
-function buildContext(query) {
-  const products = searchProducts(query, 8);
+function buildContext(query, options = {}) {
+  const products = searchProducts(query, 8, options);
   let ctx = '';
+
   if (products.length) {
-    ctx += 'Sản phẩm liên quan:\n';
+    ctx += 'San pham lien quan:\n';
     products.forEach((p, i) => {
       const price = p.price || p.compare_at_price || p.gia || '';
       const url = p.url || p.link || p.product_url || '';
-      ctx += `${i+1}. SKU: ${p.sku || 'N/A'} | Tên: ${p.name || p.title || 'N/A'} | Hãng: ${p.vendor || p.brand || 'N/A'} | Giá: ${price || 'Liên hệ'} | Link: ${url || 'Chưa có link'}\n`;
+      ctx += `${i + 1}. SKU: ${p.sku || 'N/A'} | Ten: ${p.name || p.title || 'N/A'} | Hang: ${p.vendor || p.brand || 'N/A'} | Gia: ${price || 'Lien he'} | Link: ${url || 'Chua co link'}\n`;
     });
   } else {
-    ctx += 'Không tìm thấy sản phẩm khớp trong products.csv.\n';
+    ctx += 'Khong tim thay san pham khop trong bo du lieu.\n';
   }
-  const catalogSummary = loadTextFile('catalog_summary.md');
-  const faq = loadTextFile('faq.md');
-  const policies = loadTextFile('policies.md');
-  if (catalogSummary) ctx += `\nTổng quan danh mục:\n${catalogSummary}\n`;
+
+  const catalogSummary = loadTextFile('catalog_summary.md', options);
+  const faq = loadTextFile('faq.md', options);
+  const policies = loadTextFile('policies.md', options);
+  if (catalogSummary) ctx += `\nTong quan danh muc:\n${catalogSummary}\n`;
   if (faq) ctx += `\nFAQ:\n${faq}\n`;
-  if (policies) ctx += `\nChính sách:\n${policies}\n`;
+  if (policies) ctx += `\nChinh sach:\n${policies}\n`;
+
   return { context: ctx, products };
 }
+
 module.exports = {
   buildContext,
   searchProducts,
   loadProducts,
+  loadTextFile,
   queryWords,
   normalize,
   extractMaxPrice,
@@ -179,5 +252,6 @@ module.exports = {
   isPriceExtremeQuery,
   requestedPriceExtremes,
   extractExactPrice,
-  findProductsByExactPrice
+  findProductsByExactPrice,
+  productsWithPrice
 };
