@@ -1,6 +1,6 @@
 const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
-const { buildSourceContext } = require('./sourceRegistry');
+const { buildSourceContext, lookupEnvMap } = require('./sourceRegistry');
 
 function postgresConfig() {
   if (process.env.DATABASE_URL) {
@@ -217,6 +217,7 @@ async function initDb() {
       ON staff_alerts(conversation_id, status, created_at DESC);
   `);
   await backfillConversationSources();
+  await refreshConfiguredSourceNames();
 }
 
 async function backfillConversationSources() {
@@ -244,6 +245,48 @@ async function backfillConversationSources() {
       SET source_group=$1, source_key=$2, source_name=$3, updated_at=CURRENT_TIMESTAMP
       WHERE id=$4
     `, [ctx.source_group || '', ctx.source_key || '', ctx.source_name || '', row.id]);
+  }
+}
+
+function configuredSourceName(sourceKey = '') {
+  const [sourceGroup, ...sourceIdParts] = String(sourceKey || '').split('/');
+  const sourceId = sourceIdParts.join('/');
+  if (!sourceId) return '';
+  if (sourceGroup === 'facebook') return lookupEnvMap('FACEBOOK_PAGE_NAMES', sourceId);
+  if (sourceGroup === 'zalo') return lookupEnvMap('ZALO_OA_NAMES', sourceId);
+  return '';
+}
+
+async function refreshConfiguredSourceNames() {
+  const { rows } = await db.query(`
+    SELECT DISTINCT source_key
+    FROM (
+      SELECT source_key FROM conversations WHERE deleted_at IS NULL
+      UNION
+      SELECT source_key FROM messages WHERE deleted_at IS NULL
+      UNION
+      SELECT source_key FROM staff_alerts
+    ) configured_sources
+    WHERE COALESCE(source_key, '') <> ''
+  `);
+  for (const row of rows) {
+    const sourceName = configuredSourceName(row.source_key);
+    if (!sourceName) continue;
+    await db.query(`
+      UPDATE conversations
+      SET source_name=$1
+      WHERE source_key=$2 AND source_name IS DISTINCT FROM $1
+    `, [sourceName, row.source_key]);
+    await db.query(`
+      UPDATE messages
+      SET source_name=$1
+      WHERE source_key=$2 AND source_name IS DISTINCT FROM $1
+    `, [sourceName, row.source_key]);
+    await db.query(`
+      UPDATE staff_alerts
+      SET source_name=$1
+      WHERE source_key=$2 AND source_name IS DISTINCT FROM $1
+    `, [sourceName, row.source_key]);
   }
 }
 
@@ -276,7 +319,7 @@ async function getOrCreateConversation(customerId, channel, sourceKey = '', sour
         UPDATE conversations
         SET source_group=COALESCE(NULLIF(source_group,''), $1),
             source_key=COALESCE(NULLIF(source_key,''), $2),
-            source_name=COALESCE(NULLIF(source_name,''), $3),
+            source_name=COALESCE(NULLIF($3,''), source_name),
             updated_at=CURRENT_TIMESTAMP
         WHERE id=$4
         RETURNING *
@@ -289,7 +332,7 @@ async function getOrCreateConversation(customerId, channel, sourceKey = '', sour
         UPDATE conversations
         SET source_group=COALESCE(NULLIF(source_group,''), $1),
             source_key=COALESCE(NULLIF(source_key,''), $2),
-            source_name=COALESCE(NULLIF(source_name,''), $3),
+            source_name=COALESCE(NULLIF($3,''), source_name),
             updated_at=CURRENT_TIMESTAMP
         WHERE id=$4
         RETURNING *
@@ -331,7 +374,7 @@ async function saveMessage({
           last_intent=COALESCE(NULLIF($1, ''), last_intent),
           source_group=COALESCE(NULLIF(source_group,''), $2),
           source_key=COALESCE(NULLIF(source_key,''), $3),
-          source_name=COALESCE(NULLIF(source_name,''), $4)
+          source_name=COALESCE(NULLIF($4,''), source_name)
       WHERE id=$5
     `, [intent, sourceGroup || '', sourceKey || '', sourceName || '', conversationId]);
     await client.query(`
