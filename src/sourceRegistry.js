@@ -103,9 +103,24 @@ function resolveSourcePaths(filename, sourceKey) {
 
 function readFirstExistingText(filename, sourceKey, maxBytes = 4000) {
   for (const file of resolveSourcePaths(filename, sourceKey)) {
-    if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8').slice(0, maxBytes);
+    if (!fs.existsSync(file)) continue;
+    const text = fs.readFileSync(file, 'utf8').slice(0, maxBytes);
+    if (text.trim()) return text;
   }
   return '';
+}
+
+function readSourceConfig(sourceKey) {
+  const normalized = String(sourceKey || '').trim();
+  if (!normalized) return {};
+  const file = path.join(SOURCES_DIR, ...normalized.split('/'), 'source.json');
+  if (!fs.existsSync(file)) return {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 module.exports = {
@@ -118,4 +133,5 @@ module.exports = {
   getSourceCandidates,
   resolveSourcePaths,
   readFirstExistingText,
+  readSourceConfig,
 };

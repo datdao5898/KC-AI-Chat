@@ -151,7 +151,7 @@ async function notifyStaff(alertId, payload) {
   if (process.env.LARK_ALERT_ENABLED !== 'false') {
     try {
       const result = await sendLarkMessage(message);
-      updateAlertDelivery(alertId, 'sent_lark', JSON.stringify(result).slice(0, 500));
+      await updateAlertDelivery(alertId, 'sent_lark', JSON.stringify(result).slice(0, 500));
       return { ok: true, mode: 'lark', result };
     } catch (e) {
       console.error('Lark staff alert failed:', e.message);
@@ -161,7 +161,7 @@ async function notifyStaff(alertId, payload) {
   const token = process.env.STAFF_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
   const chatId = process.env.STAFF_TELEGRAM_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '';
   if (!token || !chatId) {
-    updateAlertDelivery(alertId, 'logged', 'Lark send failed/disabled and Telegram token/chat_id not configured');
+    await updateAlertDelivery(alertId, 'logged', 'Lark send failed/disabled and Telegram token/chat_id not configured');
     console.warn('Staff alert logged only. Configure STAFF_TELEGRAM_BOT_TOKEN and STAFF_TELEGRAM_CHAT_ID, or enable LARK alerting.');
     return { ok: true, mode: 'logged' };
   }
@@ -172,10 +172,10 @@ async function notifyStaff(alertId, payload) {
       text: message,
       disable_web_page_preview: true
     });
-    updateAlertDelivery(alertId, 'sent', '');
+    await updateAlertDelivery(alertId, 'sent', '');
     return { ok: true, mode: 'telegram' };
   } catch (e) {
-    updateAlertDelivery(alertId, 'failed', e.message);
+    await updateAlertDelivery(alertId, 'failed', e.message);
     console.error('Staff Telegram alert failed:', e.message);
     return { ok: false, error: e.message };
   }

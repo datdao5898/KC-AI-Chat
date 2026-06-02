@@ -1,7 +1,7 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const { initDb } = require('./db');
 const { backfillFacebookCustomerNames } = require('./channels/facebook');
 const webhooks = require('./routes/webhooks');
@@ -15,7 +15,6 @@ const {
   isPasswordLoginConfigured
 } = require('./adminAuth');
 
-initDb();
 const app = express();
 const PORT = Number(process.env.PORT || 8660);
 app.set('trust proxy', 1);
@@ -106,15 +105,23 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: 'internal_error' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 KingCom AI Agent running: http://localhost:${PORT}`);
-  console.log(`📌 Facebook webhook: /webhooks/facebook`);
-  console.log(`📌 Zalo webhook: /webhooks/zalo`);
-  console.log(`📌 Haravan webhook: /webhooks/haravan`);
-  console.log(`📌 Website chat API: /webhooks/website-chat`);
-  setTimeout(() => {
-    backfillFacebookCustomerNames()
-      .then(result => console.log('[FB PROFILE] backfill_done', JSON.stringify(result)))
-      .catch(err => console.warn('[FB PROFILE] backfill_failed', err.message));
-  }, 2000);
+async function startServer() {
+  await initDb();
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 KingCom AI Agent running: http://localhost:${PORT}`);
+    console.log(`📌 Facebook webhook: /webhooks/facebook`);
+    console.log(`📌 Zalo webhook: /webhooks/zalo`);
+    console.log(`📌 Haravan webhook: /webhooks/haravan`);
+    console.log(`📌 Website chat API: /webhooks/website-chat`);
+    setTimeout(() => {
+      backfillFacebookCustomerNames()
+        .then(result => console.log('[FB PROFILE] backfill_done', JSON.stringify(result)))
+        .catch(err => console.warn('[FB PROFILE] backfill_failed', err.message));
+    }, 2000);
+  });
+}
+
+startServer().catch(err => {
+  console.error('Failed to start KingCom AI Agent:', err.message);
+  process.exitCode = 1;
 });

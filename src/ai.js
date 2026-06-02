@@ -8,6 +8,7 @@ const {
   findProductsByExactPrice,
   normalize
 } = require('./rag');
+const { readSourceConfig } = require('./sourceRegistry');
 
 async function callOpenAI(prompt, timeoutMs) {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -338,6 +339,45 @@ function ensureProductLinks(reply, products) {
   return hasAnyUrl ? reply : `${reply}\n\n${block}`;
 }
 
+function normalizeProductUrl(url) {
+  return String(url || '').trim().replace(/[.,;:!?]+$/g, '').replace(/\/+$/g, '');
+}
+
+function hasUnapprovedProductUrl(reply, products) {
+  const allowedUrls = new Set(
+    (products || [])
+      .map(p => normalizeProductUrl(p.url || p.link || p.product_url))
+      .filter(Boolean)
+  );
+  const replyUrls = String(reply || '').match(/https?:\/\/[^\s<>"')\]]+/gi) || [];
+  return replyUrls.some(url => !allowedUrls.has(normalizeProductUrl(url)));
+}
+
+function buildScopedProductsReply(products, userText, scopeBrand) {
+  const lang = detectMessageLanguage(userText);
+  const rows = (products || []).slice(0, 3).map((p, i) => {
+    const name = p.name || p.title || p.sku || (lang === 'en' ? `Product ${i + 1}` : `Sản phẩm ${i + 1}`);
+    const rawPrice = p._price || p.price || p.compare_at_price || p.gia || '';
+    const priceNumber = Number(String(rawPrice).replace(/[^0-9]/g, ''));
+    const price = lang === 'en' || lang === 'zh'
+      ? (priceNumber ? `${priceNumber.toLocaleString('en-US')} VND` : (rawPrice || 'contact us'))
+      : formatPrice(rawPrice);
+    const url = p.url || p.link || p.product_url || '';
+
+    if (lang === 'zh') return `${i + 1}. ${name}\n价格: ${price}${url ? `\n链接: ${url}` : ''}`;
+    if (lang === 'en') return `${i + 1}. ${name}\nPrice: ${price}${url ? `\nLink: ${url}` : ''}`;
+    return `${i + 1}. ${name}\nGiá: ${price}${url ? `\nLink: ${url}` : ''}`;
+  }).join('\n\n');
+
+  if (lang === 'zh') {
+    return `我在 ${scopeBrand} 产品目录中找到以下相关产品：\n\n${rows}\n\n请告诉我您想了解哪一个型号，或留下电话号码，方便 KingCom 员工进一步协助。`;
+  }
+  if (lang === 'en') {
+    return `I found these matching products in the ${scopeBrand} catalog:\n\n${rows}\n\nPlease tell me which model you prefer, or share your phone number so KingCom staff can assist you further.`;
+  }
+  return `Dạ em tìm thấy các sản phẩm phù hợp trong catalog ${scopeBrand}:\n\n${rows}\n\nAnh/chị đang quan tâm mẫu nào, hoặc để lại số điện thoại để nhân viên KingCom hỗ trợ thêm ạ?`;
+}
+
 function fallbackReply(intent, userText, products) {
   const lang = detectMessageLanguage(userText);
   const english = lang === 'en';
@@ -464,29 +504,35 @@ function productQueryLabel(userText) {
   return words.join(' ').trim();
 }
 
-function buildNoCatalogMatchReply(userText, lang) {
+function buildNoCatalogMatchReply(userText, lang, scopeBrand = '') {
   const label = productQueryLabel(userText);
+  const scope = String(scopeBrand || '').trim();
   if (lang === 'en') {
+    if (scope) return `This page currently supports ${scope} products only. I could not find ${label || 'that product'} in the ${scope} catalog. I have forwarded your request to KingCom staff for further checking.`;
     return label
       ? `KingCom currently does not have ${label} in the catalog. I have forwarded this to KingCom staff to check further if needed.`
       : 'KingCom currently does not have this product in the catalog. I have forwarded this to KingCom staff to check further if needed.';
   }
   if (lang === 'zh') {
+    if (scope) return `此页面目前仅咨询 ${scope} 产品。${scope} 目录中没有找到 ${label || '该产品'}。我已转交给 KingCom 员工进一步确认。`;
     return label
       ? `KingCom 目前目录中没有 ${label} 这款产品。我已转交给 KingCom 员工进一步确认。`
       : 'KingCom 目前目录中没有这款产品。我已转交给 KingCom 员工进一步确认。';
   }
+  if (scope) return `Dạ fanpage này hiện tư vấn sản phẩm ${scope}. Em chưa tìm thấy ${label || 'sản phẩm anh/chị hỏi'} trong catalog ${scope}. Em đã chuyển thông tin cho nhân viên KingCom kiểm tra thêm ạ.`;
   return label
     ? `Dạ hiện KingCom chưa có sản phẩm ${label} trong catalog ạ. Em đã chuyển thông tin cho nhân viên KingCom kiểm tra thêm nếu anh/chị cần.`
     : 'Dạ hiện KingCom chưa có sản phẩm này trong catalog ạ. Em đã chuyển thông tin cho nhân viên KingCom kiểm tra thêm nếu anh/chị cần.';
 }
 
-function buildLocalizedRuleReply(intent, userText, lang) {
+function buildLocalizedRuleReply(intent, userText, lang, scopeBrand = '') {
+  const scope = String(scopeBrand || '').trim();
   if (lang === 'en') {
     if (intent === 'store_info') {
       return 'KingCom store address is 65 Nguyen Minh Hoang, Bay Hien Ward, Ho Chi Minh City. What product can I help you with?';
     }
     if (intent === 'catalog_info') {
+      if (scope) return `This page supports ${scope} products. Please tell me the product type or model you are looking for so I can suggest matching ${scope} products.`;
       return 'KingCom carries photography, filming, and content creation accessories such as gimbals, microphones, lights, filters, tripods, monitors, and livestream equipment. Which product group are you interested in?';
     }
     if (intent === 'unsupported') {
@@ -506,6 +552,7 @@ function buildLocalizedRuleReply(intent, userText, lang) {
       return 'KingCom 门店地址是越南胡志明市 Bảy Hiền 坊 Nguyễn Minh Hoàng 65 号。您需要我继续协助查询哪一款产品吗？';
     }
     if (intent === 'catalog_info') {
+      if (scope) return `此页面提供 ${scope} 产品咨询。请告诉我您需要的产品类型或具体型号，我会为您推荐合适的 ${scope} 产品。`;
       return 'KingCom 销售摄影、拍摄和内容创作相关配件，例如稳定器、麦克风、灯具、滤镜、三脚架、外接屏幕和直播设备。您想了解哪一类产品？';
     }
     if (intent === 'unsupported') {
@@ -518,6 +565,10 @@ function buildLocalizedRuleReply(intent, userText, lang) {
     if (intent === 'greeting') {
       return '您好！KingCom 可以协助您查询产品、报价、配送或保修信息。请问您需要了解什么产品？';
     }
+  }
+
+  if (intent === 'catalog_info' && scope) {
+    return `Dạ fanpage này tư vấn sản phẩm ${scope}. Anh/chị đang cần loại sản phẩm hoặc model nào để em gợi ý đúng sản phẩm ${scope} phù hợp ạ?`;
   }
 
   return null;
@@ -561,6 +612,8 @@ async function generateReply({
   sourceGroup = ''
 }) {
   const messageLanguage = detectMessageLanguage(userText);
+  const sourceConfig = readSourceConfig(sourceKey);
+  const scopeBrand = String(sourceConfig.brand || '').trim();
   const contactInfoReply = buildContactInfoReply(userText, messageLanguage);
   if (contactInfoReply) {
     return {
@@ -582,7 +635,7 @@ async function generateReply({
     };
   }
 
-  const localizedRuleReply = buildLocalizedRuleReply(intent, userText, messageLanguage);
+  const localizedRuleReply = buildLocalizedRuleReply(intent, userText, messageLanguage, scopeBrand);
   if (localizedRuleReply) {
     return {
       reply: localizedRuleReply,
@@ -694,7 +747,7 @@ ${intent === 'greeting'
   const { context, products } = buildContext(searchQuery, { sourceKey });
   if (!products.length && hasSpecificProductQuery(userText, intent)) {
     return {
-      reply: buildNoCatalogMatchReply(userText, messageLanguage),
+      reply: buildNoCatalogMatchReply(userText, messageLanguage, scopeBrand),
       aiUsed: 0,
       aiError: false,
       aiSource: 'rule_no_catalog_match',
@@ -711,6 +764,16 @@ ${intent === 'greeting'
       aiSource: 'direct_availability_lookup',
       searchQuery,
       ragProducts: products.slice(0, 1)
+    };
+  }
+  if (scopeBrand && products.length && ['buy', 'price', 'product_search', 'order'].includes(intent)) {
+    return {
+      reply: buildScopedProductsReply(products, userText, scopeBrand),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_scoped_products',
+      searchQuery,
+      ragProducts: products.slice(0, 3)
     };
   }
   const historyText = (history || []).slice(-8).map(m => `${m.sender_type}: ${m.text}`).join('\n');
@@ -740,6 +803,7 @@ ${intent === 'greeting'
 Địa chỉ cửa hàng KingCom: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam
 
 ${sourceContext ? `Nguồn dữ liệu hiện tại:\n${sourceContext}\n` : ''}
+${scopeBrand ? `Phạm vi fanpage: chỉ tư vấn sản phẩm ${scopeBrand}.\n` : ''}
 
 Kênh: ${channel}
 Ý định dự đoán: ${intent}
@@ -767,6 +831,7 @@ Quy tắc:
 - Nếu không chắc thông tin, nói "em kiểm tra thêm" hoặc "em chuyển nhân viên phụ trách kiểm tra", không nói "AI không biết/không có dữ liệu".
 - Nếu khách hỏi ngắn kiểu "gửi link", "kèm link", "link mua", hãy hiểu là họ đang hỏi tiếp về sản phẩm đã nhắc gần nhất trong lịch sử, không được đổi sang sản phẩm khác.
 - Chỉ dùng dữ liệu tham khảo nếu nói giá/sản phẩm.
+- Nếu có phạm vi fanpage, chỉ tư vấn sản phẩm thuộc phạm vi đó. Không giới thiệu sản phẩm từ thương hiệu khác.
 - Khi tư vấn hoặc liệt kê sản phẩm, bắt buộc đính kèm link sản phẩm trực tiếp từ trường Link/url trong dữ liệu tham khảo để khách bấm xem.
 - Nếu có nhiều sản phẩm phù hợp, liệt kê tối đa 3-5 sản phẩm, mỗi sản phẩm gồm: tên, giá, link xem sản phẩm.
 - Nếu khách hỏi địa chỉ cửa hàng, cho địa chỉ: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam.
@@ -781,6 +846,17 @@ Quy tắc:
         ? '\n\nFINAL LANGUAGE RULE: Reply in Simplified Chinese only. Do not use Vietnamese except product names copied from catalog.'
         : '\n\nFINAL LANGUAGE RULE: Reply in Vietnamese only unless the customer switches language.';
     const reply = await callOpenAI(`${prompt}${finalLanguageRule}`, Number(process.env.AI_TIMEOUT_MS || 45000));
+    if (hasUnapprovedProductUrl(reply, products)) {
+      console.warn('OpenAI response rejected: unapproved product URL');
+      return {
+        reply: fallbackReply(intent, userText, products),
+        aiUsed: 1,
+        aiError: false,
+        aiSource: 'guardrail_fallback',
+        searchQuery,
+        ragProducts: products
+      };
+    }
     return {
       reply: ensureProductLinks(reply, products),
       aiUsed: 1,

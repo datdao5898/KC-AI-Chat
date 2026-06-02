@@ -4,7 +4,8 @@ const {
   DATA_DIR,
   SOURCES_DIR,
   getSourceCandidates,
-  readFirstExistingText
+  readFirstExistingText,
+  readSourceConfig
 } = require('./sourceRegistry');
 
 const STOPWORDS = new Set([
@@ -99,8 +100,30 @@ function dedupeProducts(products) {
   return out;
 }
 
+let knownProductBrandsCache = null;
+
+function getKnownProductBrands() {
+  if (knownProductBrandsCache) return knownProductBrandsCache;
+  const legacyFile = path.join(DATA_DIR, 'products.csv');
+  knownProductBrandsCache = [...new Set(
+    fileRows(legacyFile)
+      .map(p => normalize(p.vendor || p.brand || ''))
+      .filter(Boolean)
+  )];
+  return knownProductBrandsCache;
+}
+
+function isScopedFacebookSource(sourceKey) {
+  return /^facebook\/(?!default$)[a-z0-9-]+$/i.test(String(sourceKey || '').trim());
+}
+
 function loadProducts(options = {}) {
   const sourceKey = options.sourceKey || '';
+  if (isScopedFacebookSource(sourceKey)) {
+    const file = path.join(SOURCES_DIR, ...String(sourceKey).split('/'), 'products.csv');
+    return fs.existsSync(file) ? dedupeProducts(fileRows(file)) : [];
+  }
+
   const candidates = getSourceCandidates(sourceKey);
   const products = [];
 
@@ -169,6 +192,9 @@ function searchProducts(query, topK = 8, options = {}) {
   const products = loadProducts(options);
   const words = queryWords(query);
   const normQuery = normalize(query);
+  const scopeBrand = normalize(readSourceConfig(options.sourceKey || '').brand || '');
+  const mentionedBrands = getKnownProductBrands().filter(brand => ` ${normQuery} `.includes(` ${brand} `));
+  if (scopeBrand && mentionedBrands.some(brand => brand !== scopeBrand)) return [];
   const maxPrice = extractMaxPrice(query);
   const codeWords = words.filter(w => w.length >= 4 && /[a-z]/.test(w) && /\d/.test(w));
   const wantsTripod = /\b(tripod|chan may|chan den|gia do)\b/i.test(normQuery);
@@ -211,7 +237,13 @@ function searchProducts(query, topK = 8, options = {}) {
 }
 
 function loadTextFile(name, options = {}) {
-  return readFirstExistingText(name, options.sourceKey || '', 4000);
+  const sourceKey = options.sourceKey || '';
+  const sourceConfig = readSourceConfig(sourceKey);
+  if (sourceConfig.strictProducts === true && name === 'catalog_summary.md') {
+    const file = path.join(SOURCES_DIR, ...String(sourceKey).split('/'), name);
+    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').slice(0, 4000) : '';
+  }
+  return readFirstExistingText(name, sourceKey, 4000);
 }
 
 function buildContext(query, options = {}) {

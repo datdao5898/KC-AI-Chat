@@ -7,7 +7,10 @@
     "start": "node src/server.js",
     "dev": "node src/server.js",
     "init-db": "node src/init-db.js",
-    "hash-admin-password": "node src/hash-admin-password.js"
+    "migrate-sqlite-to-postgres": "node scripts/migrate-sqlite-to-postgres.js",
+    "smoke-postgres": "node scripts/smoke-postgres.js",
+    "hash-admin-password": "node src/hash-admin-password.js",
+    "split-facebook-products": "node scripts/split-facebook-products.js"
   },
   "dependencies": {
     "axios": "latest",
@@ -15,6 +18,10 @@
     "cors": "latest",
     "dotenv": "latest",
     "express": "latest",
+    "pg": "^8.21.0",
     "uuid": "latest"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.14"
   }
 }

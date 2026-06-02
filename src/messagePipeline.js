@@ -7,13 +7,13 @@ const { buildSourceContext } = require('./sourceRegistry');
 
 function detectHandoff({ text, intent, aiError, ragProducts }) {
   const t = String(text || '').toLowerCase();
-  if (intent === 'human') return { needed: true, reason: 'Khách yêu cầu gặp nhân viên', disableAutoReply: true };
+  if (intent === 'human') return { needed: true, reason: 'Khách yêu cầu gặp nhân viên' };
   if (/(không phản hồi|khong phan hoi|chưa phản hồi|chua phan hoi|không ai trả lời|khong ai tra loi|gọi lại|goi lai|liên hệ lại|lien he lai|khiếu nại|khieu nai|bảo hành lỗi|bao hanh loi)/i.test(t)) {
-    return { needed: true, reason: 'Khách cần follow-up/khiếu nại', disableAutoReply: true };
+    return { needed: true, reason: 'Khách cần follow-up/khiếu nại' };
   }
-  if (aiError) return { needed: true, reason: 'AI lỗi hoặc hết quota, cần nhân viên kiểm tra', disableAutoReply: false };
+  if (aiError) return { needed: true, reason: 'AI lỗi hoặc hết quota, cần nhân viên kiểm tra' };
   if (['buy', 'price', 'product_search', 'order'].includes(intent) && (!ragProducts || ragProducts.length === 0)) {
-    return { needed: true, reason: 'Không có dữ liệu sản phẩm phù hợp trong RAG', disableAutoReply: true };
+    return { needed: true, reason: 'Không có dữ liệu sản phẩm phù hợp trong RAG' };
   }
   return { needed: false };
 }
@@ -106,13 +106,13 @@ function updateConversationSummaryInBackground(conversationId, customerId, custo
   if (process.env.AUTO_SUMMARY === 'false') return;
   setTimeout(async () => {
     try {
-      const summaryMessages = getRecentMessages(conversationId, 20);
+      const summaryMessages = await getRecentMessages(conversationId, 20);
       let summary = '';
       if (process.env.AUTO_AI_SUMMARY !== 'false') {
         summary = await summarizeConversation({ messages: summaryMessages, customer, language });
       }
       if (!summary) summary = summarizeConversationFast({ messages: summaryMessages, customer });
-      if (summary) updateConversationSummary(conversationId, customerId, summary);
+      if (summary) await updateConversationSummary(conversationId, customerId, summary);
     } catch (e) {
       console.error('auto summary error:', e.message);
     }
@@ -125,11 +125,11 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   const enrichedCustomerAttrs = { ...customerAttrs };
   if (contactInfo.name) enrichedCustomerAttrs.name = contactInfo.name;
   if (contactInfo.phone) enrichedCustomerAttrs.phone = contactInfo.phone;
-  const customer = getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
+  const customer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
   const source = buildSourceContext({ channel, raw, customerAttrs });
-  const conversation = getOrCreateConversation(customer.id, channel, source.sourceKey, source.sourceName, source.sourceGroup);
+  const conversation = await getOrCreateConversation(customer.id, channel, source.sourceKey, source.sourceName, source.sourceGroup);
   const { intent, confidence } = classifyIntent(text);
-  const inbound = saveMessage({
+  const inbound = await saveMessage({
     conversationId: conversation.id,
     customerId: customer.id,
     channel,
@@ -143,7 +143,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceKey: source.sourceKey,
     sourceName: source.sourceName
   });
-  updateCustomerLearning(customer.id, conversation.id, intent, text);
+  await updateCustomerLearning(customer.id, conversation.id, intent, text);
 
   if (channel === 'haravan_website') {
     notifyWebsiteMessage({
@@ -156,7 +156,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     }).catch(e => console.error('notifyWebsiteMessage error:', e.message));
   }
 
-  const history = getRecentMessages(conversation.id, 12);
+  const history = await getRecentMessages(conversation.id, 12);
   const autoReply = process.env.AUTO_REPLY !== 'false' && conversation.auto_reply !== 0;
   if (!autoReply) {
     logAiResponse({
@@ -172,7 +172,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     return { ok: true, skipped: 'auto_reply_off', conversationId: conversation.id };
   }
 
-  const freshCustomer = getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
+  const freshCustomer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
   const { reply: rawReply, aiUsed, aiError, aiErrorMessage, aiSource, searchQuery, ragProducts } = await generateReply({
     channel,
     userText: text,
@@ -189,13 +189,12 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   if (humanDelayMs > 0) await sleep(humanDelayMs);
 
   if (handoff.needed) {
-    const alertId = flagHandoff({
+    const alertId = await flagHandoff({
       conversationId: conversation.id,
       customerId: customer.id,
       channel,
       reason: handoff.reason,
       message: text,
-      disableAutoReply: handoff.disableAutoReply,
       sourceGroup: source.sourceGroup,
       sourceKey: source.sourceKey,
       sourceName: source.sourceName
@@ -214,13 +213,12 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       deliveryStatus = 'failed';
       deliveryError = e.message || String(e);
       console.error('send message error:', deliveryError);
-      const alertId = flagHandoff({
+      const alertId = await flagHandoff({
         conversationId: conversation.id,
         customerId: customer.id,
         channel,
         reason: 'Không gửi được tin nhắn trả lời tự động',
         message: deliveryError,
-        disableAutoReply: false,
         sourceGroup: source.sourceGroup,
         sourceKey: source.sourceKey,
         sourceName: source.sourceName
@@ -229,7 +227,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     }
   }
 
-  saveMessage({
+  await saveMessage({
     conversationId: conversation.id,
     customerId: customer.id,
     channel,

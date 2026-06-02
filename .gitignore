@@ -21,6 +21,7 @@ tools/logs/
 # Local working copies
 backups/
 temp/
+scripts/run-local-server.cmd
 
 # Local tunnels/tools
 tools/

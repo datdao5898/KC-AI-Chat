@@ -41,12 +41,24 @@ function classifyIntent(text) {
     return { intent: 'customer_info', confidence: 0.9 };
   }
 
+  if (hasWord(msg, ['mua', 'dat', 'chot'])) return { intent: 'buy', confidence: 0.85 };
   if (hasPhrase(msg, ['looking for', 'i am looking', 'im looking', 'please im looking', 'please i am looking']) || hasWord(msg, ['tripod', 'mobile', 'phone', 'smartphone'])) return { intent: 'product_search', confidence: 0.85 };
   if (hasPhrase(msg, ['i want to buy', 'want to buy', 'looking to buy']) || hasWord(msg, ['buy'])) return { intent: 'buy', confidence: 0.85 };
 
   if (hasPhrase(msg, ['nhân viên','người thật','gặp tư vấn','gọi lại','hotline'])) return { intent: 'human', confidence: 0.9 };
   if (hasPhrase(msg, ['địa chỉ','dia chi','ở đâu','o dau','cửa hàng','cua hang','shop ở đâu','shop o dau'])) return { intent: 'store_info', confidence: 0.9 };
-  if (hasPhrase(msg, ['có nhiều sản phẩm','co nhieu san pham','có nhiều sp','co nhieu sp','kingcom có nhiều','kingcom co nhieu','bên mình có nhiều','ben minh co nhieu'])) return { intent: 'catalog_info', confidence: 0.85 };
+  if (hasPhrase(msg, [
+    'có nhiều sản phẩm', 'co nhieu san pham', 'có nhiều sp', 'co nhieu sp',
+    'kingcom có nhiều', 'kingcom co nhieu', 'bên mình có nhiều', 'ben minh co nhieu',
+    'bán sản phẩm gì', 'ban san pham gi', 'bán những sản phẩm gì', 'ban nhung san pham gi',
+    'bán sản phẩm nào', 'ban san pham nao', 'bán những sản phẩm nào', 'ban nhung san pham nao',
+    'bán các loại sản phẩm nào', 'ban cac loai san pham nao',
+    'có sản phẩm gì', 'co san pham gi', 'có những sản phẩm gì', 'co nhung san pham gi',
+    'các sản phẩm đang được bán', 'cac san pham dang duoc ban',
+    'sản phẩm đang được bán', 'san pham dang duoc ban',
+    'sản phẩm đang bán', 'san pham dang ban',
+    'danh mục sản phẩm', 'danh muc san pham', 'catalog'
+  ])) return { intent: 'catalog_info', confidence: 0.9 };
   if (hasWord(msg, ['hello','hi','alo']) || hasPhrase(msg, ['xin chao','chao ban','chao shop','em chao'])) return { intent: 'greeting', confidence: 0.9 };
 
   if (hasWord(msg, ['laptop','thinkpad','macbook','máy tính','may tinh'])) return { intent: 'unsupported', confidence: 0.85 };

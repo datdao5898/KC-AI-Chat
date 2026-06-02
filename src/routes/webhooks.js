@@ -37,7 +37,7 @@ router.post('/facebook', async (req, res) => {
         const msg = event.message;
         if (!msg || !msg.text || msg.is_echo) continue;
         const mid = msg.mid || `${event.sender?.id}-${event.timestamp}`;
-        if (!markProcessed('facebook', mid)) continue;
+        if (!await markProcessed('facebook', mid)) continue;
         const profile = await getFacebookUserProfile(event.sender.id, { raw: event });
         await processIncoming({
           channel: 'facebook',
@@ -59,7 +59,7 @@ router.post('/zalo', async (req, res) => {
     res.json({ ok: true });
     const body = req.body;
     const eventId = body.event_id || body.message?.msg_id || `${body.sender?.id || body.user_id}-${Date.now()}`;
-    if (!markProcessed('zalo', eventId)) return;
+    if (!await markProcessed('zalo', eventId)) return;
     const userId = body.sender?.id || body.user_id || body.from_id;
     const text = body.message?.text || body.text || body.message || '';
     if (!userId || !text) return;
@@ -73,7 +73,7 @@ router.post('/haravan', async (req, res) => {
     res.json({ ok: true });
     const body = req.body;
     const eventId = body.id || body.webhook_id || `${body.customer?.id || body.visitor_id || 'unknown'}-${Date.now()}`;
-    if (!markProcessed('haravan', eventId)) return;
+    if (!await markProcessed('haravan', eventId)) return;
     const userId = String(body.customer?.id || body.visitor_id || body.phone || 'haravan_unknown');
     const text = body.message || body.text || body.note || JSON.stringify(body).slice(0, 500);
     await processIncoming({ channel: 'haravan', externalUserId: userId, text, externalMessageId: eventId, raw: body, sendFn: sendHaravanMessage });
@@ -96,10 +96,10 @@ router.post('/website-chat', async (req, res) => {
   } catch (e) { console.error('Website chat error:', e); res.status(500).json({ error: e.message }); }
 });
 
-router.get('/website-chat/messages', (req, res) => {
+router.get('/website-chat/messages', async (req, res) => {
   const visitorId = String(req.query.visitorId || '').trim();
   if (!visitorId) return res.status(400).json({ error: 'visitor_id_required' });
-  const result = listWebsiteConversationMessages(visitorId, req.query.since || '', req.query.limit || 20);
+  const result = await listWebsiteConversationMessages(visitorId, req.query.since || '', req.query.limit || 20);
   res.json({ ok: true, ...result });
 });
 

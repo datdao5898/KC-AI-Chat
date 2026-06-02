@@ -11,6 +11,15 @@ npm run init-db
 npm start
 ```
 
+App runtime dung PostgreSQL. Dien `DATABASE_URL` trong `.env` truoc khi chay
+`npm run init-db`. Neu dang nang cap tu ban SQLite cu, chay mot lan:
+
+```bash
+npm run migrate-sqlite-to-postgres
+```
+
+Xem huong dan tao database, migrate va backup tai `POSTGRESQL.md`.
+
 Mo dashboard: http://localhost:8650
 
 Dashboard se hien man hinh dang nhap. Dat `ADMIN_USERNAME` va `ADMIN_PASSWORD_HASH`

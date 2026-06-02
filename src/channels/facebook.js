@@ -89,19 +89,19 @@ async function getFacebookUserProfile(userId, context = {}) {
 async function backfillFacebookCustomerNames() {
   if (process.env.FACEBOOK_BACKFILL_NAMES === 'false') return { skipped: true };
 
-  const rows = db.prepare(`
+  const { rows } = await db.query(`
     SELECT cu.id, cu.external_id, cu.name,
       (
         SELECT c.source_key
         FROM conversations c
         WHERE c.customer_id = cu.id AND c.channel='facebook' AND COALESCE(c.source_key,'') LIKE 'facebook/%'
-        ORDER BY datetime(c.updated_at) DESC, rowid DESC
+        ORDER BY c.updated_at DESC, c.id DESC
         LIMIT 1
       ) AS source_key
     FROM customers cu
     WHERE cu.channel='facebook' AND COALESCE(cu.name,'')=''
-    ORDER BY datetime(cu.updated_at) DESC, rowid DESC
-  `).all();
+    ORDER BY cu.updated_at DESC, cu.id DESC
+  `);
 
   let updated = 0;
   for (const row of rows) {
@@ -110,7 +110,7 @@ async function backfillFacebookCustomerNames() {
     if (!pageId) continue;
     const profile = await getFacebookUserProfile(row.external_id, { raw: { recipient: { id: pageId } } });
     if (!profile?.name) continue;
-    getOrCreateCustomer('facebook', row.external_id, { name: profile.name });
+    await getOrCreateCustomer('facebook', row.external_id, { name: profile.name });
     updated += 1;
   }
 
