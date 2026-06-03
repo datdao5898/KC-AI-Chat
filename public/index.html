@@ -5,126 +5,2474 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>KingCom AI Agent</title>
   <style>
-    :root{--brand:#007f7b;--brand-2:#00a39d;--bg:#f5fbfa;--panel:#ffffff;--panel-2:#eef8f7;--text:#0f172a;--muted:#64748b;--line:#d9eeec;--shadow:0 18px 45px rgba(0,127,123,.10);--danger:#dc2626;--warn:#f59e0b;--ok:#059669;--bubble-in:#f1f5f9;--bubble-out:#e1f7f5}
-    [data-theme="dark"]{--bg:#071716;--panel:#0d2422;--panel-2:#123431;--text:#ecfeff;--muted:#9cc9c6;--line:#1f4d49;--shadow:0 18px 45px rgba(0,0,0,.28);--bubble-in:#153331;--bubble-out:#064e4a}
-    *{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,var(--bg),var(--panel-2));color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial,sans-serif}button,input,textarea,select{font:inherit}.app{display:grid;grid-template-columns:410px 1fr;min-height:100vh}.sidebar{padding:20px;border-right:1px solid var(--line);background:rgba(255,255,255,.55);backdrop-filter:blur(12px);overflow:auto;max-height:100vh}[data-theme="dark"] .sidebar{background:rgba(7,23,22,.72)}.main{padding:24px;overflow:auto;max-height:100vh}.brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}.logo{width:42px;height:42px;border-radius:14px;background:var(--brand);color:white;display:grid;place-items:center;font-weight:800;box-shadow:var(--shadow)}h1{font-size:22px;margin:0}h2{margin:0 0 14px;font-size:22px}h3{margin:18px 0 10px}.muted{color:var(--muted);font-size:13px}.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.stat{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px}.stat b{display:block;font-size:22px;color:var(--brand)}.stat.warn b{color:var(--danger)}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.space{justify-content:space-between}.btn{border:0;border-radius:12px;padding:10px 14px;cursor:pointer;background:var(--brand);color:white;font-weight:700;transition:.15s}.btn:hover{transform:translateY(-1px);background:var(--brand-2)}.btn.gray{background:#64748b}.btn.danger{background:var(--danger)}.btn.warn{background:var(--warn)}.btn.ok{background:var(--ok)}.btn.ghost{background:transparent;color:var(--brand);border:1px solid var(--line)}input,textarea,select{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:12px;outline:none}textarea{min-height:92px;resize:vertical}.tabs,.filters{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:4px;margin:14px 0}.tabs button,.filters button{flex:1;border:0;background:transparent;color:var(--muted);border-radius:12px;padding:10px;cursor:pointer;font-weight:700}.tabs button.active,.filters button.active{background:var(--brand);color:white}.conv{cursor:pointer;transition:.15s}.conv:hover{transform:translateY(-1px);border-color:var(--brand)}.conv.active{border-color:var(--brand);box-shadow:0 0 0 3px rgba(0,127,123,.12)}.conv.need{border-color:#fecaca;background:linear-gradient(180deg,var(--panel),rgba(254,226,226,.28))}.badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:700;background:var(--panel-2);color:var(--brand);border:1px solid var(--line)}.badge.on{background:#dcfce7;color:#047857}.badge.off{background:#fee2e2;color:#b91c1c}.badge.need{background:#fee2e2;color:#b91c1c;border-color:#fecaca}.badge.sent{background:#dbeafe;color:#1d4ed8}.chat-head{position:sticky;top:0;z-index:2;background:linear-gradient(180deg,var(--bg),transparent);padding-bottom:10px}.summary,.alertbox{white-space:pre-wrap;background:var(--panel-2);border:1px dashed var(--line);border-radius:14px;padding:12px;line-height:1.5}.alertbox{border-color:#fecaca;background:rgba(254,226,226,.55)}[data-theme="dark"] .alertbox{background:rgba(127,29,29,.28);border-color:#7f1d1d}.messages{display:flex;flex-direction:column;gap:10px}.msg{max-width:860px;padding:12px 14px;border-radius:16px;white-space:pre-wrap;line-height:1.45;border:1px solid var(--line)}.msg.in{background:var(--bubble-in);align-self:flex-start}.msg.out{background:var(--bubble-out);align-self:flex-end}.msg small{display:block;color:var(--muted);margin-bottom:5px}.knowledge textarea{min-height:520px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.empty{display:grid;place-items:center;min-height:60vh;text-align:center}.toast{position:fixed;right:22px;bottom:22px;background:var(--brand);color:white;padding:12px 16px;border-radius:14px;box-shadow:var(--shadow);display:none}.toast.show{display:block}[hidden]{display:none!important}.login-screen{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:linear-gradient(135deg,var(--bg),var(--panel-2));padding:20px}.login-card{width:min(420px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:var(--shadow)}.login-card label{display:block;font-weight:700;margin:12px 0 6px}.login-error{min-height:20px;color:var(--danger);font-weight:700;margin-top:10px}@media(max-width:960px){.app{grid-template-columns:1fr}.sidebar,.main{max-height:none}.stats{grid-template-columns:repeat(2,1fr)}}
+    :root {
+      --kc-primary: #007f7b;
+      --kc-primary-dark: #005f5c;
+      --kc-primary-soft: #e6f7f6;
+      --kc-accent: #ff2d94;
+      --kc-accent-dark: #d91f79;
+      --kc-accent-soft: #fff0f7;
+      --kc-bg: #f4fbfa;
+      --kc-surface: #ffffff;
+      --kc-surface-2: #f8fafc;
+      --kc-line: #d7eeee;
+      --kc-line-2: #e5e7eb;
+      --kc-text: #0f172a;
+      --kc-muted: #64748b;
+      --kc-danger: #dc2626;
+      --kc-warn: #f59e0b;
+      --kc-ok: #16a34a;
+      --kc-info: #2563eb;
+      --kc-shadow: 0 18px 45px rgba(0, 127, 123, .10);
+      --kc-nav: #007f7b;
+      --kc-nav-2: #006c68;
+      --kc-in: #ffffff;
+      --kc-out: #e7f7f6;
+      --kc-radius: 8px;
+    }
 
-    .msg-text,.alert-text{white-space:pre-wrap;word-break:break-word;margin-top:6px}
-    .msg-text.collapsed,.alert-text.collapsed{max-height:150px;overflow:hidden;position:relative}
-    .msg-text.collapsed:after,.alert-text.collapsed:after{content:"";position:absolute;left:0;right:0;bottom:0;height:44px;background:linear-gradient(transparent,var(--panel))}
-    .msg.out .msg-text.collapsed:after{background:linear-gradient(transparent,var(--bubble-out))}
-    .msg.in .msg-text.collapsed:after{background:linear-gradient(transparent,var(--bubble-in))}
-    .show-more{margin-top:6px;border:0;background:transparent;color:var(--brand);font-weight:800;cursor:pointer;padding:4px 0}
-    .messages-head{display:flex;justify-content:space-between;align-items:center;margin:10px 0;color:var(--muted);font-size:13px}
-    .msg-meta{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
-    .msg-actions{display:flex;gap:6px;align-items:center}
-    .msg-actions .mini{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:999px;padding:3px 8px;font-size:11px;cursor:pointer}
-    .msg-actions .mini:hover{color:var(--danger);border-color:var(--danger)}
-    .conv-group,.source-group{border:1px solid var(--line);border-radius:16px;background:var(--panel);margin-bottom:10px;overflow:hidden}
-    .conv-group>summary,.source-group>summary{cursor:pointer;list-style:none;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:800}
-    .conv-group>summary::-webkit-details-marker,.source-group>summary::-webkit-details-marker{display:none}
-    .source-group{margin:0 10px 10px;background:var(--panel-2);box-shadow:none}
-    .source-group>summary{padding:10px 12px;font-size:14px}
-    .conv-list{padding:0 10px 10px}
-    .conv-list .card{margin-bottom:8px;border-radius:12px;box-shadow:none}
-    .conv.compact{padding:10px 12px}
-    .conv-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
-    .conv-title b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .conv-meta{display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .count{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;font-weight:700}
-    .info-toggle{margin-bottom:14px;overflow:hidden}
-    .info-toggle>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:800}
-    .info-toggle>summary::-webkit-details-marker{display:none}
-    .info-toggle>summary:after{content:"+";display:grid;place-items:center;width:28px;height:28px;border-radius:999px;background:var(--panel-2);color:var(--brand);border:1px solid var(--line)}
-    .info-toggle[open]>summary:after{content:"-"}
-    .info-body{padding-top:12px}
-    .staff-live{border-color:var(--brand);background:var(--panel)}
-    .staff-live textarea{min-height:76px}
-    .staff-live .muted{margin:6px 0 10px}
-    .knowledge-head{display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap;margin-bottom:14px}
-    .knowledge-source{min-width:min(100%,360px)}
-    .knowledge-source label,.knowledge-card label{display:block;font-weight:800;margin-bottom:7px}
-    .knowledge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
-    .knowledge-card{margin:0;box-shadow:none}
-    .knowledge-card textarea{min-height:320px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
-    .knowledge-card .row{margin-top:10px}
+    [data-theme="dark"] {
+      --kc-bg: #071716;
+      --kc-surface: #0d2422;
+      --kc-surface-2: #123431;
+      --kc-line: #24524f;
+      --kc-line-2: #1f4d49;
+      --kc-text: #ecfeff;
+      --kc-muted: #9cc9c6;
+      --kc-shadow: 0 18px 45px rgba(0, 0, 0, .28);
+      --kc-nav: #041f1e;
+      --kc-nav-2: #031615;
+      --kc-in: #112f2d;
+      --kc-out: #064e4a;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      background: var(--kc-bg);
+      color: var(--kc-text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    button, input, textarea, select { font: inherit; }
+    button { cursor: pointer; }
+    [hidden] { display: none !important; }
+
+    .login-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: radial-gradient(circle at top left, rgba(0, 127, 123, .13), transparent 34%), var(--kc-bg);
+    }
+
+    .login-card {
+      width: min(420px, 100%);
+      padding: 24px;
+      background: var(--kc-surface);
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+      box-shadow: var(--kc-shadow);
+    }
+
+    .login-card .logo {
+      background: var(--kc-primary);
+    }
+
+    .login-card label {
+      display: block;
+      margin: 14px 0 7px;
+      font-weight: 800;
+      color: var(--kc-text);
+    }
+
+    .login-error {
+      min-height: 22px;
+      margin-top: 12px;
+      color: var(--kc-danger);
+      font-weight: 800;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .side-nav {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px 12px 18px;
+      color: #e8fffd;
+      background: linear-gradient(180deg, var(--kc-nav), var(--kc-nav-2));
+      border-right: 1px solid rgba(0, 95, 92, .34);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+      padding: 4px 8px 8px;
+    }
+
+    .logo {
+      width: 112px;
+      height: 48px;
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 7px;
+      background: rgba(0, 95, 92, .30);
+      color: #ffffff;
+      font-weight: 800;
+      box-shadow: none;
+      overflow: hidden;
+    }
+
+    .logo img {
+      width: 94px;
+      height: auto;
+      display: block;
+    }
+
+    .brand-title {
+      min-width: 0;
+    }
+
+    .brand-title h1 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .brand-title span {
+      display: block;
+      margin-top: 4px;
+      color: rgba(232, 255, 253, .72);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .side-nav .brand {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 5px;
+      padding-bottom: 14px;
+    }
+
+    .side-nav .logo {
+      width: 132px;
+      height: 56px;
+      justify-content: start;
+      padding-left: 10px;
+    }
+
+    .side-nav .logo img {
+      width: 108px;
+    }
+
+    .side-nav .brand-title h1 {
+      display: none;
+    }
+
+    .side-nav .brand-title span {
+      margin-top: 0;
+      padding-left: 4px;
+      color: rgba(232, 255, 253, .86);
+    }
+
+    .nav-menu {
+      display: grid;
+      gap: 7px;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      padding: 10px 10px;
+      border: 0;
+      border-radius: var(--kc-radius);
+      color: rgba(232, 255, 253, .82);
+      background: transparent;
+      text-align: left;
+      font-weight: 700;
+    }
+
+    .nav-btn:hover,
+    .nav-btn.active {
+      color: #ffffff;
+      background: rgba(0, 95, 92, .36);
+    }
+
+    .nav-icon {
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, .24);
+      border-radius: 7px;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .nav-footer {
+      margin-top: auto;
+      display: grid;
+      gap: 10px;
+    }
+
+    .admin-main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .topbar {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 20px;
+      background: rgba(255, 255, 255, .78);
+      border-bottom: 1px solid var(--kc-line);
+      backdrop-filter: blur(14px);
+    }
+
+    [data-theme="dark"] .topbar { background: rgba(13, 36, 34, .78); }
+
+    .page-title h2 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .page-title span {
+      display: block;
+      margin-top: 2px;
+      color: var(--kc-muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .content {
+      min-height: 0;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .workspace {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 220px 280px minmax(0, 1fr) 280px;
+      gap: 12px;
+      padding: 12px;
+      overflow: hidden;
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--kc-surface);
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, .04);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      flex: 0 0 auto;
+      padding: 14px;
+      border-bottom: 1px solid var(--kc-line);
+    }
+
+    .panel-head h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+
+    .panel-head .muted {
+      margin-top: 3px;
+    }
+
+    .panel-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 12px;
+    }
+
+    .panel-footer {
+      flex: 0 0 auto;
+      padding: 12px;
+      border-top: 1px solid var(--kc-line);
+      background: var(--kc-surface-2);
+    }
+
+    .muted {
+      color: var(--kc-muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .space { justify-content: space-between; }
+
+    .btn {
+      min-height: 38px;
+      border: 0;
+      border-radius: var(--kc-radius);
+      padding: 9px 13px;
+      color: #ffffff;
+      background: var(--kc-primary);
+      font-weight: 700;
+      transition: background .15s ease, transform .15s ease, border-color .15s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: var(--kc-primary-dark);
+      transform: translateY(-1px);
+    }
+
+    .btn.accent { background: var(--kc-accent); }
+    .btn.accent:hover { background: var(--kc-accent-dark); }
+    .btn.danger { background: var(--kc-danger); }
+    .btn.warn { background: var(--kc-warn); color: #111827; }
+    .btn.ok { background: var(--kc-ok); }
+    .btn.gray { background: #64748b; }
+    .btn.ghost {
+      color: var(--kc-primary);
+      background: transparent;
+      border: 1px solid var(--kc-line);
+    }
+
+    .btn.ghost:hover {
+      color: var(--kc-primary-dark);
+      background: var(--kc-primary-soft);
+      border-color: var(--kc-primary);
+    }
+
+    .nav-footer .btn.ghost {
+      color: #e8fffd;
+      border-color: rgba(255, 255, 255, .2);
+      background: rgba(0, 95, 92, .28);
+    }
+
+    input, textarea, select {
+      width: 100%;
+      min-height: 40px;
+      padding: 10px 12px;
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+      color: var(--kc-text);
+      background: var(--kc-surface);
+      outline: 0;
+    }
+
+    textarea {
+      min-height: 112px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--kc-primary);
+      box-shadow: 0 0 0 3px rgba(0, 127, 123, .12);
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      padding: 4px;
+      background: var(--kc-surface-2);
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+    }
+
+    .segmented button {
+      min-height: 34px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--kc-muted);
+      background: transparent;
+      font-weight: 700;
+    }
+
+    .segmented button.active {
+      color: #ffffff;
+      background: var(--kc-primary);
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(108px, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      padding: 14px;
+      background: var(--kc-surface);
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+    }
+
+    .stat-card b {
+      display: block;
+      margin-top: 6px;
+      color: var(--kc-primary);
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .stat-card.accent b { color: var(--kc-accent); }
+
+    .source-tree {
+      display: grid;
+      gap: 8px;
+      padding-right: 2px;
+    }
+
+    .source-group {
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+      overflow: hidden;
+      background: var(--kc-surface);
+    }
+
+    .source-group summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 11px;
+      list-style: none;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .source-group summary::-webkit-details-marker { display: none; }
+
+    .source-item {
+      width: calc(100% - 12px);
+      margin: 0 6px 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 10px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      color: var(--kc-text);
+      background: transparent;
+      text-align: left;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .source-item:hover,
+    .source-item.active {
+      color: var(--kc-primary);
+      border-color: var(--kc-line);
+      background: var(--kc-primary-soft);
+    }
+
+    .count {
+      flex: 0 0 auto;
+      color: var(--kc-muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .conv-list {
+      min-height: 0;
+      overflow: auto;
+      flex: 1;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .conv-item {
+      display: grid;
+      gap: 7px;
+      width: 100%;
+      padding: 11px;
+      border: 1px solid var(--kc-line-2);
+      border-radius: var(--kc-radius);
+      color: var(--kc-text);
+      background: var(--kc-surface);
+      text-align: left;
+    }
+
+    .conv-item:hover,
+    .conv-item.active {
+      border-color: var(--kc-primary);
+      box-shadow: 0 0 0 3px rgba(0, 127, 123, .10);
+    }
+
+    .conv-item.need {
+      border-color: rgba(255, 45, 148, .28);
+      background: var(--kc-surface);
+    }
+
+    .conv-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .conv-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border: 1px solid var(--kc-line);
+      border-radius: 999px;
+      color: var(--kc-primary);
+      background: var(--kc-primary-soft);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge.on {
+      color: #047857;
+      background: #dcfce7;
+      border-color: #bbf7d0;
+    }
+
+    .badge.off {
+      color: #b91c1c;
+      background: #fee2e2;
+      border-color: #fecaca;
+    }
+
+    .badge.need {
+      color: #be185d;
+      background: var(--kc-accent-soft);
+      border-color: rgba(255, 45, 148, .35);
+    }
+
+    .badge.warn {
+      color: #92400e;
+      background: #fef3c7;
+      border-color: #fde68a;
+    }
+
+    .badge.sent {
+      color: #1d4ed8;
+      background: #dbeafe;
+      border-color: #bfdbfe;
+    }
+
+    .chat-panel .panel-body {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px;
+      background: linear-gradient(180deg, var(--kc-bg), var(--kc-surface-2));
+    }
+
+    .chat-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .chat-title {
+      min-width: 0;
+    }
+
+    .chat-title h3 {
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 18px;
+    }
+
+    .chat-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .messages {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0;
+    }
+
+    .msg {
+      max-width: min(720px, 88%);
+      padding: 10px 12px;
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+      white-space: normal;
+      line-height: 1.4;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, .04);
+    }
+
+    .msg.in {
+      align-self: flex-start;
+      background: var(--kc-in);
+    }
+
+    .msg.out {
+      align-self: flex-end;
+      background: var(--kc-out);
+      border-color: rgba(0, 127, 123, .25);
+    }
+
+    .msg-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      color: var(--kc-muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .msg-text,
+    .alert-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .msg-text.collapsed,
+    .alert-text.collapsed {
+      position: relative;
+      max-height: 150px;
+      overflow: hidden;
+    }
+
+    .show-more {
+      margin-top: 6px;
+      padding: 0;
+      border: 0;
+      color: var(--kc-primary);
+      background: transparent;
+      font-weight: 700;
+    }
+
+    .mini {
+      min-height: 26px;
+      padding: 3px 8px;
+      border: 1px solid var(--kc-line);
+      border-radius: 999px;
+      color: var(--kc-muted);
+      background: transparent;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .mini:hover {
+      color: var(--kc-danger);
+      border-color: var(--kc-danger);
+    }
+
+    .detail-section {
+      padding: 14px;
+      border-bottom: 1px solid var(--kc-line);
+    }
+
+    .detail-section:last-child { border-bottom: 0; }
+    .detail-panel .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .source-panel .panel-body,
+    .conversation-panel .panel-body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .source-panel .source-tree {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .search-box {
+      margin-bottom: 10px;
+    }
+
+    .detail-section h4 {
+      margin: 0 0 10px;
+      font-size: 14px;
+    }
+
+    .summary-box,
+    .alert-box {
+      padding: 10px;
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+      background: var(--kc-surface-2);
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.45;
+    }
+
+    .alert-box {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 10px 11px;
+      border: 1px solid var(--kc-line);
+      border-left: 4px solid var(--kc-accent);
+      border-radius: var(--kc-radius);
+      background: var(--kc-surface);
+    }
+
+    [data-theme="dark"] .alert-box {
+      background: var(--kc-surface);
+    }
+
+    .alert-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+    .alert-message {
+      color: var(--kc-text);
+      line-height: 1.4;
+      display: -webkit-box;
+      overflow: hidden;
+      white-space: normal;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .alert-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--kc-muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .alert-actions {
+      display: flex;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    .form-stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .staff-reply {
+      display: grid;
+      gap: 9px;
+      padding: 12px;
+      border: 1px solid rgba(0, 127, 123, .22);
+      border-radius: var(--kc-radius);
+      background: var(--kc-surface);
+    }
+
+    .empty-state {
+      min-height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      color: var(--kc-muted);
+      text-align: center;
+    }
+
+    .empty-state h3 {
+      margin: 0 0 6px;
+      color: var(--kc-text);
+      font-size: 18px;
+    }
+
+    .page {
+      height: 100%;
+      overflow: auto;
+      padding: 14px;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .dashboard-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(300px, .9fr);
+      gap: 14px;
+    }
+
+    .page-card {
+      background: var(--kc-surface);
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, .04);
+      overflow: hidden;
+    }
+
+    .page-card > .panel-head {
+      border-bottom: 1px solid var(--kc-line);
+    }
+
+    .knowledge-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(260px, 1fr));
+      gap: 14px;
+    }
+
+    .knowledge-card {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      background: var(--kc-surface);
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+    }
+
+    .knowledge-card label {
+      font-weight: 900;
+    }
+
+    .knowledge-card textarea {
+      min-height: 410px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+    }
+
+    .upload-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .upload-card {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+      background: #ffffff;
+    }
+
+    .upload-card strong {
+      color: var(--kc-text);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .upload-card input[type="file"] {
+      width: 100%;
+      min-width: 0;
+      font-size: 12px;
+    }
+
+    .upload-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .upload-meta {
+      min-height: 18px;
+      color: var(--kc-muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .file-viewer {
+      margin: 0 14px 14px;
+      padding: 12px;
+      border: 1px solid var(--kc-line);
+      border-radius: var(--kc-radius);
+      background: var(--kc-surface-2);
+    }
+
+    .file-viewer textarea {
+      min-height: 260px;
+      margin-top: 10px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      white-space: pre;
+    }
+
+    .test-chat {
+      display: grid;
+      gap: 8px;
+    }
+
+    .test-chat summary {
+      cursor: pointer;
+      font-weight: 700;
+      list-style: none;
+    }
+
+    .test-chat summary::-webkit-details-marker { display: none; }
+
+    .test-chat textarea {
+      min-height: 84px;
+    }
+
+    .inbox-panel .panel-body { overflow: hidden; }
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 60;
+      display: none;
+      max-width: min(420px, calc(100vw - 44px));
+      padding: 12px 14px;
+      border-radius: var(--kc-radius);
+      color: #ffffff;
+      background: var(--kc-primary);
+      box-shadow: var(--kc-shadow);
+      font-weight: 850;
+    }
+
+    .toast.show { display: block; }
+
+    @media (max-width: 1320px) {
+      .workspace { grid-template-columns: 250px minmax(360px, 1fr); }
+      .source-panel { display: none; }
+      .detail-panel { display: none; }
+      .stat-grid { grid-template-columns: repeat(3, minmax(108px, 1fr)); }
+      .knowledge-grid { grid-template-columns: 1fr; }
+      .upload-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+    }
+
+    @media (max-width: 980px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .side-nav {
+        position: static;
+        height: auto;
+      }
+      .admin-main {
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+      }
+      .content { overflow: visible; }
+      .workspace {
+        height: auto;
+        grid-template-columns: 1fr;
+        overflow: visible;
+      }
+      .panel { min-height: 520px; }
+      .detail-panel { display: flex; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (max-width: 640px) {
+      .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .upload-grid { grid-template-columns: 1fr; }
+      .chat-actions .btn { width: 100%; }
+      .msg { max-width: 96%; }
+    }
   </style>
 </head>
 <body>
   <div class="login-screen" id="loginScreen">
     <form class="login-card" id="loginForm">
-      <div class="brand"><div class="logo">KC</div><div><h1>Admin Login</h1><div class="muted">KingCom AI Agent</div></div></div>
+      <div class="brand">
+        <div class="logo"><img src="/assets/kingcom-logo.png" alt="KingCom" /></div>
+        <div class="brand-title">
+          <h1>KingCom AI Agent</h1>
+          <span>Admin login</span>
+        </div>
+      </div>
       <label for="loginUser">Username</label>
       <input id="loginUser" autocomplete="username" required />
       <label for="loginPass">Password</label>
       <input id="loginPass" type="password" autocomplete="current-password" required />
-      <button class="btn" type="submit" style="width:100%;margin-top:14px">Login</button>
+      <button class="btn" type="submit" style="width:100%;margin-top:16px">Login</button>
       <div class="login-error" id="loginError"></div>
     </form>
   </div>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="brand"><div class="logo">KC</div><div><h1>KingCom AI Agent</h1><div class="muted">CSKH đa kênh</div></div></div>
-      <div class="row space"><button class="btn ghost" id="themeBtn">🌙 Dark mode</button><button class="btn ghost" id="refreshBtn">↻ Tải lại</button><button class="btn ghost" id="logoutBtn">Logout</button><select id="langSelect" style="width:auto;min-width:96px"><option value="vi">VI</option><option value="en">EN</option><option value="zh">中文</option></select></div>
-      <div class="stats" id="stats"></div>
-      <div class="tabs"><button class="active" data-tab="chat">Hội thoại</button><button data-tab="knowledge">FAQ/Policy</button></div>
-      <div class="filters"><button class="active" data-filter="all">Tất cả</button><button data-filter="need">Cần xử lý</button><button data-filter="auto">Auto ON</button></div>
-      <h3>Hội thoại</h3><div id="conversationList"></div>
-      <div class="card" style="margin-top:14px"><b>Test website chat</b><textarea id="testMsg">tôi muốn mua sản phẩm chưa có dữ liệu xyzabc</textarea><button class="btn" id="sendTestBtn">Gửi test</button></div>
+
+  <div class="app-shell">
+    <aside class="side-nav">
+      <div class="brand">
+        <div class="logo"><img src="/assets/kingcom-logo.png" alt="KingCom" /></div>
+        <div class="brand-title">
+          <h1>KingCom AI Agent</h1>
+          <span id="brandSubtitle">CSKH đa kênh</span>
+        </div>
+      </div>
+
+      <div class="nav-menu">
+        <button class="nav-btn active" data-view="dashboard"><span class="nav-icon">📊</span><span data-i18n="navDashboard">Tổng quan</span></button>
+        <button class="nav-btn" data-view="chat"><span class="nav-icon">💬</span><span data-i18n="navChat">Hội thoại</span></button>
+        <button class="nav-btn" data-view="alerts"><span class="nav-icon">🚨</span><span data-i18n="navAlerts">Cảnh báo</span></button>
+        <button class="nav-btn" data-view="knowledge"><span class="nav-icon">🧠</span><span data-i18n="navKnowledge">Dữ liệu AI</span></button>
+        <button class="nav-btn" data-view="logs"><span class="nav-icon">📜</span><span data-i18n="navLogs">Nhật ký</span></button>
+      </div>
+
+      <div class="nav-footer">
+        <button class="btn ghost" id="themeBtn" type="button">Dark mode</button>
+        <button class="btn ghost" id="refreshBtn" type="button">Đồng bộ</button>
+        <select id="langSelect" aria-label="Language">
+          <option value="vi">VI</option>
+          <option value="en">EN</option>
+          <option value="zh">中文</option>
+        </select>
+        <button class="btn ghost" id="logoutBtn" type="button">Logout</button>
+      </div>
     </aside>
-    <main class="main" id="main"></main>
+
+    <main class="admin-main">
+      <header class="topbar">
+        <div class="page-title">
+          <h2 id="pageTitle">Hội thoại</h2>
+          <span id="pageSubtitle">Quản lý inbox Facebook, Zalo và website</span>
+        </div>
+        <div class="top-actions">
+          <span class="badge" id="topOpenAlerts">0 cần xử lý</span>
+          <span class="badge on" id="topAutoCount">0 auto on</span>
+        </div>
+      </header>
+      <section class="content" id="content"></section>
+    </main>
   </div>
+
   <div class="toast" id="toast"></div>
+
 <script>
-const API='/api';
-const I18N={
-vi:{subtitle:'CSKH đa kênh',dark:'🌙 Dark mode',light:'☀️ Light mode',refresh:'↻ Tải lại',testTitle:'Test website chat',sendTest:'Gửi test',chatTab:'Hội thoại',knowledgeTab:'FAQ/Policy',all:'Tất cả',need:'Cần xử lý',auto:'Auto ON',conversationsTitle:'Hội thoại',customers:'KH',conversations:'Hội thoại',messages:'Tin nhắn',products:'SP',openAlerts:'Alert mở',needShort:'Cần xử lý',needStaff:'Cần nhân viên',needStaffHandle:'Cần nhân viên xử lý',autoReplyOn:'Auto-reply bật',autoReplyOff:'Auto-reply tắt',turnAutoOff:'Tắt auto-reply',turnAutoOn:'Bật auto-reply',handoff:'Yêu cầu nhân viên',resolved:'Đã xử lý',summarize:'Tóm tắt AI',deleteConversation:'Xóa hội thoại',customerInfo:'Thông tin khách',interested:'Quan tâm',conversationSummary:'Tóm tắt hội thoại',noSummary:'Chưa có tóm tắt.',saveSummary:'Lưu tóm tắt',alertHistory:'Lịch sử alert',chatHistory:'Lịch sử chat',newestFirst:'Tin mới nhất ở trên',delete:'Xóa',chooseConversation:'Chọn hội thoại để xem',chooseHelp:'Các hội thoại cần người thật sẽ hiện badge đỏ.',noConversations:'Không có hội thoại phù hợp',updated:'Cập nhật',status:'Trạng thái',reason:'Lý do',knowledgeTitle:'Quản lý FAQ / Policy / Catalog',policies:'Chính sách',catalogSummary:'Tổng quan catalog',saveContent:'Lưu nội dung',reload:'Tải lại',knowledgeHint:'Nội dung này được đưa vào RAG prompt để AI trả lời khách.',authPrompt:'Nhập ADMIN_TOKEN để mở dashboard:',loadError:'Lỗi tải dữ liệu: ',loadedKnowledge:'Đã tải knowledge',updatedAuto:'Đã cập nhật auto-reply',handoffReasonPrompt:'Lý do cần nhân viên xử lý:',handoffReasonDefault:'Nhân viên kiểm tra và tư vấn thủ công',alertCreated:'Đã tạo alert nhân viên',resolvePrompt:'Ghi chú xử lý:',resolveDefault:'Đã xử lý',resolvedToast:'Đã đánh dấu xử lý',summarizing:'Đang tóm tắt AI...',summarized:'Đã tóm tắt',savedSummary:'Đã lưu tóm tắt',saved:'Đã lưu ',sentTest:'Đã gửi test',deleteConvConfirm:'Xóa mềm toàn bộ hội thoại này? Tất cả tin nhắn sẽ bị ẩn khỏi dashboard và không còn vào context AI.',deletedConversation:'Đã xóa mềm hội thoại',deleteMsgConfirm:'Xóa mềm tin nhắn này? Tin sẽ bị ẩn khỏi dashboard và không còn vào context AI.',deletedMessage:'Đã xóa mềm tin nhắn',reloaded:'Đã tải lại'},
-en:{subtitle:'Multi-channel CS',dark:'🌙 Dark mode',light:'☀️ Light mode',refresh:'↻ Refresh',testTitle:'Test website chat',sendTest:'Send test',chatTab:'Conversations',knowledgeTab:'FAQ/Policy',all:'All',need:'Needs action',auto:'Auto ON',conversationsTitle:'Conversations',customers:'Customers',conversations:'Conversations',messages:'Messages',products:'Products',openAlerts:'Open alerts',needShort:'Needs action',needStaff:'Needs staff',needStaffHandle:'Needs staff handling',autoReplyOn:'Auto-reply on',autoReplyOff:'Auto-reply off',turnAutoOff:'Turn off auto-reply',turnAutoOn:'Turn on auto-reply',handoff:'Ask staff',resolved:'Resolved',summarize:'AI summary',deleteConversation:'Delete conversation',customerInfo:'Customer info',interested:'Interested',conversationSummary:'Conversation summary',noSummary:'No summary yet.',saveSummary:'Save summary',alertHistory:'Alert history',chatHistory:'Chat history',newestFirst:'Newest first',delete:'Delete',chooseConversation:'Select a conversation',chooseHelp:'Conversations needing staff will show a red badge.',noConversations:'No matching conversations',updated:'Updated',status:'Status',reason:'Reason',knowledgeTitle:'Manage FAQ / Policy / Catalog',policies:'Policies',catalogSummary:'Catalog summary',saveContent:'Save content',reload:'Reload',knowledgeHint:'This content is added to the RAG prompt for customer replies.',authPrompt:'Enter ADMIN_TOKEN to open dashboard:',loadError:'Failed to load data: ',loadedKnowledge:'Knowledge loaded',updatedAuto:'Auto-reply updated',handoffReasonPrompt:'Reason for staff handling:',handoffReasonDefault:'Staff to check and advise manually',alertCreated:'Staff alert created',resolvePrompt:'Resolution note:',resolveDefault:'Resolved',resolvedToast:'Marked as resolved',summarizing:'Generating AI summary...',summarized:'Summary generated',savedSummary:'Summary saved',saved:'Saved ',sentTest:'Test sent',deleteConvConfirm:'Soft delete this entire conversation? All messages will be hidden from the dashboard and AI context.',deletedConversation:'Conversation soft-deleted',deleteMsgConfirm:'Soft delete this message? It will be hidden from the dashboard and AI context.',deletedMessage:'Message soft-deleted',reloaded:'Reloaded'},
-zh:{subtitle:'多渠道客服',dark:'🌙 深色模式',light:'☀️ 浅色模式',refresh:'↻ 刷新',testTitle:'测试网站聊天',sendTest:'发送测试',chatTab:'会话',knowledgeTab:'FAQ/政策',all:'全部',need:'待处理',auto:'自动开启',conversationsTitle:'会话',customers:'客户',conversations:'会话',messages:'消息',products:'产品',openAlerts:'未处理提醒',needShort:'待处理',needStaff:'需要人工',needStaffHandle:'需要人工处理',autoReplyOn:'自动回复已开',autoReplyOff:'自动回复已关',turnAutoOff:'关闭自动回复',turnAutoOn:'开启自动回复',handoff:'请求人工',resolved:'已处理',summarize:'AI 总结',deleteConversation:'删除会话',customerInfo:'客户信息',interested:'关注',conversationSummary:'会话总结',noSummary:'暂无总结。',saveSummary:'保存总结',alertHistory:'提醒记录',chatHistory:'聊天记录',newestFirst:'最新消息在上方',delete:'删除',chooseConversation:'请选择一个会话',chooseHelp:'需要人工处理的会话会显示红色标记。',noConversations:'没有匹配的会话',updated:'更新时间',status:'状态',reason:'原因',knowledgeTitle:'管理 FAQ / 政策 / 目录',policies:'政策',catalogSummary:'目录概览',saveContent:'保存内容',reload:'重新加载',knowledgeHint:'这些内容会加入 RAG 提示，用于回复客户。',authPrompt:'请输入 ADMIN_TOKEN 打开后台:',loadError:'加载数据失败: ',loadedKnowledge:'知识库已加载',updatedAuto:'自动回复已更新',handoffReasonPrompt:'需要人工处理的原因:',handoffReasonDefault:'人工检查并手动咨询',alertCreated:'已创建人工提醒',resolvePrompt:'处理备注:',resolveDefault:'已处理',resolvedToast:'已标记为处理完成',summarizing:'正在生成 AI 总结...',summarized:'总结已生成',savedSummary:'总结已保存',saved:'已保存 ',sentTest:'测试已发送',deleteConvConfirm:'确认软删除整个会话？所有消息将从后台和 AI 上下文中隐藏。',deletedConversation:'会话已软删除',deleteMsgConfirm:'确认软删除此消息？它将从后台和 AI 上下文中隐藏。',deletedMessage:'消息已软删除',reloaded:'已刷新'}};
-const state={stats:{},convs:[],selected:null,tab:'chat',filter:'all',knowledge:{sourceKey:'common',faq:'',policies:'',catalog_summary:''},knowledgeSources:[],kSource:'common',theme:localStorage.getItem('kc-theme')||'light',lang:localStorage.getItem('kc-admin-lang')||'vi'};
-const t=k=>(I18N[state.lang]&&I18N[state.lang][k])||I18N.vi[k]||k;
-const $=s=>document.querySelector(s);const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
-function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2400)}
-function showLogin(message=''){if($('#loginError'))$('#loginError').textContent=message;$('#loginScreen').hidden=false;setTimeout(()=>$('#loginUser')?.focus(),30)}
-function hideLogin(){$('#loginScreen').hidden=true;if($('#loginPass'))$('#loginPass').value='';if($('#loginError'))$('#loginError').textContent=''}
-async function api(path,opts={}){const r=await fetch(path,{...opts,credentials:'same-origin'});if(path.startsWith(API)&&(r.status===401||r.status===403)){showLogin('Please login again.');throw new Error('unauthorized')}if(!r.ok)throw new Error(await r.text());return r.json()}
-async function checkAuth(){try{await fetch('/auth/me',{credentials:'same-origin'}).then(r=>{if(!r.ok)throw new Error('unauthorized');return r.json()});hideLogin();return true}catch(e){showLogin();return false}}
-async function login(e){e.preventDefault();const username=$('#loginUser').value.trim();const password=$('#loginPass').value;const r=await fetch('/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});if(!r.ok){showLogin('Wrong username or password.');return}hideLogin();await startDashboard()}
-async function logout(){await fetch('/auth/logout',{method:'POST',credentials:'same-origin'});showLogin('Logged out.')}
-function setTheme(theme){state.theme=theme;document.documentElement.dataset.theme=theme;localStorage.setItem('kc-theme',theme);$('#themeBtn').textContent=theme==='dark'?t('light'):t('dark')}
-function setLang(lang){state.lang=I18N[lang]?lang:'vi';document.documentElement.lang=state.lang;localStorage.setItem('kc-admin-lang',state.lang);if($('#langSelect'))$('#langSelect').value=state.lang;setTheme(state.theme);render()}
+const API = '/api';
 
-function renderExpandableText(text,cls='msg-text'){const raw=String(text??'');const long=raw.length>450||raw.split(/\r?\n/).length>8;return `<div class="${cls}${long?' collapsed':''}">${esc(raw)}</div>${long?'<button class="show-more" type="button">Xem thêm</button>':''}`}
-function bindShowMore(){const infoBody=$('.info-body');const c=state.selected?.conversation;if(infoBody&&c&&!infoBody.dataset.contactRendered){infoBody.insertAdjacentHTML('afterbegin',renderCustomerContact(c));infoBody.dataset.contactRendered='1'}document.querySelectorAll('.show-more').forEach(btn=>btn.onclick=e=>{e.stopPropagation();const box=btn.previousElementSibling;const open=!box.classList.contains('expanded');box.classList.toggle('expanded',open);box.classList.toggle('collapsed',!open);btn.textContent=open?(state.lang==='en'?'Collapse':state.lang==='zh'?'收起':'Thu gọn'):(state.lang==='en'?'Show more':state.lang==='zh'?'查看更多':'Xem thêm')})}
-function renderStats(){const s=state.stats;$('#stats').innerHTML=`<div class="stat">${t('customers')}<b>${s.customers||0}</b></div><div class="stat">${t('conversations')}<b>${s.conversations||0}</b></div><div class="stat warn">${t('needShort')}<b>${s.needs_human||0}</b></div><div class="stat">${t('messages')}<b>${s.messages||0}</b></div><div class="stat">${t('products')}<b>${s.products||0}</b></div><div class="stat warn">${t('openAlerts')}<b>${s.open_alerts||0}</b></div>`}
-function renderShell(){document.querySelector('.brand .muted').textContent=t('subtitle');$('#refreshBtn').textContent=t('refresh');$('#themeBtn').textContent=state.theme==='dark'?t('light'):t('dark');document.querySelector('.card b').textContent=t('testTitle');$('#sendTestBtn').textContent=t('sendTest');document.querySelector('[data-tab="chat"]').textContent=t('chatTab');document.querySelector('[data-tab="knowledge"]').textContent=t('knowledgeTab');document.querySelector('[data-filter="all"]').textContent=t('all');document.querySelector('[data-filter="need"]').textContent=t('need');document.querySelector('[data-filter="auto"]').textContent=t('auto');document.querySelector('.sidebar h3').textContent=t('conversationsTitle');if($('#langSelect'))$('#langSelect').value=state.lang}
-function channelOrder(group){return ({facebook:1,zalo:2,website:3})[group]||9}
-function groupTitle(group,label){return label||({facebook:'Facebook',zalo:'Zalo',website:'Website'})[group]||group||'Khác'}
-function groupConversations(rows){const grouped=new Map();for(const c of rows){const group=c.source_group||c.channel||'other';const source=c.source_name||c.channel||'Không rõ nguồn';if(!grouped.has(group))grouped.set(group,{key:group,label:groupTitle(group,c.source_group_label),items:new Map(),count:0,need:0});const g=grouped.get(group);if(!g.items.has(source))g.items.set(source,{name:source,rows:[],count:0,need:0});const s=g.items.get(source);s.rows.push(c);s.count++;g.count++;if(c.needs_human){s.need++;g.need++}}return [...grouped.values()].sort((a,b)=>channelOrder(a.key)-channelOrder(b.key)||a.label.localeCompare(b.label,'vi')).map(g=>({...g,items:[...g.items.values()].sort((a,b)=>b.need-a.need||b.count-a.count||a.name.localeCompare(b.name,'vi'))}))}
-function filteredConvs(){return state.convs.filter(c=>state.filter==='need'?c.needs_human:state.filter==='auto'?c.auto_reply:1)}
-function renderConvs(){const rows=filteredConvs().sort((a,b)=>new Date(b.updated_at||0)-new Date(a.updated_at||0));const list=$('#conversationList');const groups=groupConversations(rows);const convUnit=state.lang==='en'?' conversations':state.lang==='zh'?' 个会话':' cuộc';list.innerHTML=groups.map(g=>`<details class="conv-group" open><summary><span>${esc(g.label)}</span><span class="count">${g.count}${convUnit}${g.need?` · ${g.need} ${t('needShort')}`:''}</span></summary>${g.items.map(src=>`<details class="source-group" open><summary><span>${esc(src.name)}</span><span class="count">${src.count}${src.need?` · ${src.need} ${t('needShort')}`:''}</span></summary><div class="conv-list">${src.rows.map(c=>`<div class="card conv compact ${c.needs_human?'need':''} ${state.selected?.conversation?.id===c.id?'active':''}" data-id="${esc(c.id)}"><div class="row"><span class="badge">${esc(c.channel)}</span><span class="badge ${c.auto_reply?'on':'off'}">${c.auto_reply?'Auto ON':'Auto OFF'}</span>${c.needs_human?`<span class="badge need">${t('needStaff')}</span>`:''}</div><div class="conv-title"><b>${esc(c.name||c.external_id)}</b></div><small class="muted conv-meta">${esc(c.updated_at)} | ${esc(c.handoff_reason||c.last_intent||'')}</small></div>`).join('')}</div></details>`).join('')}</details>`).join('')||`<div class="card muted">${t('noConversations')}</div>`;list.querySelectorAll('.conv').forEach(el=>el.onclick=()=>openConv(el.dataset.id))}
-function contactLabel(key){const labels={vi:{name:'Tên',phone:'Số điện thoại',email:'Email'},en:{name:'Name',phone:'Phone',email:'Email'},zh:{name:'姓名',phone:'电话',email:'邮箱'}};return (labels[state.lang]||labels.vi)[key]||key}
-function renderCustomerContact(c){const rows=[['name',c.name],['phone',c.phone],['email',c.email]].filter(([,v])=>String(v||'').trim());if(!rows.length)return `<p class="muted">${state.lang==='en'?'No contact info yet.':state.lang==='zh'?'暂无联系信息。':'Chưa có thông tin liên hệ.'}</p>`;return `<div class="summary">${rows.map(([k,v])=>`<b>${contactLabel(k)}:</b> ${esc(v)}`).join('<br>')}</div>`}
-function renderChat(){const m=$('#main');const c=state.selected?.conversation;if(!c){m.innerHTML=`<div class="empty"><div><h2>${t('chooseConversation')}</h2><p class="muted">${t('chooseHelp')}</p></div></div>`;return}const alerts=state.selected.alerts||[];const messages=state.selected.messages||[];m.innerHTML=`<div class="chat-head"><div class="row space"><div><h2>${esc(c.name||c.external_id||'Khách chat')}</h2><div class="muted">${esc(c.channel)} · ID ${esc(c.external_id)} · ${t('updated')}: ${esc(c.updated_at)}</div></div><div class="row"><span class="badge ${c.auto_reply?'on':'off'}">${c.auto_reply?t('autoReplyOn'):t('autoReplyOff')}</span>${c.needs_human?`<span class="badge need">${t('needStaffHandle')}</span>`:''}<button class="btn ${c.auto_reply?'danger':'ok'}" id="toggleAutoBtn">${c.auto_reply?t('turnAutoOff'):t('turnAutoOn')}</button><button class="btn warn" id="handoffBtn">${t('handoff')}</button>${c.needs_human?`<button class="btn ok" id="resolveBtn">${t('resolved')}</button>`:''}<button class="btn" id="summaryBtn">${t('summarize')}</button><button class="btn danger" id="deleteConvBtn">${t('deleteConversation')}</button></div></div></div>${c.needs_human?`<div class="card alertbox"><b>${t('needStaff')}</b><p>${t('reason')}: ${esc(c.handoff_reason||'')}</p><p>${t('status')}: ${esc(c.handoff_status||'open')} · ${c.auto_reply?t('autoReplyOn'):t('autoReplyOff')}</p></div>`:''}<details class="card info-toggle"><summary>${t('customerInfo')}</summary><div class="info-body"><p class="muted">${t('interested')}: ${esc(c.interested_products||'[]')}</p><b>${t('conversationSummary')}</b><div class="summary">${esc(c.summary||t('noSummary'))}</div><textarea id="summaryText">${esc(c.summary||'')}</textarea><button class="btn gray" id="saveSummaryBtn">${t('saveSummary')}</button></div></details>${alerts.length?`<div class="card"><b>${t('alertHistory')}</b>${alerts.map(a=>`<div class="summary"><b>${esc(a.reason)}</b> <span class="badge ${a.delivery_status==='sent'?'sent':''}">${esc(a.delivery_status)}</span><br>${renderExpandableText(a.message,'alert-text')}<small>${esc(a.created_at)} · ${esc(a.status)}</small></div>`).join('<br>')}</div>`:''}<div class="messages-head"><b>${t('chatHistory')}</b><span>${t('newestFirst')}</span></div><div class="messages">${messages.map(msg=>`<div class="msg ${msg.direction==='in'?'in':'out'}"><div class="msg-meta"><small><b>${esc(msg.sender_type)}</b> · ${esc(msg.intent||'')} · ${esc(msg.created_at)}</small><div class="msg-actions"><button class="mini" type="button" data-delete-msg="${esc(msg.id)}">${t('delete')}</button></div></div>${renderExpandableText(msg.text)}</div>`).join('')}</div>`;$('#toggleAutoBtn').onclick=toggleAuto;$('#handoffBtn').onclick=handoff;if($('#resolveBtn'))$('#resolveBtn').onclick=resolveHandoff;$('#summaryBtn').onclick=summarize;$('#saveSummaryBtn').onclick=saveSummary;$('#deleteConvBtn').onclick=deleteConversation;document.querySelectorAll('[data-delete-msg]').forEach(btn=>btn.onclick=()=>deleteMessage(btn.dataset.deleteMsg));bindShowMore()}
+const I18N = {
+  vi: {
+    subtitle: 'CSKH đa kênh',
+    navChat: 'Hội thoại',
+    navDashboard: 'Tổng quan',
+    navAlerts: 'Cảnh báo',
+    navKnowledge: 'Dữ liệu AI',
+    navLogs: 'Nhật ký',
+    pageChat: 'Hội thoại',
+    pageChatSub: 'Quản lý inbox Facebook, Zalo và website',
+    pageDashboard: 'Tổng quan',
+    pageDashboardSub: 'Tổng quan vận hành AI Agent',
+    pageAlerts: 'Cảnh báo',
+    pageAlertsSub: 'Các trường hợp AI cần nhân viên kiểm tra',
+    pageKnowledge: 'FAQ/Policy',
+    pageKnowledgeSub: 'Train kiến thức theo từng nguồn',
+    pageLogs: 'Nhật ký',
+    pageLogsSub: 'Theo dõi phản hồi AI và alert hệ thống',
+    refresh: 'Đồng bộ',
+    dark: 'Dark mode',
+    light: 'Light mode',
+    all: 'Tất cả',
+    need: 'Cần xử lý',
+    auto: 'Auto ON',
+    search: 'Tìm hội thoại...',
+    sources: 'Nguồn',
+    conversations: 'Hội thoại',
+    noConversation: 'Chọn một hội thoại',
+    noConversationSub: 'Nội dung chat và thông tin khách sẽ hiện ở đây.',
+    noData: 'Không có dữ liệu phù hợp',
+    customerInfo: 'Thông tin khách',
+    aiSummary: 'Tóm tắt AI',
+    alerts: 'Cảnh báo',
+    sourceKnowledge: 'Kiến thức nguồn',
+    chatHistory: 'Lịch sử chat',
+    updated: 'Cập nhật',
+    phone: 'Số điện thoại',
+    email: 'Email',
+    source: 'Nguồn',
+    status: 'Trạng thái',
+    interested: 'Quan tâm',
+    autoOn: 'Auto ON',
+    autoOff: 'Auto OFF',
+    needsStaff: 'Cần nhân viên',
+    toggleAutoOn: 'Bật auto',
+    toggleAutoOff: 'Tắt auto',
+    handoff: 'Gọi nhân viên',
+    resolved: 'Đã xử lý',
+    summarize: 'Tóm tắt AI',
+    deleteConversation: 'Xóa hội thoại',
+    saveSummary: 'Lưu tóm tắt',
+    delete: 'Xóa',
+    showMore: 'Xem thêm',
+    collapse: 'Thu gọn',
+    staffReply: 'Nhân viên trực chat website',
+    sendCustomer: 'Gửi cho khách',
+    replyPlaceholder: 'Nhập phản hồi cho khách...',
+    testTitle: 'Test website chat',
+    sendTest: 'Gửi test',
+    testPlaceholder: 'Nhập tin nhắn test widget...',
+    statsCustomers: 'Khách hàng',
+    statsConversations: 'Hội thoại',
+    statsMessages: 'Tin nhắn',
+    statsProducts: 'Sản phẩm',
+    statsNeed: 'Cần xử lý',
+    statsAlerts: 'Alert mở',
+    latestAlerts: 'Alert mới nhất',
+    common: 'Dùng chung',
+    trainingSource: 'Nguồn train',
+    faq: 'FAQ',
+    policies: 'Chính sách',
+    catalog: 'Tổng quan catalog',
+    productCsv: 'Sản phẩm CSV',
+    advisoryKnowledge: 'Kiến thức tư vấn',
+    policyScope: 'Chính sách & phạm vi',
+    uploadTrainingFiles: 'Upload file training',
+    uploadTrainingSub: 'File sẽ áp dụng theo nguồn đang chọn',
+    chooseFile: 'Chọn file',
+    uploadFile: 'Upload',
+    uploaded: 'Đã upload',
+    viewFile: 'Xem file',
+    closeFile: 'Đóng',
+    currentFile: 'File hiện tại',
+    noFileUploaded: 'Chưa có file',
+    fileUpdated: 'Cập nhật',
+    selectFileFirst: 'Chọn file trước khi upload.',
+    unsupportedFile: 'Chỉ hỗ trợ CSV, TXT hoặc MD.',
+    saveContent: 'Lưu nội dung',
+    reload: 'Đồng bộ',
+    authAgain: 'Vui lòng đăng nhập lại.',
+    loginFailed: 'Sai username hoặc password.',
+    loadError: 'Lỗi tải dữ liệu: ',
+    reloaded: 'Đã đồng bộ',
+    updatedAuto: 'Đã cập nhật auto-reply',
+    handoffPrompt: 'Lý do cần nhân viên xử lý:',
+    handoffDefault: 'Nhân viên kiểm tra và tư vấn thủ công',
+    alertCreated: 'Đã tạo alert nhân viên',
+    resolvePrompt: 'Ghi chú xử lý:',
+    resolveDefault: 'Đã xử lý',
+    resolvedToast: 'Đã đánh dấu xử lý',
+    summarizing: 'Đang tóm tắt AI...',
+    summarized: 'Đã tóm tắt',
+    savedSummary: 'Đã lưu tóm tắt',
+    saved: 'Đã lưu',
+    sentTest: 'Đã gửi test',
+    sentReply: 'Đã gửi tin nhắn cho khách',
+    deleteConvConfirm: 'Xóa mềm toàn bộ hội thoại này? Tin nhắn sẽ bị ẩn khỏi dashboard và context AI.',
+    deletedConversation: 'Đã xóa mềm hội thoại',
+    deleteMsgConfirm: 'Xóa mềm tin nhắn này?',
+    deletedMessage: 'Đã xóa mềm tin nhắn',
+    allSources: 'Tất cả nguồn',
+    logout: 'Logout'
+  },
+  en: {
+    subtitle: 'Multi-channel CS',
+    navChat: 'Conversations',
+    navDashboard: 'Overview',
+    navAlerts: 'Alerts',
+    navKnowledge: 'AI data',
+    navLogs: 'Logs',
+    pageChat: 'Conversations',
+    pageChatSub: 'Manage Facebook, Zalo and website inboxes',
+    pageDashboard: 'Overview',
+    pageDashboardSub: 'AI Agent operating overview',
+    pageAlerts: 'Alerts',
+    pageAlertsSub: 'Cases that need staff review',
+    pageKnowledge: 'FAQ/Policy',
+    pageKnowledgeSub: 'Train knowledge per source',
+    pageLogs: 'Logs',
+    pageLogsSub: 'Monitor AI replies and system alerts',
+    refresh: 'Sync',
+    dark: 'Dark mode',
+    light: 'Light mode',
+    all: 'All',
+    need: 'Needs action',
+    auto: 'Auto ON',
+    search: 'Search conversations...',
+    sources: 'Sources',
+    conversations: 'Conversations',
+    noConversation: 'Select a conversation',
+    noConversationSub: 'Chat history and customer details will appear here.',
+    noData: 'No matching data',
+    customerInfo: 'Customer info',
+    aiSummary: 'AI summary',
+    alerts: 'Alerts',
+    sourceKnowledge: 'Source knowledge',
+    chatHistory: 'Chat history',
+    updated: 'Updated',
+    phone: 'Phone',
+    email: 'Email',
+    source: 'Source',
+    status: 'Status',
+    interested: 'Interested',
+    autoOn: 'Auto ON',
+    autoOff: 'Auto OFF',
+    needsStaff: 'Needs staff',
+    toggleAutoOn: 'Turn auto on',
+    toggleAutoOff: 'Turn auto off',
+    handoff: 'Ask staff',
+    resolved: 'Resolved',
+    summarize: 'AI summary',
+    deleteConversation: 'Delete conversation',
+    saveSummary: 'Save summary',
+    delete: 'Delete',
+    showMore: 'Show more',
+    collapse: 'Collapse',
+    staffReply: 'Website live reply',
+    sendCustomer: 'Send to customer',
+    replyPlaceholder: 'Type a reply...',
+    testTitle: 'Test website chat',
+    sendTest: 'Send test',
+    testPlaceholder: 'Type a widget test message...',
+    statsCustomers: 'Customers',
+    statsConversations: 'Conversations',
+    statsMessages: 'Messages',
+    statsProducts: 'Products',
+    statsNeed: 'Needs action',
+    statsAlerts: 'Open alerts',
+    latestAlerts: 'Latest alerts',
+    common: 'Common',
+    trainingSource: 'Training source',
+    faq: 'FAQ',
+    policies: 'Policies',
+    catalog: 'Catalog summary',
+    productCsv: 'Product CSV',
+    advisoryKnowledge: 'Advisory knowledge',
+    policyScope: 'Policies & scope',
+    uploadTrainingFiles: 'Upload training files',
+    uploadTrainingSub: 'Files apply to the selected source',
+    chooseFile: 'Choose file',
+    uploadFile: 'Upload',
+    uploaded: 'Uploaded',
+    viewFile: 'View file',
+    closeFile: 'Close',
+    currentFile: 'Current file',
+    noFileUploaded: 'No file yet',
+    fileUpdated: 'Updated',
+    selectFileFirst: 'Choose a file first.',
+    unsupportedFile: 'Only CSV, TXT or MD files are supported.',
+    saveContent: 'Save content',
+    reload: 'Sync',
+    authAgain: 'Please login again.',
+    loginFailed: 'Wrong username or password.',
+    loadError: 'Failed to load data: ',
+    reloaded: 'Synced',
+    updatedAuto: 'Auto-reply updated',
+    handoffPrompt: 'Reason for staff handling:',
+    handoffDefault: 'Staff to check and advise manually',
+    alertCreated: 'Staff alert created',
+    resolvePrompt: 'Resolution note:',
+    resolveDefault: 'Resolved',
+    resolvedToast: 'Marked as resolved',
+    summarizing: 'Generating AI summary...',
+    summarized: 'Summary generated',
+    savedSummary: 'Summary saved',
+    saved: 'Saved',
+    sentTest: 'Test sent',
+    sentReply: 'Reply sent',
+    deleteConvConfirm: 'Soft delete this conversation? Messages will be hidden from dashboard and AI context.',
+    deletedConversation: 'Conversation soft-deleted',
+    deleteMsgConfirm: 'Soft delete this message?',
+    deletedMessage: 'Message soft-deleted',
+    allSources: 'All sources',
+    logout: 'Logout'
+  },
+  zh: {
+    subtitle: '多渠道客服',
+    navChat: '会话',
+    navDashboard: '概览',
+    navAlerts: '提醒',
+    navKnowledge: 'AI 数据',
+    navLogs: '日志',
+    pageChat: '会话',
+    pageChatSub: '管理 Facebook、Zalo 和网站会话',
+    pageDashboard: '概览',
+    pageDashboardSub: 'AI Agent 运营概览',
+    pageAlerts: '提醒',
+    pageAlertsSub: '需要人工检查的情况',
+    pageKnowledge: 'FAQ/政策',
+    pageKnowledgeSub: '按来源训练知识',
+    pageLogs: '日志',
+    pageLogsSub: '查看 AI 回复和系统提醒',
+    refresh: '同步',
+    dark: '深色模式',
+    light: '浅色模式',
+    all: '全部',
+    need: '待处理',
+    auto: '自动开启',
+    search: '搜索会话...',
+    sources: '来源',
+    conversations: '会话',
+    noConversation: '请选择会话',
+    noConversationSub: '聊天记录和客户信息会显示在这里。',
+    noData: '暂无匹配数据',
+    customerInfo: '客户信息',
+    aiSummary: 'AI 总结',
+    alerts: '提醒',
+    sourceKnowledge: '来源知识',
+    chatHistory: '聊天记录',
+    updated: '更新',
+    phone: '电话',
+    email: '邮箱',
+    source: '来源',
+    status: '状态',
+    interested: '关注',
+    autoOn: '自动开启',
+    autoOff: '自动关闭',
+    needsStaff: '需要人工',
+    toggleAutoOn: '开启自动',
+    toggleAutoOff: '关闭自动',
+    handoff: '请求人工',
+    resolved: '已处理',
+    summarize: 'AI 总结',
+    deleteConversation: '删除会话',
+    saveSummary: '保存总结',
+    delete: '删除',
+    showMore: '查看更多',
+    collapse: '收起',
+    staffReply: '网站人工回复',
+    sendCustomer: '发送给客户',
+    replyPlaceholder: '输入回复...',
+    testTitle: '测试网站聊天',
+    sendTest: '发送测试',
+    testPlaceholder: '输入 widget 测试消息...',
+    statsCustomers: '客户',
+    statsConversations: '会话',
+    statsMessages: '消息',
+    statsProducts: '产品',
+    statsNeed: '待处理',
+    statsAlerts: '未处理提醒',
+    latestAlerts: '最新提醒',
+    common: '通用',
+    trainingSource: '训练来源',
+    faq: 'FAQ',
+    policies: '政策',
+    catalog: '目录概览',
+    productCsv: '产品 CSV',
+    advisoryKnowledge: '咨询知识',
+    policyScope: '政策与范围',
+    uploadTrainingFiles: '上传训练文件',
+    uploadTrainingSub: '文件将应用于当前选择的来源',
+    chooseFile: '选择文件',
+    uploadFile: '上传',
+    uploaded: '已上传',
+    viewFile: '查看文件',
+    closeFile: '关闭',
+    currentFile: '当前文件',
+    noFileUploaded: '暂无文件',
+    fileUpdated: '更新',
+    selectFileFirst: '请先选择文件。',
+    unsupportedFile: '仅支持 CSV、TXT 或 MD。',
+    saveContent: '保存内容',
+    reload: '同步',
+    authAgain: '请重新登录。',
+    loginFailed: '用户名或密码错误。',
+    loadError: '加载数据失败: ',
+    reloaded: '已同步',
+    updatedAuto: '自动回复已更新',
+    handoffPrompt: '需要人工处理的原因:',
+    handoffDefault: '人工检查并手动咨询',
+    alertCreated: '已创建人工提醒',
+    resolvePrompt: '处理备注:',
+    resolveDefault: '已处理',
+    resolvedToast: '已标记处理',
+    summarizing: '正在生成 AI 总结...',
+    summarized: '总结已生成',
+    savedSummary: '总结已保存',
+    saved: '已保存',
+    sentTest: '测试已发送',
+    sentReply: '回复已发送',
+    deleteConvConfirm: '确认软删除该会话？消息将从后台和 AI 上下文中隐藏。',
+    deletedConversation: '会话已软删除',
+    deleteMsgConfirm: '确认软删除该消息？',
+    deletedMessage: '消息已软删除',
+    allSources: '全部来源',
+    logout: 'Logout'
+  }
+};
 
-function renderKnowledge(){const m=$('#main');const labels={faq:'FAQ',policies:t('policies'),catalog_summary:t('catalogSummary')};const sources=state.knowledgeSources.length?state.knowledgeSources:[{sourceKey:'common',name:'Dùng chung',group:'common'}];m.innerHTML=`<div class="knowledge"><div class="knowledge-head"><div><h2>${t('knowledgeTitle')}</h2><p class="muted">${t('knowledgeHint')}</p></div><div class="knowledge-source"><label>Nguồn train</label><select id="kSource">${sources.map(s=>`<option value="${esc(s.sourceKey)}" ${state.kSource===s.sourceKey?'selected':''}>${esc(s.name)} · ${esc(s.sourceKey)}</option>`).join('')}</select></div></div><div class="knowledge-grid">${Object.entries(labels).map(([type,label])=>`<div class="card knowledge-card"><label for="k-${type}">${esc(label)}</label><textarea id="k-${type}" data-knowledge-type="${type}">${esc(state.knowledge[type]||'')}</textarea><div class="row"><button class="btn" data-save-knowledge="${type}">${t('saveContent')}</button></div></div>`).join('')}</div><div class="row" style="margin-top:14px"><button class="btn gray" id="reloadKnowledgeBtn">${t('reload')}</button></div></div>`;$('#kSource').onchange=e=>loadKnowledge(e.target.value);document.querySelectorAll('[data-save-knowledge]').forEach(btn=>btn.onclick=()=>saveKnowledge(btn.dataset.saveKnowledge));$('#reloadKnowledgeBtn').onclick=()=>loadKnowledge(state.kSource,true)}
-function render(){renderShell();renderStats();renderConvs();document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('active',b.dataset.filter===state.filter));state.tab==='knowledge'?renderKnowledge():renderChat();injectStaffReplyPanel()}
-function injectStaffReplyPanel(){const c=state.selected?.conversation;if(!c||c.channel!=='haravan_website'||$('#staffReplyPanel'))return;const anchor=$('.messages-head');if(!anchor)return;anchor.insertAdjacentHTML('beforebegin',`<div class="card staff-live" id="staffReplyPanel"><b>Nhân viên trực chat website</b><p class="muted">Tin nhắn gửi ở đây sẽ hiện trong widget. Auto-reply chỉ thay đổi khi nhân viên bấm nút bật hoặc tắt.</p><textarea id="staffReplyText" placeholder="Nhập phản hồi cho khách..."></textarea><button class="btn ok" id="staffReplyBtn">Gửi cho khách</button></div>`);$('#staffReplyBtn').onclick=sendStaffReply}
-async function load(){try{const [stats,convs]=await Promise.all([api(API+'/stats'),api(API+'/conversations')]);state.stats=stats;state.convs=convs;renderStats();renderConvs()}catch(e){toast(t('loadError')+e.message)}}
-async function loadKnowledge(sourceKey=state.kSource,showToast=false){if(!state.knowledgeSources.length)state.knowledgeSources=await api(API+'/knowledge-sources');state.kSource=state.knowledgeSources.some(s=>s.sourceKey===sourceKey)?sourceKey:'common';state.knowledge=await api(API+'/knowledge?sourceKey='+encodeURIComponent(state.kSource));render();if(showToast)toast(t('loadedKnowledge'))}
-async function openConv(id){state.selected=await api(API+'/conversations/'+id);state.tab='chat';render()}
-async function refreshSelected(){if(state.selected?.conversation?.id)state.selected=await api(API+'/conversations/'+state.selected.conversation.id);await load();render()}
-async function toggleAuto(){await api(API+'/conversations/'+state.selected.conversation.id+'/toggle-auto-reply',{method:'POST'});await refreshSelected();toast(t('updatedAuto'))}
-async function handoff(){const reason=prompt(t('handoffReasonPrompt'), state.selected?.conversation?.handoff_reason || t('handoffReasonDefault'));if(!reason)return;await api(API+'/conversations/'+state.selected.conversation.id+'/handoff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason})});await refreshSelected();toast(t('alertCreated'))}
-async function resolveHandoff(){const note=prompt(t('resolvePrompt'), t('resolveDefault'));await api(API+'/conversations/'+state.selected.conversation.id+'/resolve-handoff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:note||''})});await refreshSelected();toast(t('resolvedToast'))}
-async function summarize(){toast(t('summarizing'));await api(API+'/conversations/'+state.selected.conversation.id+'/summarize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({language:state.lang})});await refreshSelected();toast(t('summarized'))}
-async function sendStaffReply(){const text=$('#staffReplyText')?.value.trim();if(!text)return;await api(API+'/conversations/'+state.selected.conversation.id+'/staff-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});await refreshSelected();toast('Đã gửi tin nhắn cho khách')}
-async function saveSummary(){await api(API+'/conversations/'+state.selected.conversation.id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({summary:$('#summaryText').value})});await refreshSelected();toast(t('savedSummary'))}
-async function saveKnowledge(type){const box=$('[data-knowledge-type="'+type+'"]');if(!box)return;state.knowledge[type]=box.value;await api(API+'/knowledge/'+type,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceKey:state.kSource,content:state.knowledge[type]})});toast(t('saved')+type+' · '+state.kSource)}
-async function sendTest(){await api('/webhooks/website-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitorId:'local-test-'+Date.now(),name:'Khách test',message:$('#testMsg').value})});await load();toast(t('sentTest'))}
-async function deleteConversation(){const id=state.selected?.conversation?.id;if(!id)return;if(!confirm(t('deleteConvConfirm')))return;await api(API+'/conversations/'+encodeURIComponent(id),{method:'DELETE'});state.selected=null;await load();render();toast(t('deletedConversation'))}
-async function deleteMessage(id){if(!confirm(t('deleteMsgConfirm')))return;await api(API+'/messages/'+encodeURIComponent(id),{method:'DELETE'});await refreshSelected();toast(t('deletedMessage'))}
-async function startDashboard(){await Promise.all([load(),loadKnowledge()]);const id=new URLSearchParams(location.search).get('conversation');if(id)openConv(id);else render()}
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;render()});document.querySelectorAll('.filters button').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;render()});$('#refreshBtn').onclick=async()=>{await load();toast(t('reloaded'))};$('#themeBtn').onclick=()=>setTheme(state.theme==='dark'?'light':'dark');$('#sendTestBtn').onclick=sendTest;$('#langSelect').onchange=e=>setLang(e.target.value);$('#loginForm').onsubmit=login;$('#logoutBtn').onclick=logout;setTheme(state.theme);setLang(state.lang);checkAuth().then(ok=>{if(ok)startDashboard()});setInterval(()=>{if($('#loginScreen')?.hidden)load()},10000);
+const state = {
+  stats: {},
+  convs: [],
+  alerts: [],
+  logs: { type: 'ai', entries: [] },
+  logType: 'ai',
+  selected: null,
+  view: localStorage.getItem('kc-admin-view') || 'dashboard',
+  filter: 'all',
+  activeSource: 'all',
+  search: '',
+  knowledge: { sourceKey: 'common', faq: '', policies: '', catalog_summary: '' },
+  knowledgeFiles: { files: [] },
+  trainingViewer: null,
+  knowledgeSources: [],
+  kSource: 'common',
+  theme: localStorage.getItem('kc-theme') || 'light',
+  lang: localStorage.getItem('kc-admin-lang') || 'vi'
+};
+
+const $ = selector => document.querySelector(selector);
+const $$ = selector => [...document.querySelectorAll(selector)];
+const t = key => (I18N[state.lang] && I18N[state.lang][key]) || I18N.vi[key] || key;
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, m => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }[m]));
+}
+
+function toast(message) {
+  const el = $('#toast');
+  el.textContent = message;
+  el.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+function showLogin(message = '') {
+  $('#loginScreen').hidden = false;
+  $('#loginError').textContent = message;
+  setTimeout(() => $('#loginUser')?.focus(), 30);
+}
+
+function hideLogin() {
+  $('#loginScreen').hidden = true;
+  $('#loginPass').value = '';
+  $('#loginError').textContent = '';
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, credentials: 'same-origin' });
+  if (path.startsWith(API) && (res.status === 401 || res.status === 403)) {
+    showLogin(t('authAgain'));
+    throw new Error('unauthorized');
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function checkAuth() {
+  try {
+    const res = await fetch('/auth/me', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('unauthorized');
+    hideLogin();
+    return true;
+  } catch {
+    showLogin();
+    return false;
+  }
+}
+
+async function login(event) {
+  event.preventDefault();
+  const username = $('#loginUser').value.trim();
+  const password = $('#loginPass').value;
+  const res = await fetch('/auth/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  if (!res.ok) {
+    showLogin(t('loginFailed'));
+    return;
+  }
+  hideLogin();
+  await startDashboard();
+}
+
+async function logout() {
+  await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  showLogin('Logged out.');
+}
+
+function setTheme(theme) {
+  state.theme = theme;
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('kc-theme', theme);
+  $('#themeBtn').textContent = theme === 'dark' ? t('light') : t('dark');
+}
+
+function setLang(lang) {
+  state.lang = I18N[lang] ? lang : 'vi';
+  document.documentElement.lang = state.lang;
+  localStorage.setItem('kc-admin-lang', state.lang);
+  $('#langSelect').value = state.lang;
+  setTheme(state.theme);
+  render();
+}
+
+function setView(view) {
+  state.view = ['chat', 'dashboard', 'alerts', 'knowledge', 'logs'].includes(view) ? view : 'chat';
+  localStorage.setItem('kc-admin-view', state.view);
+  if (state.view === 'dashboard' || state.view === 'alerts') loadAlerts().then(render).catch(e => toast(t('loadError') + e.message));
+  if (state.view === 'knowledge') loadKnowledge(state.kSource).catch(e => toast(t('loadError') + e.message));
+  if (state.view === 'logs') loadLogs(state.logType).then(render).catch(e => toast(t('loadError') + e.message));
+  render();
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  try {
+    return new Intl.DateTimeFormat(state.lang === 'vi' ? 'vi-VN' : state.lang === 'zh' ? 'zh-CN' : 'en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(new Date(value));
+  } catch {
+    return String(value);
+  }
+}
+
+function sourceGroupLabel(group) {
+  return { facebook: 'Facebook', zalo: 'Zalo', website: 'Website', common: t('common'), haravan_website: 'Website' }[group] || group || t('common');
+}
+
+function getConvSourceKey(conv) {
+  return conv.source_key || `${conv.source_group || conv.channel || 'other'}/${conv.source_name || conv.channel || 'unknown'}`;
+}
+
+function getConvName(conv) {
+  return conv.name || conv.external_id || conv.customer_id || 'Khách chat';
+}
+
+function getConvTime(conv) {
+  return formatDate(conv.updated_at || conv.created_at);
+}
+
+function renderShell() {
+  $('#brandSubtitle').textContent = t('subtitle');
+  $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $('#refreshBtn').textContent = t('refresh');
+  $('#logoutBtn').textContent = t('logout');
+  $('#langSelect').value = state.lang;
+  $('#themeBtn').textContent = state.theme === 'dark' ? t('light') : t('dark');
+  $$('.nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === state.view));
+
+  const titleMap = {
+    chat: [t('pageChat'), t('pageChatSub')],
+    dashboard: [t('pageDashboard'), t('pageDashboardSub')],
+    alerts: [t('pageAlerts'), t('pageAlertsSub')],
+    knowledge: [t('pageKnowledge'), t('pageKnowledgeSub')],
+    logs: [t('pageLogs'), t('pageLogsSub')]
+  };
+  $('#pageTitle').textContent = titleMap[state.view][0];
+  $('#pageSubtitle').textContent = titleMap[state.view][1];
+
+  const need = state.stats.needs_human || 0;
+  const autoOn = state.convs.filter(c => c.auto_reply).length;
+  $('#topOpenAlerts').textContent = `${need} ${t('need')}`;
+  $('#topAutoCount').textContent = `${autoOn} ${t('auto')}`;
+}
+
+function renderStatCards() {
+  const s = state.stats || {};
+  const cards = [
+    ['statsCustomers', s.customers || 0, ''],
+    ['statsConversations', s.conversations || 0, ''],
+    ['statsMessages', s.messages || 0, ''],
+    ['statsProducts', s.products || 0, ''],
+    ['statsNeed', s.needs_human || 0, 'accent'],
+    ['statsAlerts', s.open_alerts || 0, 'accent']
+  ];
+  return `<div class="stat-grid">${cards.map(([label, value, cls]) => `
+    <div class="stat-card ${cls}">
+      <span class="muted">${esc(t(label))}</span>
+      <b>${esc(value)}</b>
+    </div>
+  `).join('')}</div>`;
+}
+
+function buildSourceTree() {
+  const map = new Map();
+  for (const conv of state.convs) {
+    const group = conv.source_group || conv.channel || 'common';
+    const key = getConvSourceKey(conv);
+    const name = conv.source_name || sourceGroupLabel(group);
+    if (!map.has(group)) map.set(group, { group, count: 0, need: 0, sources: new Map() });
+    const g = map.get(group);
+    if (!g.sources.has(key)) g.sources.set(key, { key, group, name, count: 0, need: 0 });
+    const source = g.sources.get(key);
+    g.count += 1;
+    source.count += 1;
+    if (conv.needs_human) {
+      g.need += 1;
+      source.need += 1;
+    }
+  }
+  return [...map.values()].sort((a, b) => {
+    const order = { facebook: 1, zalo: 2, website: 3, haravan_website: 3 };
+    return (order[a.group] || 9) - (order[b.group] || 9) || sourceGroupLabel(a.group).localeCompare(sourceGroupLabel(b.group), 'vi');
+  });
+}
+
+function sourceMatches(conv) {
+  if (state.activeSource === 'all') return true;
+  if (state.activeSource.startsWith('group:')) return (conv.source_group || conv.channel || 'common') === state.activeSource.slice(6);
+  if (state.activeSource.startsWith('source:')) return getConvSourceKey(conv) === state.activeSource.slice(7);
+  return true;
+}
+
+function filterMatches(conv) {
+  if (state.filter === 'need') return Boolean(conv.needs_human);
+  if (state.filter === 'auto') return Boolean(conv.auto_reply);
+  return true;
+}
+
+function filteredConversations() {
+  const keyword = state.search.trim().toLowerCase();
+  return state.convs
+    .filter(conv => sourceMatches(conv) && filterMatches(conv))
+    .filter(conv => {
+      if (!keyword) return true;
+      return [
+        getConvName(conv),
+        conv.external_id,
+        conv.phone,
+        conv.email,
+        conv.source_name,
+        conv.channel,
+        conv.handoff_reason
+      ].some(value => String(value || '').toLowerCase().includes(keyword));
+    })
+    .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+}
+
+function renderSourceTree() {
+  const groups = buildSourceTree();
+  const total = state.convs.length;
+  const countText = (count, need) => need ? `${count} · ${need}` : String(count);
+  return `
+    <div class="source-tree">
+      <button class="source-item ${state.activeSource === 'all' ? 'active' : ''}" data-source-filter="all">
+        <span>${esc(t('allSources'))}</span><span class="count">${total}</span>
+      </button>
+      ${groups.map(group => `
+        <details class="source-group" open>
+          <summary>
+            <span>${esc(sourceGroupLabel(group.group))}</span>
+            <span class="count">${countText(group.count, group.need)}</span>
+          </summary>
+          ${[...group.sources.values()].sort((a, b) => b.need - a.need || b.count - a.count || a.name.localeCompare(b.name, 'vi')).map(src => `
+            <button class="source-item ${state.activeSource === `source:${src.key}` ? 'active' : ''}" data-source-filter="source:${esc(src.key)}">
+              <span>${esc(src.name)}</span><span class="count">${countText(src.count, src.need)}</span>
+            </button>
+          `).join('')}
+        </details>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderConversationList() {
+  const rows = filteredConversations();
+  if (!rows.length) return `<div class="empty-state"><div><h3>${esc(t('noData'))}</h3></div></div>`;
+  return `<div class="conv-list">${rows.map(conv => `
+    <button class="conv-item ${conv.needs_human ? 'need' : ''} ${state.selected?.conversation?.id === conv.id ? 'active' : ''}" data-conv-id="${esc(conv.id)}">
+      <div class="conv-meta">
+        <span class="conv-name">${esc(getConvName(conv))}</span>
+        <span class="count">${esc(getConvTime(conv))}</span>
+      </div>
+      <div class="row">
+        <span class="badge">${esc(conv.source_name || sourceGroupLabel(conv.source_group || conv.channel))}</span>
+        <span class="badge ${conv.auto_reply ? 'on' : 'off'}">${conv.auto_reply ? t('autoOn') : t('autoOff')}</span>
+        ${conv.needs_human ? `<span class="badge need">${t('needsStaff')}</span>` : ''}
+      </div>
+    </button>
+  `).join('')}</div>`;
+}
+
+function expandableText(text, cls = 'msg-text') {
+  const raw = String(text ?? '');
+  const long = raw.length > 460 || raw.split(/\r?\n/).length > 8;
+  return `<div class="${cls}${long ? ' collapsed' : ''}">${esc(raw)}</div>${long ? `<button class="show-more" type="button">${esc(t('showMore'))}</button>` : ''}`;
+}
+
+function bindExpandable() {
+  $$('.show-more').forEach(btn => {
+    btn.onclick = event => {
+      event.stopPropagation();
+      const box = btn.previousElementSibling;
+      const expanded = box.classList.toggle('expanded');
+      box.classList.toggle('collapsed', !expanded);
+      btn.textContent = expanded ? t('collapse') : t('showMore');
+    };
+  });
+}
+
+function renderMessage(message) {
+  return `
+    <div class="msg ${message.direction === 'in' ? 'in' : 'out'}">
+      <div class="msg-meta">
+        <span>${esc(message.sender_type || '')} · ${esc(formatDate(message.created_at))}</span>
+        <button class="mini" type="button" data-delete-msg="${esc(message.id)}">${esc(t('delete'))}</button>
+      </div>
+      ${expandableText(message.text)}
+    </div>
+  `;
+}
+
+function contactRows(conv) {
+  const rows = [
+    [t('phone'), conv.phone],
+    [t('email'), conv.email],
+    ['ID', conv.external_id],
+    [t('source'), conv.source_name || conv.source_key],
+    [t('status'), conv.status || 'open']
+  ].filter(([, value]) => String(value || '').trim());
+  return rows.map(([label, value]) => `<div class="row space"><span class="muted">${esc(label)}</span><b>${esc(value)}</b></div>`).join('');
+}
+
+function alertDeliveryLabel(status) {
+  const value = String(status || '').toLowerCase();
+  if (value === 'sent_lark') return 'Đã gửi Lark';
+  if (value === 'sent') return 'Đã gửi';
+  if (value === 'pending') return 'Chờ gửi';
+  if (value === 'failed' || value === 'error') return 'Lỗi gửi';
+  return status || '';
+}
+
+function renderAlerts(alerts = []) {
+  if (!alerts.length) return `<div class="muted">${esc(t('noData'))}</div>`;
+  return alerts.map(alert => `
+    <div class="alert-box">
+      <div class="row space">
+        <span class="alert-title">${esc(alert.reason || t('needsStaff'))}</span>
+        <span class="badge ${String(alert.delivery_status || '').startsWith('sent') ? 'sent' : 'warn'}">${esc(alertDeliveryLabel(alert.delivery_status || alert.status))}</span>
+      </div>
+      <div class="alert-message">${esc(alert.message || '')}</div>
+      <div class="alert-meta">
+        <span>${esc(alert.source_name || sourceGroupLabel(alert.source_group || alert.channel))} · ${esc(formatDate(alert.created_at))} · ${esc(alert.status || '')}</span>
+        ${alert.conversation_id ? `<button class="mini" type="button" data-alert-conv="${esc(alert.conversation_id)}">Mở hội thoại</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderChatPanel() {
+  const selected = state.selected;
+  if (!selected?.conversation) {
+    return `
+      <section class="panel chat-panel">
+        <div class="empty-state">
+          <div>
+            <h3>${esc(t('noConversation'))}</h3>
+            <p>${esc(t('noConversationSub'))}</p>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+  const conv = selected.conversation;
+  const messages = selected.messages || [];
+  return `
+    <section class="panel chat-panel">
+      <div class="panel-head">
+        <div class="chat-header">
+          <div class="chat-title">
+            <h3>${esc(getConvName(conv))}</h3>
+            <div class="muted">${esc(conv.channel)} · ${esc(conv.source_name || conv.source_key || '')} · ${t('updated')}: ${esc(formatDate(conv.updated_at))}</div>
+          </div>
+          <div class="chat-actions">
+            <button class="btn ${conv.auto_reply ? 'danger' : 'ok'}" id="toggleAutoBtn" type="button">${conv.auto_reply ? t('toggleAutoOff') : t('toggleAutoOn')}</button>
+            <button class="btn accent" id="handoffBtn" type="button">${t('handoff')}</button>
+            ${conv.needs_human ? `<button class="btn ok" id="resolveBtn" type="button">${t('resolved')}</button>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="panel-body" id="chatScroll">
+        ${conv.channel === 'haravan_website' ? `
+          <div class="staff-reply">
+            <b>${esc(t('staffReply'))}</b>
+            <textarea id="staffReplyText" placeholder="${esc(t('replyPlaceholder'))}"></textarea>
+            <button class="btn ok" id="staffReplyBtn" type="button">${esc(t('sendCustomer'))}</button>
+          </div>
+        ` : ''}
+        <div class="messages">
+          ${messages.map(renderMessage).join('')}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderDetailPanel() {
+  const selected = state.selected;
+  if (!selected?.conversation) {
+    return `
+      <aside class="panel detail-panel">
+        <div class="panel-head"><h3>${esc(t('customerInfo'))}</h3></div>
+        <div class="panel-body">${renderStatCards()}</div>
+      </aside>
+    `;
+  }
+  const conv = selected.conversation;
+  const alerts = selected.alerts || [];
+  return `
+    <aside class="panel detail-panel">
+      <div class="panel-head">
+        <h3>${esc(t('customerInfo'))}</h3>
+        <div class="muted">${esc(getConvName(conv))}</div>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <section class="detail-section">
+          <div class="form-stack">
+            ${contactRows(conv)}
+            <div class="row">
+              <span class="badge ${conv.auto_reply ? 'on' : 'off'}">${conv.auto_reply ? t('autoOn') : t('autoOff')}</span>
+              ${conv.needs_human ? `<span class="badge need">${t('needsStaff')}</span>` : ''}
+            </div>
+          </div>
+        </section>
+        <section class="detail-section">
+          <h4>${esc(t('aiSummary'))}</h4>
+          <div class="summary-box">${esc(conv.summary || '') || esc(t('noData'))}</div>
+          <textarea id="summaryText" style="margin-top:10px">${esc(conv.summary || '')}</textarea>
+          <div class="row" style="margin-top:10px">
+            <button class="btn" id="summaryBtn" type="button">${esc(t('summarize'))}</button>
+            <button class="btn gray" id="saveSummaryBtn" type="button">${esc(t('saveSummary'))}</button>
+          </div>
+        </section>
+        <section class="detail-section">
+          <h4>${esc(t('interested'))}</h4>
+          <div class="summary-box">${esc(conv.interested_products || '[]')}</div>
+        </section>
+        <section class="detail-section">
+          <h4>${esc(t('alerts'))}</h4>
+          ${renderAlerts(alerts)}
+        </section>
+        <section class="detail-section">
+          <button class="btn danger" id="deleteConvBtn" type="button" style="width:100%">${esc(t('deleteConversation'))}</button>
+        </section>
+      </div>
+    </aside>
+  `;
+}
+
+function renderChatView() {
+  return `
+    <div class="workspace">
+      <aside class="panel source-panel">
+        <div class="panel-head">
+          <h3>${esc(t('sources'))}</h3>
+          <div class="muted">Facebook · Zalo · Website</div>
+        </div>
+        <div class="panel-body">
+          ${renderSourceTree()}
+        </div>
+      </aside>
+      <aside class="panel conversation-panel">
+        <div class="panel-head">
+          <h3>${esc(t('conversations'))}</h3>
+          <div class="muted">${filteredConversations().length} / ${state.convs.length}</div>
+        </div>
+        <div class="panel-body">
+          <input class="search-box" id="conversationSearch" value="${esc(state.search)}" placeholder="${esc(t('search'))}" />
+          <div class="segmented">
+            <button type="button" data-filter="all" class="${state.filter === 'all' ? 'active' : ''}">${esc(t('all'))}</button>
+            <button type="button" data-filter="need" class="${state.filter === 'need' ? 'active' : ''}">${esc(t('need'))}</button>
+            <button type="button" data-filter="auto" class="${state.filter === 'auto' ? 'active' : ''}">${esc(t('auto'))}</button>
+          </div>
+          ${renderConversationList()}
+        </div>
+        <div class="panel-footer">
+          <details class="test-chat">
+            <summary>${esc(t('testTitle'))}</summary>
+            <textarea id="testMsg" placeholder="${esc(t('testPlaceholder'))}">tôi muốn mua sản phẩm chưa có dữ liệu xyzabc</textarea>
+            <button class="btn" id="sendTestBtn" type="button">${esc(t('sendTest'))}</button>
+          </details>
+        </div>
+      </aside>
+      ${renderChatPanel()}
+      ${renderDetailPanel()}
+    </div>
+  `;
+}
+
+function renderDashboard() {
+  return `
+    <div class="page">
+      <div class="dashboard-grid">
+        ${renderStatCards()}
+        <div class="dashboard-row">
+          <div class="page-card">
+            <div class="panel-head"><h3>${esc(t('conversations'))}</h3></div>
+            <div class="panel-body">${renderConversationList()}</div>
+          </div>
+          <div class="page-card">
+            <div class="panel-head"><h3>${esc(t('latestAlerts'))}</h3></div>
+            <div class="panel-body">${renderAlerts(state.alerts)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAlertsPage() {
+  return `
+    <div class="page">
+      <div class="dashboard-grid">
+        <div class="page-card">
+          <div class="panel-head">
+            <div class="row space">
+              <div>
+                <h3>${esc(t('alerts'))}</h3>
+                <div class="muted">${state.alerts.length} open</div>
+              </div>
+              <button class="btn ghost" id="reloadAlertsBtn" type="button">${esc(t('refresh'))}</button>
+            </div>
+          </div>
+          <div class="panel-body">${renderAlerts(state.alerts)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLogEntry(entry) {
+  const raw = entry.raw ? JSON.stringify(entry.raw, null, 2) : entry.detail || '';
+  return `
+    <div class="alert-box">
+      <div class="row space">
+        <span class="alert-title">${esc(entry.title || 'Log')}</span>
+        <span class="badge ${entry.level === 'error' ? 'off' : 'sent'}">${esc(entry.status || entry.type || '')}</span>
+      </div>
+      <div class="alert-message">${esc(entry.detail || raw || '')}</div>
+      <div class="alert-meta">
+        <span>${esc(entry.source || '')} ${entry.ts ? `· ${esc(formatDate(entry.ts))}` : ''}</span>
+      </div>
+      <details>
+        <summary class="show-more">${esc(t('showMore'))}</summary>
+        <pre style="white-space:pre-wrap;word-break:break-word;margin:8px 0 0;font-size:12px">${esc(raw)}</pre>
+      </details>
+    </div>
+  `;
+}
+
+function renderLogs() {
+  return `
+    <div class="page">
+      <div class="dashboard-grid">
+        <div class="page-card">
+          <div class="panel-head">
+            <div class="row space">
+              <div>
+                <h3>${esc(t('navLogs'))}</h3>
+                <div class="muted">${state.logs.entries.length} entries</div>
+              </div>
+              <div class="row">
+                <select id="logType" style="width:180px">
+                  <option value="ai" ${state.logType === 'ai' ? 'selected' : ''}>AI responses</option>
+                  <option value="alerts" ${state.logType === 'alerts' ? 'selected' : ''}>Staff alerts</option>
+                </select>
+                <button class="btn ghost" id="reloadLogsBtn" type="button">${esc(t('refresh'))}</button>
+              </div>
+            </div>
+          </div>
+          <div class="panel-body">${state.logs.entries.length ? state.logs.entries.map(renderLogEntry).join('') : `<div class="muted">${esc(t('noData'))}</div>`}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function knowledgeSourceOptions() {
+  const sources = state.knowledgeSources.length ? state.knowledgeSources : [{ sourceKey: 'common', name: t('common') }];
+  return sources.map(source => `
+    <option value="${esc(source.sourceKey)}" ${state.kSource === source.sourceKey ? 'selected' : ''}>
+      ${esc(source.name || source.sourceKey)} · ${esc(source.sourceKey)}
+    </option>
+  `).join('');
+}
+
+function formatBytes(bytes) {
+  const n = Number(bytes || 0);
+  if (!n) return '0 B';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatFileTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(state.lang === 'vi' ? 'vi-VN' : state.lang === 'zh' ? 'zh-CN' : 'en-US');
+}
+
+function renderUploadFiles() {
+  const fileLabels = {
+    products: t('productCsv'),
+    faq: t('advisoryKnowledge'),
+    policies: t('policyScope')
+  };
+  const accepts = {
+    products: '.csv,text/csv',
+    faq: '.txt,.md,text/plain,text/markdown',
+    policies: '.txt,.md,text/plain,text/markdown'
+  };
+  const files = new Map((state.knowledgeFiles.files || []).map(file => [file.type, file]));
+  const viewer = state.trainingViewer;
+  return `
+    <div class="page-card">
+      <div class="panel-head">
+        <div>
+          <h3>${esc(t('uploadTrainingFiles'))}</h3>
+          <div class="muted">${esc(t('uploadTrainingSub'))}</div>
+        </div>
+      </div>
+      <div class="upload-grid">
+        ${Object.entries(fileLabels).map(([type, label]) => {
+          const info = files.get(type) || {};
+          const meta = info.exists
+            ? `${formatBytes(info.bytes)} · ${esc(t('fileUpdated'))}: ${esc(formatFileTime(info.updatedAt))}`
+            : esc(t('noFileUploaded'));
+          return `
+            <div class="upload-card">
+              <strong>${esc(label)}</strong>
+              <div class="upload-meta">${meta}</div>
+              <input type="file" data-upload-file="${esc(type)}" accept="${esc(accepts[type])}" multiple />
+              <div class="upload-actions">
+                <button class="btn ghost" data-upload-training="${esc(type)}" type="button">${esc(t('uploadFile'))}</button>
+                <button class="btn ghost" data-view-training="${esc(type)}" type="button">${esc(t('viewFile'))}</button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      ${viewer ? `
+        <div class="file-viewer">
+          <div class="row space">
+            <div>
+              <strong>${esc(t('currentFile'))}: ${esc(fileLabels[viewer.type] || viewer.type)}</strong>
+              <div class="muted">${formatBytes(viewer.bytes)}${viewer.updatedAt ? ` · ${esc(t('fileUpdated'))}: ${esc(formatFileTime(viewer.updatedAt))}` : ''}</div>
+            </div>
+            <button class="btn ghost" id="closeFileViewerBtn" type="button">${esc(t('closeFile'))}</button>
+          </div>
+          <textarea readonly>${esc(viewer.content || '')}</textarea>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderKnowledge() {
+  const labels = { faq: t('faq'), policies: t('policies'), catalog_summary: t('catalog') };
+  return `
+    <div class="page">
+      <div class="dashboard-grid">
+        <div class="page-card">
+          <div class="panel-head">
+            <div class="row space">
+              <div>
+                <h3>${esc(t('trainingSource'))}</h3>
+                <div class="muted">${esc(t('sourceKnowledge'))}</div>
+              </div>
+              <select id="kSource" style="max-width:420px">${knowledgeSourceOptions()}</select>
+            </div>
+          </div>
+        </div>
+        ${renderUploadFiles()}
+        <div class="knowledge-grid">
+          ${Object.entries(labels).map(([type, label]) => `
+            <div class="knowledge-card">
+              <label for="k-${esc(type)}">${esc(label)}</label>
+              <textarea id="k-${esc(type)}" data-knowledge-type="${esc(type)}">${esc(state.knowledge[type] || '')}</textarea>
+              <button class="btn" data-save-knowledge="${esc(type)}" type="button">${esc(t('saveContent'))}</button>
+            </div>
+          `).join('')}
+        </div>
+        <div class="row">
+          <button class="btn gray" id="reloadKnowledgeBtn" type="button">${esc(t('reload'))}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function bindRenderedEvents() {
+  $$('[data-source-filter]').forEach(btn => {
+    btn.onclick = () => {
+      state.activeSource = btn.dataset.sourceFilter;
+      render();
+    };
+  });
+
+  $$('[data-filter]').forEach(btn => {
+    btn.onclick = () => {
+      state.filter = btn.dataset.filter;
+      render();
+    };
+  });
+
+  $$('[data-conv-id]').forEach(btn => {
+    btn.onclick = () => openConv(btn.dataset.convId);
+  });
+
+  $$('[data-delete-msg]').forEach(btn => {
+    btn.onclick = () => deleteMessage(btn.dataset.deleteMsg);
+  });
+
+  $$('[data-alert-conv]').forEach(btn => {
+    btn.onclick = () => openConv(btn.dataset.alertConv);
+  });
+
+  if ($('#toggleAutoBtn')) $('#toggleAutoBtn').onclick = toggleAuto;
+  if ($('#conversationSearch')) {
+    $('#conversationSearch').oninput = event => {
+      state.search = event.target.value;
+      render();
+      const search = $('#conversationSearch');
+      search?.focus();
+      search?.setSelectionRange(state.search.length, state.search.length);
+    };
+  }
+  if ($('#handoffBtn')) $('#handoffBtn').onclick = handoff;
+  if ($('#resolveBtn')) $('#resolveBtn').onclick = resolveHandoff;
+  if ($('#summaryBtn')) $('#summaryBtn').onclick = summarize;
+  if ($('#saveSummaryBtn')) $('#saveSummaryBtn').onclick = saveSummary;
+  if ($('#deleteConvBtn')) $('#deleteConvBtn').onclick = deleteConversation;
+  if ($('#staffReplyBtn')) $('#staffReplyBtn').onclick = sendStaffReply;
+  if ($('#sendTestBtn')) $('#sendTestBtn').onclick = sendTest;
+  if ($('#reloadAlertsBtn')) $('#reloadAlertsBtn').onclick = async () => {
+    await loadAlerts();
+    render();
+    toast(t('reloaded'));
+  };
+  if ($('#reloadLogsBtn')) $('#reloadLogsBtn').onclick = async () => {
+    await loadLogs(state.logType);
+    render();
+    toast(t('reloaded'));
+  };
+  if ($('#logType')) $('#logType').onchange = async event => {
+    state.logType = event.target.value;
+    await loadLogs(state.logType);
+    render();
+  };
+  if ($('#kSource')) $('#kSource').onchange = event => loadKnowledge(event.target.value);
+  if ($('#reloadKnowledgeBtn')) $('#reloadKnowledgeBtn').onclick = () => loadKnowledge(state.kSource, true);
+  $$('[data-save-knowledge]').forEach(btn => {
+    btn.onclick = () => saveKnowledge(btn.dataset.saveKnowledge);
+  });
+  $$('[data-upload-training]').forEach(btn => {
+    btn.onclick = () => uploadTrainingFile(btn.dataset.uploadTraining);
+  });
+  $$('[data-view-training]').forEach(btn => {
+    btn.onclick = () => viewTrainingFile(btn.dataset.viewTraining);
+  });
+  if ($('#closeFileViewerBtn')) $('#closeFileViewerBtn').onclick = () => {
+    state.trainingViewer = null;
+    render();
+  };
+
+  bindExpandable();
+
+  const chatScroll = $('#chatScroll');
+  if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight;
+}
+
+function render() {
+  renderShell();
+  if (state.view === 'dashboard') $('#content').innerHTML = renderDashboard();
+  else if (state.view === 'alerts') $('#content').innerHTML = renderAlertsPage();
+  else if (state.view === 'knowledge') $('#content').innerHTML = renderKnowledge();
+  else if (state.view === 'logs') $('#content').innerHTML = renderLogs();
+  else $('#content').innerHTML = renderChatView();
+  bindRenderedEvents();
+}
+
+async function load() {
+  const [stats, convs] = await Promise.all([
+    api(API + '/stats'),
+    api(API + '/conversations')
+  ]);
+  state.stats = stats;
+  state.convs = convs;
+}
+
+async function loadAlerts() {
+  state.alerts = await api(API + '/alerts?status=open');
+}
+
+async function loadLogs(type = state.logType) {
+  state.logType = type;
+  state.logs = await api(API + '/logs?type=' + encodeURIComponent(type) + '&limit=120');
+}
+
+async function loadKnowledge(sourceKey = state.kSource, showToast = false) {
+  const previousSource = state.kSource;
+  if (!state.knowledgeSources.length) {
+    state.knowledgeSources = await api(API + '/knowledge-sources');
+  }
+  state.kSource = state.knowledgeSources.some(source => source.sourceKey === sourceKey) ? sourceKey : 'common';
+  if (state.kSource !== previousSource) state.trainingViewer = null;
+  const [knowledge, files] = await Promise.all([
+    api(API + '/knowledge?sourceKey=' + encodeURIComponent(state.kSource)),
+    api(API + '/knowledge-files?sourceKey=' + encodeURIComponent(state.kSource))
+  ]);
+  state.knowledge = knowledge;
+  state.knowledgeFiles = files;
+  if (showToast) toast(t('reloaded'));
+  render();
+}
+
+async function openConv(id) {
+  state.selected = await api(API + '/conversations/' + encodeURIComponent(id));
+  state.view = 'chat';
+  localStorage.setItem('kc-admin-view', 'chat');
+  render();
+}
+
+async function refreshSelected() {
+  const id = state.selected?.conversation?.id;
+  await load();
+  if (id) state.selected = await api(API + '/conversations/' + encodeURIComponent(id));
+  render();
+}
+
+async function toggleAuto() {
+  await api(API + '/conversations/' + encodeURIComponent(state.selected.conversation.id) + '/toggle-auto-reply', { method: 'POST' });
+  await refreshSelected();
+  toast(t('updatedAuto'));
+}
+
+async function handoff() {
+  const reason = prompt(t('handoffPrompt'), state.selected?.conversation?.handoff_reason || t('handoffDefault'));
+  if (!reason) return;
+  await api(API + '/conversations/' + encodeURIComponent(state.selected.conversation.id) + '/handoff', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason })
+  });
+  await refreshSelected();
+  toast(t('alertCreated'));
+}
+
+async function resolveHandoff() {
+  const note = prompt(t('resolvePrompt'), t('resolveDefault'));
+  await api(API + '/conversations/' + encodeURIComponent(state.selected.conversation.id) + '/resolve-handoff', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note: note || '' })
+  });
+  await refreshSelected();
+  toast(t('resolvedToast'));
+}
+
+async function summarize() {
+  toast(t('summarizing'));
+  await api(API + '/conversations/' + encodeURIComponent(state.selected.conversation.id) + '/summarize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language: state.lang })
+  });
+  await refreshSelected();
+  toast(t('summarized'));
+}
+
+async function saveSummary() {
+  await api(API + '/conversations/' + encodeURIComponent(state.selected.conversation.id), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summary: $('#summaryText').value })
+  });
+  await refreshSelected();
+  toast(t('savedSummary'));
+}
+
+async function sendStaffReply() {
+  const text = $('#staffReplyText')?.value.trim();
+  if (!text) return;
+  await api(API + '/conversations/' + encodeURIComponent(state.selected.conversation.id) + '/staff-reply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  });
+  await refreshSelected();
+  toast(t('sentReply'));
+}
+
+async function deleteConversation() {
+  const id = state.selected?.conversation?.id;
+  if (!id || !confirm(t('deleteConvConfirm'))) return;
+  await api(API + '/conversations/' + encodeURIComponent(id), { method: 'DELETE' });
+  state.selected = null;
+  await load();
+  render();
+  toast(t('deletedConversation'));
+}
+
+async function deleteMessage(id) {
+  if (!confirm(t('deleteMsgConfirm'))) return;
+  await api(API + '/messages/' + encodeURIComponent(id), { method: 'DELETE' });
+  await refreshSelected();
+  toast(t('deletedMessage'));
+}
+
+async function saveKnowledge(type) {
+  const box = $(`[data-knowledge-type="${type}"]`);
+  if (!box) return;
+  state.knowledge[type] = box.value;
+  await api(API + '/knowledge/' + encodeURIComponent(type), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceKey: state.kSource, content: box.value })
+  });
+  toast(`${t('saved')} ${type}`);
+}
+
+async function combineTrainingFiles(type, files) {
+  const texts = await Promise.all(files.map(async file => ({
+    name: file.name,
+    text: (await file.text()).replace(/^\uFEFF/, '').trimEnd()
+  })));
+  if (type === 'products') {
+    return texts.map((item, index) => {
+      const lines = item.text.split(/\r?\n/).filter(line => line.trim());
+      return index === 0 ? lines.join('\n') : lines.slice(1).join('\n');
+    }).filter(Boolean).join('\n') + '\n';
+  }
+  return texts.map(item => `## ${item.name}\n\n${item.text}`).join('\n\n---\n\n') + '\n';
+}
+
+async function uploadTrainingFile(type) {
+  const input = $(`[data-upload-file="${type}"]`);
+  const files = [...(input?.files || [])];
+  if (!files.length) return toast(t('selectFileFirst'));
+  const allowed = type === 'products' ? ['csv'] : ['txt', 'md'];
+  if (files.some(file => !allowed.includes(file.name.toLowerCase().split('.').pop()))) return toast(t('unsupportedFile'));
+  const content = await combineTrainingFiles(type, files);
+  await api(API + '/knowledge-file/' + encodeURIComponent(type) + '?sourceKey=' + encodeURIComponent(state.kSource), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    body: content
+  });
+  const viewedType = state.trainingViewer?.type;
+  await loadKnowledge(state.kSource);
+  if (viewedType === type) await viewTrainingFile(type);
+  toast(`${t('uploaded')} ${files.map(file => file.name).join(', ')}`);
+}
+
+async function viewTrainingFile(type) {
+  const data = await api(API + '/knowledge-file/' + encodeURIComponent(type) + '?sourceKey=' + encodeURIComponent(state.kSource));
+  state.trainingViewer = data;
+  render();
+}
+
+async function sendTest() {
+  await api('/webhooks/website-chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      visitorId: 'local-test-' + Date.now(),
+      name: 'Khách test',
+      message: $('#testMsg').value
+    })
+  });
+  await load();
+  render();
+  toast(t('sentTest'));
+}
+
+async function startDashboard() {
+  try {
+    await Promise.all([load(), loadAlerts()]);
+    if (state.view === 'knowledge') await loadKnowledge(state.kSource);
+    if (state.view === 'logs') await loadLogs(state.logType);
+    const id = new URLSearchParams(location.search).get('conversation');
+    if (id) await openConv(id);
+    else render();
+  } catch (e) {
+    toast(t('loadError') + e.message);
+    render();
+  }
+}
+
+$$('.nav-btn').forEach(btn => { btn.onclick = () => setView(btn.dataset.view); });
+$('#refreshBtn').onclick = async () => {
+  await Promise.all([
+    load(),
+    (state.view === 'dashboard' || state.view === 'alerts') ? loadAlerts() : Promise.resolve(),
+    state.view === 'logs' ? loadLogs(state.logType) : Promise.resolve()
+  ]);
+  render();
+  toast(t('reloaded'));
+};
+$('#themeBtn').onclick = () => setTheme(state.theme === 'dark' ? 'light' : 'dark');
+$('#langSelect').onchange = event => setLang(event.target.value);
+$('#loginForm').onsubmit = login;
+$('#logoutBtn').onclick = logout;
+
+setTheme(state.theme);
+setLang(state.lang);
+checkAuth().then(ok => { if (ok) startDashboard(); });
+setInterval(() => {
+  if ($('#loginScreen')?.hidden) {
+    const active = document.activeElement;
+    const isEditing = active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName);
+    if (isEditing || state.view === 'knowledge') return;
+    load()
+      .then(async () => {
+        if (state.selected?.conversation?.id) {
+          state.selected = await api(API + '/conversations/' + encodeURIComponent(state.selected.conversation.id));
+        }
+        render();
+      })
+      .catch(() => {});
+  }
+}, 10000);
 </script>
-</body></html>
+</body>
+</html>

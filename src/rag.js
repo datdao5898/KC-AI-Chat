@@ -247,10 +247,13 @@ function loadTextFile(name, options = {}) {
 }
 
 function buildContext(query, options = {}) {
-  const products = searchProducts(query, 8, options);
+  const shouldSearchProducts = options.topK !== 0;
+  const products = shouldSearchProducts ? searchProducts(query, options.topK || 8, options) : [];
   let ctx = '';
 
-  if (products.length) {
+  if (!shouldSearchProducts) {
+    ctx += 'Cau hoi dang can du lieu FAQ/chinh sach, khong can tra cuu san pham moi.\n';
+  } else if (products.length) {
     ctx += 'San pham lien quan:\n';
     products.forEach((p, i) => {
       const price = p.price || p.compare_at_price || p.gia || '';

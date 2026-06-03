@@ -65,7 +65,10 @@ function classifyIntent(text) {
   if (hasPhrase(msg, ['giá','bao nhiêu','cost','price']) || hasWord(msg, ['bn'])) return { intent: 'price', confidence: 0.85 };
   if (hasPhrase(msg, ['còn hàng','có hàng','tồn kho']) || hasWord(msg, ['mua','đặt','chốt','ban','bán'])) return { intent: 'buy', confidence: 0.85 };
   if (hasPhrase(msg, ['đơn hàng','mã đơn','giao hàng','vận chuyển']) || hasWord(msg, ['ship'])) return { intent: 'order', confidence: 0.85 };
-  if (hasPhrase(msg, ['bảo hành','đổi trả']) || hasWord(msg, ['lỗi','sửa','return'])) return { intent: 'warranty', confidence: 0.85 };
+  if (hasPhrase(msg, [
+    'bảo hành', 'bao hanh', 'đổi trả', 'doi tra', 'chính sách', 'chinh sach',
+    'full vat', 'vat', 'hóa đơn', 'hoa don', 'xuất hóa đơn', 'xuat hoa don'
+  ]) || hasWord(msg, ['lỗi','sửa','return','vat'])) return { intent: 'warranty', confidence: 0.85 };
   if (hasPhrase(msg, ['tư vấn','san pham','sản phẩm']) || hasWord(msg, ['tìm','tim','lens','micro','đèn','den','camera','ulanzi','synco','zhiyun','viltrox','nanlite','samsung','gimbal','filter','kase','boya','fifine','maono','balo','backpack','tui','túi','bộ','bo','đàm','dam'])) return { intent: 'product_search', confidence: 0.85 };
 
   return { intent: 'general', confidence: 0.5 };

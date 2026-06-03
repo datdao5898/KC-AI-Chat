@@ -1,7 +1,17 @@
-# Ulanzi Catalog Summary
+# Tong quan catalog Ulanzi
 
-Fanpage nay chi tu van san pham Ulanzi.
+- Source key: facebook/260016447958834
+- Thuong hieu: Ulanzi
+- Che do: strictProducts = true
+- Catalog rieng hien co 387 san pham Ulanzi.
 
-- Chi gioi thieu san pham co trong file `products.csv` cua fanpage Ulanzi.
-- Khong gioi thieu Synco, Viltrox hoac thuong hieu khac.
-- Neu khach hoi san pham ngoai catalog Ulanzi, thong bao fanpage nay dang ho tro Ulanzi va chuyen nhan vien kiem tra them.
+## Nhom uu tien
+- Tripod, monopod, selfie stick, phone tripod.
+- Den LED/RGB/fill light, softbox, light stand.
+- Cage, grip, handle, quick release, Falcam F22/F38/F50.
+- Phu kien DJI/action camera, bag/case, backpack strap clip.
+
+## Nguyen tac
+- Chi tra san pham Ulanzi trong catalog rieng.
+- Neu cau hoi co model Ulanzi nhung khong tim thay trong catalog, khong tu gan sang Synco hay thuong hieu khac.
+- Neu khach hoi san pham nao hot, chon 3 san pham Ulanzi trong catalog va noi la goi y tham khao theo danh muc hien co.

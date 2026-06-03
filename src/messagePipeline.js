@@ -5,6 +5,23 @@ const { notifyStaff, notifyWebsiteMessage } = require('./staffAlert');
 const { logAiResponse } = require('./aiTrace');
 const { buildSourceContext } = require('./sourceRegistry');
 
+function normalizeForMatch(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isPolicyFollowUpText(text, intent) {
+  const normalized = normalizeForMatch(text);
+  return intent === 'warranty'
+    || /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|bao hanh|doi tra|chinh sach|warranty|return policy|invoice)\b/i.test(normalized);
+}
+
 function detectHandoff({ text, intent, aiError, ragProducts }) {
   const t = String(text || '').toLowerCase();
   if (intent === 'human') return { needed: true, reason: 'Khách yêu cầu gặp nhân viên' };
@@ -12,6 +29,9 @@ function detectHandoff({ text, intent, aiError, ragProducts }) {
     return { needed: true, reason: 'Khách cần follow-up/khiếu nại' };
   }
   if (aiError) return { needed: true, reason: 'AI lỗi hoặc hết quota, cần nhân viên kiểm tra' };
+  if (isPolicyFollowUpText(text, intent)) {
+    return { needed: true, reason: 'Khách cần xác nhận VAT/bảo hành/chính sách' };
+  }
   if (['buy', 'price', 'product_search', 'order'].includes(intent) && (!ragProducts || ragProducts.length === 0)) {
     return { needed: true, reason: 'Không có dữ liệu sản phẩm phù hợp trong RAG' };
   }

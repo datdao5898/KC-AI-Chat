@@ -10,6 +10,53 @@ const { SOURCES_DIR, readSourceConfig, lookupEnvMap } = require('../sourceRegist
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const KNOWLEDGE_FILES = { faq: 'faq.md', policies: 'policies.md', catalog_summary: 'catalog_summary.md' };
+const TRAINING_FILES = { products: 'products.csv', faq: 'faq.md', policies: 'policies.md' };
+const LOG_FILES = {
+  ai: 'ai_responses.log',
+  alerts: 'staff_alerts.log'
+};
+
+function tailLines(filePath, maxLines = 120) {
+  if (!fs.existsSync(filePath)) return [];
+  const content = fs.readFileSync(filePath, 'utf8');
+  return content
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(-Math.max(1, Math.min(Number(maxLines) || 120, 500)));
+}
+
+function readLogEntries(type = 'ai', limit = 120) {
+  const normalized = LOG_FILES[type] ? type : 'ai';
+  const filePath = path.join(DATA_DIR, LOG_FILES[normalized]);
+  const lines = tailLines(filePath, limit);
+  return lines.reverse().map((line, index) => {
+    if (normalized === 'ai') {
+      try {
+        const data = JSON.parse(line);
+        return {
+          id: `${normalized}-${index}`,
+          type: normalized,
+          ts: data.ts || '',
+          level: data.aiError === 'true' || data.deliveryError ? 'error' : 'info',
+          title: data.customerText || data.intent || data.aiSource || 'AI response',
+          source: data.sourceName || data.channel || '',
+          status: data.deliveryStatus || data.aiSource || '',
+          detail: data.reply || data.aiError || '',
+          raw: data
+        };
+      } catch {
+        return { id: `${normalized}-${index}`, type: normalized, level: 'info', title: line.slice(0, 160), detail: line };
+      }
+    }
+    return {
+      id: `${normalized}-${index}`,
+      type: normalized,
+      level: /failed|error|lỗi/i.test(line) ? 'error' : 'info',
+      title: line.slice(0, 160),
+      detail: line
+    };
+  });
+}
 
 function normalizeKnowledgeSourceKey(value = 'common') {
   const sourceKey = String(value ?? '').trim().toLowerCase();
@@ -32,6 +79,23 @@ function knowledgePath(type, sourceKey = 'common') {
   if (!file) return null;
   const baseDir = knowledgeBaseDir(sourceKey);
   return baseDir ? path.join(baseDir, file) : null;
+}
+
+function trainingFilePath(type, sourceKey = 'common') {
+  const file = TRAINING_FILES[type];
+  if (!file) return null;
+  const normalized = normalizeKnowledgeSourceKey(sourceKey);
+  if (!normalized) return null;
+  if (type === 'products' && normalized === 'common') return path.join(DATA_DIR, file);
+  const baseDir = knowledgeBaseDir(normalized);
+  return baseDir ? path.join(baseDir, file) : null;
+}
+
+function trainingFileInfo(type, sourceKey = 'common') {
+  const p = trainingFilePath(type, sourceKey);
+  if (!p || !fs.existsSync(p)) return { type, exists: false, bytes: 0, updatedAt: null };
+  const stat = fs.statSync(p);
+  return { type, exists: true, bytes: stat.size, updatedAt: stat.mtime.toISOString() };
 }
 
 function readKnowledge(sourceKey = 'common') {
@@ -186,6 +250,12 @@ router.get('/stats', async (req, res) => {
 });
 
 router.get('/alerts', async (req, res) => res.json(await listStaffAlerts(req.query.status || 'open')));
+router.get('/logs', (req, res) => {
+  res.json({
+    type: LOG_FILES[req.query.type] ? req.query.type : 'ai',
+    entries: readLogEntries(req.query.type || 'ai', req.query.limit || 120)
+  });
+});
 router.get('/search-products', (req, res) => res.json(searchProducts(req.query.q || '', 20, { sourceKey: req.query.sourceKey || '' })));
 
 router.get('/knowledge-sources', (req, res) => {
@@ -198,11 +268,35 @@ router.get('/knowledge', (req, res) => {
   res.json(result);
 });
 
+router.get('/knowledge-files', (req, res) => {
+  const sourceKey = normalizeKnowledgeSourceKey(req.query.sourceKey || 'common');
+  if (!sourceKey) return res.status(400).json({ error: 'invalid_source_key' });
+  res.json({
+    sourceKey,
+    files: Object.keys(TRAINING_FILES).map(type => trainingFileInfo(type, sourceKey))
+  });
+});
+
 router.get('/knowledge/:type', (req, res) => {
   const sourceKey = normalizeKnowledgeSourceKey(req.query.sourceKey || 'common');
   const p = knowledgePath(req.params.type, sourceKey);
   if (!p) return res.status(400).json({ error: 'invalid_knowledge_type' });
   res.json({ sourceKey, type: req.params.type, content: fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '' });
+});
+
+router.get('/knowledge-file/:type', (req, res) => {
+  const sourceKey = normalizeKnowledgeSourceKey(req.query.sourceKey || 'common');
+  const p = trainingFilePath(req.params.type, sourceKey);
+  if (!sourceKey) return res.status(400).json({ error: 'invalid_source_key' });
+  if (!p) return res.status(400).json({ error: 'invalid_training_file_type' });
+  const info = trainingFileInfo(req.params.type, sourceKey);
+  res.json({
+    ok: true,
+    sourceKey,
+    type: req.params.type,
+    content: fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '',
+    ...info
+  });
 });
 
 router.put('/knowledge/:type', (req, res) => {
@@ -212,6 +306,17 @@ router.put('/knowledge/:type', (req, res) => {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, String(req.body.content || ''), 'utf8');
   res.json({ ok: true, sourceKey, type: req.params.type, bytes: Buffer.byteLength(String(req.body.content || ''), 'utf8') });
+});
+
+router.put('/knowledge-file/:type', express.text({ type: '*/*', limit: process.env.KNOWLEDGE_UPLOAD_LIMIT || '10mb' }), (req, res) => {
+  const sourceKey = normalizeKnowledgeSourceKey(req.query.sourceKey || 'common');
+  const p = trainingFilePath(req.params.type, sourceKey);
+  if (!sourceKey) return res.status(400).json({ error: 'invalid_source_key' });
+  if (!p) return res.status(400).json({ error: 'invalid_training_file_type' });
+  const content = String(req.body || '').replace(/^\uFEFF/, '');
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, content, 'utf8');
+  res.json({ ok: true, sourceKey, type: req.params.type, bytes: Buffer.byteLength(content, 'utf8'), file: path.basename(p) });
 });
 
 module.exports = router;

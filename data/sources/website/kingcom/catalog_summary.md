@@ -1,34 +1,25 @@
-# Tổng quan dữ liệu sản phẩm KingCom
+# Tong quan catalog KingCom
 
-- Tổng số sản phẩm đang có trong dữ liệu: 1000
-- Số thương hiệu/nhà cung cấp: 24
-- Khoảng giá: 20,000 VND đến 575,200,000 VND
-- Giá trung vị: 1,215,000 VND
+Nguon du lieu noi bo:
+- data/sources/website/kingcom/products.csv
+- data/sources/website/newlite/products.csv
+- data/sources/facebook/1184640711390003/products.csv
+- data/sources/facebook/260016447958834/products.csv
 
-## Top thương hiệu theo số lượng sản phẩm
-- Ulanzi: 387 sản phẩm
-- Boya: 112 sản phẩm
-- Zhiyun: 90 sản phẩm
-- Viltrox: 87 sản phẩm
-- Kase: 69 sản phẩm
-- Kingjoy: 48 sản phẩm
-- FiFine: 34 sản phẩm
-- COMICA: 22 sản phẩm
-- ZG Cine: 21 sản phẩm
-- PortKeys: 19 sản phẩm
-- Synco: 15 sản phẩm
-- MAONO: 15 sản phẩm
-- Obsbot: 14 sản phẩm
-- SmokeGenie: 12 sản phẩm
-- NiceFoto: 10 sản phẩm
-- Accsoon: 10 sản phẩm
-- Feelworld: 9 sản phẩm
-- Lensgo: 6 sản phẩm
-- Colbor: 6 sản phẩm
-- Hohem: 5 sản phẩm
+## Pham vi
+- KingCom/NewLite tu van phu kien nhiep anh, quay phim, livestream va thiet bi sang tao noi dung.
+- Catalog website hien co nhieu nhom: lighting, pro audio, pro photo/video, wireless transmission, intercom, monitor, tripod, gimbal, rig, mobile support, bag/case, fog machine.
+- Fanpage Synco chi tu van san pham Synco trong catalog rieng.
+- Fanpage Ulanzi chi tu van san pham Ulanzi trong catalog rieng.
 
-## Hướng dẫn tư vấn
-- Khi khách hỏi theo thương hiệu, ưu tiên liệt kê các sản phẩm khớp nhất từ products.csv.
-- Khi có giá trong dữ liệu, báo giá rõ ràng theo VND.
-- Nếu không tìm thấy sản phẩm, xin thêm tên model/SKU hoặc số điện thoại để nhân viên tư vấn.
-- Không bịa tồn kho, bảo hành cụ thể hoặc khuyến mãi nếu dữ liệu không cung cấp.
+## Nguyen tac chon san pham
+- Uu tien san pham co ten/model khop nhat voi cau hoi.
+- Neu khach hoi theo thuong hieu, chi loc san pham cua thuong hieu do.
+- Neu khach hoi theo nhu cau, chon san pham co mo ta/tag/name phu hop nhat.
+- Neu khach hoi "hot/best seller/ban chay" ma catalog khong co truong ban chay, chon ngau nhien 3 san pham phu hop trong pham vi nguon va noi la "goi y tham khao".
+- Neu khach hoi gia, chi bao gia co trong products.csv. Neu gia khong ro hoac la "lien he", xin so dien thoai de nhan vien bao gia.
+
+## Canh bao
+- Khong fallback sang san pham cua hoi thoai truoc neu cau hoi moi khong tim thay ket qua.
+- Khong gan san pham Ulanzi cho fanpage Synco va nguoc lai.
+- Khong tu gan san pham ngoai catalog vao KingCom.
