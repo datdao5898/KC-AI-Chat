@@ -41,6 +41,14 @@ function classifyIntent(text) {
     return { intent: 'customer_info', confidence: 0.9 };
   }
 
+  if (hasPhrase(msg, [
+    'mat hang gi', 'mat hang nao', 'nhung mat hang gi', 'nhung mat hang nao',
+    'ban mat hang gi', 'ban mat hang nao', 'ban nhung mat hang gi', 'ban nhung mat hang nao',
+    'bay ban cac san pham gi', 'bay ban san pham gi', 'bay ban nhung san pham gi',
+    'dang bay ban', 'dang ban nhung mat hang', 'dang ban mat hang',
+    'chi ban moi', 'chi co moi', 'moi mat hang', 'moi san pham'
+  ])) return { intent: 'catalog_info', confidence: 0.9 };
+
   if (hasWord(msg, ['mua', 'dat', 'chot'])) return { intent: 'buy', confidence: 0.85 };
   if (hasPhrase(msg, ['looking for', 'i am looking', 'im looking', 'please im looking', 'please i am looking']) || hasWord(msg, ['tripod', 'mobile', 'phone', 'smartphone'])) return { intent: 'product_search', confidence: 0.85 };
   if (hasPhrase(msg, ['i want to buy', 'want to buy', 'looking to buy']) || hasWord(msg, ['buy'])) return { intent: 'buy', confidence: 0.85 };
@@ -52,7 +60,11 @@ function classifyIntent(text) {
     'kingcom có nhiều', 'kingcom co nhieu', 'bên mình có nhiều', 'ben minh co nhieu',
     'bán sản phẩm gì', 'ban san pham gi', 'bán những sản phẩm gì', 'ban nhung san pham gi',
     'bán sản phẩm nào', 'ban san pham nao', 'bán những sản phẩm nào', 'ban nhung san pham nao',
+    'bán mặt hàng gì', 'ban mat hang gi', 'bán mặt hàng nào', 'ban mat hang nao',
+    'bán những mặt hàng gì', 'ban nhung mat hang gi', 'bán những mặt hàng nào', 'ban nhung mat hang nao',
     'bán các loại sản phẩm nào', 'ban cac loai san pham nao',
+    'bày bán các sản phẩm gì', 'bay ban cac san pham gi', 'bày bán sản phẩm gì', 'bay ban san pham gi',
+    'chỉ bán mỗi', 'chi ban moi', 'chỉ có mỗi', 'chi co moi',
     'có sản phẩm gì', 'co san pham gi', 'có những sản phẩm gì', 'co nhung san pham gi',
     'các sản phẩm đang được bán', 'cac san pham dang duoc ban',
     'sản phẩm đang được bán', 'san pham dang duoc ban',

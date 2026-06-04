@@ -286,6 +286,7 @@ function searchProducts(query, topK = 8, options = {}) {
   const wantsAdapter = /\b(adapter|mount adapter|ngam|ngoam)\b/i.test(normQuery)
     || hasAnyWord(accentQuery, ['ngàm', 'ngoàm']);
   const wantsLens = (/\b(lens|ong kinh)\b/i.test(normQuery) || /\bống kính\b/i.test(accentQuery)) && !wantsAdapter;
+  const wantsPortraitLens = wantsLens && /\b(chan dung|portrait|xoa phong|bokeh)\b/i.test(normQuery);
   if (!words.length) return [];
 
   const scored = [];
@@ -341,6 +342,8 @@ function searchProducts(query, topK = 8, options = {}) {
     if (wantsMicrophone && /(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)/i.test(`${name} ${vendor}`)) score += 8;
     if (wantsLight && isTrueLightProduct(productShape)) score += 8;
     if (wantsLens && isTrueLensProduct(productShape)) score += 8;
+    if (wantsPortraitLens && /\b(50|56|75|85)\s*mm\b/i.test(name)) score += 12;
+    if (wantsPortraitLens && /\b(13|16|20|23|24)\s*mm\b/i.test(name)) score -= 6;
     if (wantsAdapter && isLensAccessory(productShape)) score += 8;
     if (wantsPhone && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 6;
     if (wantsTripod && wantsPhone && /(tripod|chan may|chan den|gia do)/i.test(haystack) && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 10;

@@ -23,6 +23,15 @@ function isPolicyFollowUpText(text, intent) {
     || /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|bao hanh|doi tra|chinh sach|warranty|return policy|invoice)\b/i.test(normalized);
 }
 
+function isGenericConsultationRequest(text, intent) {
+  const normalized = normalizeForMatch(text);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (!['product_search', 'general'].includes(intent)) return false;
+  return words.length <= 5
+    && /\b(tu van|gioi thieu|goi y|san pham|sp|can tu van)\b/i.test(normalized)
+    && !/\b(gia|bao nhieu|mua|ban|con hang|co hang|model|sku|den|micro|mic|lens|tripod|gimbal|filter|ulanzi|synco|viltrox|maono|boya|fifine)\b/i.test(normalized);
+}
+
 function detectHandoff({ text, intent, aiError, ragProducts }) {
   const t = String(text || '').toLowerCase();
   const normalized = normalizeForMatch(text);
@@ -37,7 +46,7 @@ function detectHandoff({ text, intent, aiError, ragProducts }) {
   if (isPolicyFollowUpText(text, intent)) {
     return { needed: true, reason: 'Khách cần xác nhận VAT/bảo hành/chính sách' };
   }
-  if (['buy', 'price', 'product_search', 'order'].includes(intent) && (!ragProducts || ragProducts.length === 0)) {
+  if (['buy', 'price', 'product_search', 'order'].includes(intent) && (!ragProducts || ragProducts.length === 0) && !isGenericConsultationRequest(text, intent)) {
     return { needed: true, reason: 'Không có dữ liệu sản phẩm phù hợp trong RAG' };
   }
   return { needed: false };

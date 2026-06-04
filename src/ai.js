@@ -491,6 +491,63 @@ function buildCatalogRecommendationReply(products, lang, scopeBrand = '') {
   return `Dạ anh/chị có thể tham khảo một số mẫu ${scope} đang được khách quan tâm:\n\n${rows}\n\nAnh/chị đang cần sản phẩm cho nhu cầu nào để em gợi ý sát hơn ạ?`;
 }
 
+function categoryLabelFromProduct(product) {
+  const name = normalize(product?.name || product?.title || '');
+  if (/\b(intercom|xtalk|headset|talkback)\b/i.test(name)) return 'intercom/headset không dây';
+  if (/\b(mic|micro|microphone|thu am|lavalier|wireless)\b/i.test(name)) return 'micro không dây/thu âm';
+  if (/\b(xview|monitor|man hinh)\b/i.test(name)) return 'màn hình/monitor hỗ trợ quay';
+  if (/\b(light|den|tally)\b/i.test(name)) return 'đèn/tally light';
+  if (/\b(charging|battery|hub|box|case|carrying)\b/i.test(name)) return 'phụ kiện theo hệ sản phẩm';
+  if (/\b(lens|ong kinh)\b/i.test(name)) return 'ống kính';
+  if (/\b(adapter|mount|ngam|filter)\b/i.test(name)) return 'ngàm/filter/phụ kiện ống kính';
+  return 'phụ kiện quay chụp';
+}
+
+function buildCatalogOverviewReply({ lang = 'vi', scopeBrand = '', products = [] }) {
+  const scope = String(scopeBrand || '').trim();
+  const count = Array.isArray(products) ? products.length : 0;
+  const categories = [...new Set((products || []).map(categoryLabelFromProduct))].slice(0, 6);
+  const categoryText = categories.length ? categories.join(', ') : 'phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung';
+
+  if (lang === 'en') {
+    if (scope) {
+      return `This page supports ${scope} products. The current catalog has ${count || 'several'} ${scope} items, including ${categoryText}. Please tell me your use case or the product type you need so I can suggest suitable models.`;
+    }
+    return 'KingCom carries photography, filming, and content creation accessories such as gimbals, microphones, lights, filters, tripods, monitors, livestream gear, and related accessories. Which product group are you interested in?';
+  }
+
+  if (lang === 'zh') {
+    if (scope) {
+      return `此页面主要咨询 ${scope} 产品。目前目录中有 ${count || '多款'} 款 ${scope} 产品，包括 ${categoryText}。请告诉我您的使用需求或想了解的产品类型，我会为您推荐合适的型号。`;
+    }
+    return 'KingCom 销售摄影、拍摄和内容创作相关配件，例如稳定器、麦克风、灯具、滤镜、三脚架、外接屏幕和直播设备。您想了解哪一类产品？';
+  }
+
+  if (scope) {
+    return `Dạ không phải chỉ có một mẫu đâu ạ. Fanpage này hiện tư vấn sản phẩm ${scope}; trong catalog hiện có ${count || 'nhiều'} sản phẩm ${scope}, gồm các nhóm như ${categoryText}. Anh/chị đang cần dùng cho nhu cầu nào để em gợi ý đúng mẫu hơn ạ?`;
+  }
+
+  return 'Dạ KingCom đang kinh doanh phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod, màn hình phụ, thiết bị livestream và các phụ kiện quay chụp khác. Anh/chị đang quan tâm nhóm sản phẩm nào để em tư vấn mẫu phù hợp ạ?';
+}
+
+function buildPolicyRuleReply(userText, lang, scopeBrand = '') {
+  const normalized = normalize(userText);
+  const scope = normalize(scopeBrand);
+  if (!/\b(bao hanh|warranty)\b/i.test(normalized)) return null;
+
+  if (scope === 'viltrox') {
+    if (lang === 'en') {
+      return 'Viltrox products are covered by a limited 1-year warranty from the purchase date. The warranty applies to defects under normal use and does not cover misuse, physical impact, unauthorized repair, power issues, or incorrect installation/use. Please share the exact model or order information so KingCom staff can check the case more accurately.';
+    }
+    if (lang === 'zh') {
+      return 'Viltrox 产品通常享有自购买日起 1 年有限保修。保修适用于正常使用下产生的故障，不包括误用、外力损坏、擅自维修、电源问题或错误安装/使用等情况。请提供具体型号或订单信息，方便 KingCom 员工进一步确认。';
+    }
+    return 'Dạ sản phẩm Viltrox áp dụng bảo hành giới hạn 1 năm tính từ ngày mua hàng ạ. Bảo hành áp dụng cho lỗi phát sinh trong quá trình sử dụng bình thường, không gồm các trường hợp dùng sai cách, va đập, tự ý sửa chữa, lỗi nguồn điện hoặc lắp đặt/sử dụng không đúng hướng dẫn. Anh/chị gửi giúp em model hoặc thông tin đơn hàng để nhân viên KingCom kiểm tra chính xác hơn ạ.';
+  }
+
+  return null;
+}
+
 function buildProductGuidanceFallbackReply(products, lang = 'vi') {
   const name = productDisplayName(products?.[0], '');
   if (lang === 'en') {
@@ -748,6 +805,7 @@ async function generateReply({
   const policyQuestion = isCommercialPolicyQuestion(userText, intent);
   const sourceConfig = readSourceConfig(sourceKey);
   const scopeBrand = String(sourceConfig.brand || '').trim();
+  const scopedProducts = loadProducts({ sourceKey });
   const contactInfoReply = buildContactInfoReply(userText, messageLanguage);
   if (contactInfoReply) {
     return {
@@ -769,6 +827,27 @@ async function generateReply({
     };
   }
 
+  if (intent === 'catalog_info') {
+    return {
+      reply: buildCatalogOverviewReply({ lang: messageLanguage, scopeBrand, products: scopedProducts }),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_catalog_overview',
+      ragProducts: []
+    };
+  }
+
+  const policyRuleReply = buildPolicyRuleReply(userText, messageLanguage, scopeBrand);
+  if (policyRuleReply) {
+    return {
+      reply: policyRuleReply,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_policy',
+      ragProducts: []
+    };
+  }
+
   const localizedRuleReply = buildLocalizedRuleReply(intent, userText, messageLanguage, scopeBrand);
   if (localizedRuleReply) {
     return {
@@ -783,16 +862,6 @@ async function generateReply({
   if (intent === 'store_info') {
     return {
       reply: 'Dạ địa chỉ cửa hàng KingCom là 65 Nguyễn Minh Hoàng, phường Bảy Hiền, TP. Hồ Chí Minh ạ. Anh/chị cần em hỗ trợ thêm sản phẩm nào không?',
-      aiUsed: 0,
-      aiError: false,
-      aiSource: 'rule',
-      ragProducts: []
-    };
-  }
-
-  if (intent === 'catalog_info') {
-    return {
-      reply: 'Dạ KingCom có nhiều sản phẩm phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod, màn hình phụ, thiết bị livestream... Anh/chị đang quan tâm nhóm sản phẩm nào để em tư vấn mẫu phù hợp ạ?',
       aiUsed: 0,
       aiError: false,
       aiSource: 'rule',
