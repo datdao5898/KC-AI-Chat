@@ -66,6 +66,10 @@ App goi OpenRouter/OpenAI truc tiep, khong can CLI trung gian.
 - `OPENAI_API_KEY` hoac `OPENROUTER_API_KEY`: API key cua anh.
 - `OPENAI_MODEL`: mac dinh `gpt-5.4-mini`, hoac `openrouter/owl-alpha` neu anh dung OpenRouter.
 - `OPENAI_BASE_URL`: mac dinh `https://api.openai.com/v1`, doi sang `https://openrouter.ai/api/v1` neu anh dung OpenRouter.
+- `REPLY_JUDGE_ENABLED`: bat/tat tang Conversation Auditor kiem tra cau tra loi truoc khi gui cho khach.
+- `OPENAI_JUDGE_MODEL`: de trong thi dung chung model voi `OPENAI_MODEL`; dien model khac neu muon tang judge rieng.
+- `OPENAI_JUDGE_MAX_OUTPUT_TOKENS`: so token toi da cho ket qua judge, nen de khoang `520`.
+- `OPENAI_JUDGE_RETRIES`: so lan thu lai neu judge tra JSON loi, mac dinh `2`.
 
 Neu anh muon thu model khac, chi can doi `OPENAI_MODEL`.
 

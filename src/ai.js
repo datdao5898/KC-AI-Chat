@@ -79,7 +79,14 @@ Yêu cầu định dạng bắt buộc:
 }
 
 function formatPrice(price) {
-  const n = Number(String(price || '').replace(/[^0-9]/g, ''));
+  const raw = String(price || '').trim();
+  if (/^\$/.test(raw) || /\busd\b/i.test(raw)) {
+    const n = Number(raw.replace(/[^0-9.]/g, ''));
+    return Number.isFinite(n) && n > 0
+      ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : raw;
+  }
+  const n = Number(raw.replace(/[^0-9]/g, ''));
   return n ? `${n.toLocaleString('vi-VN')}đ` : (price || 'liên hệ');
 }
 
@@ -120,6 +127,14 @@ function isAvailabilityQuestion(text) {
   return /\b(?:do|does)\s+(?:you|u|kingcom|shop|store)?\s*(?:have|carry|sell)\b/i.test(raw)
     || /\b(?:available|in stock|stock status)\b/i.test(raw)
     || /(co hang|con hang|san pham nay co khong|ben em co|shop co|co ban|dang ban)/i.test(norm);
+}
+
+function isShortSpecificFollowUp(text) {
+  const normalized = normalize(text);
+  const words = queryWords(text);
+  return /\b(thi sao|thì sao|con|còn|vay|vậy)\b/i.test(`${normalized} ${String(text || '').toLowerCase()}`)
+    && words.length <= 4
+    && words.some(w => w.length >= 4 && !['den', 'light', 'micro', 'lens', 'hang'].includes(w));
 }
 
 function hasPhoneNumber(text) {
@@ -216,8 +231,7 @@ function buildAvailabilityReply(userText, products) {
   const lang = detectMessageLanguage(userText);
   const chinese = lang === 'zh';
   const english = lang === 'en';
-  const numericPrice = Number(String(rawPrice || '').replace(/[^0-9]/g, ''));
-  const price = english && numericPrice ? `${numericPrice.toLocaleString('en-US')} VND` : formatPrice(rawPrice);
+  const price = formatPrice(rawPrice);
   const userNorm = normalize(userText);
   const nameNorm = normalize(name);
   const exactEnough = nameNorm && (userNorm.includes(nameNorm) || queryWords(userText).filter(w => nameNorm.includes(w)).length >= 2);
@@ -234,7 +248,7 @@ function buildAvailabilityReply(userText, products) {
       '',
       name,
       sku,
-      `价格: ${numericPrice ? `${numericPrice.toLocaleString('en-US')} VND` : (rawPrice || '请联系')}`,
+      `价格: ${price}`,
       url ? `链接: ${url}` : '',
       '',
       '我可以请 KingCom 员工为您确认当前库存。请留下电话号码，或告诉我您想确认哪一个型号。'
@@ -410,10 +424,7 @@ function buildScopedProductsReply(products, userText, scopeBrand) {
   const rows = (products || []).slice(0, 3).map((p, i) => {
     const name = p.name || p.title || p.sku || (lang === 'en' ? `Product ${i + 1}` : `Sản phẩm ${i + 1}`);
     const rawPrice = p._price || p.price || p.compare_at_price || p.gia || '';
-    const priceNumber = Number(String(rawPrice).replace(/[^0-9]/g, ''));
-    const price = lang === 'en' || lang === 'zh'
-      ? (priceNumber ? `${priceNumber.toLocaleString('en-US')} VND` : (rawPrice || 'contact us'))
-      : formatPrice(rawPrice);
+    const price = formatPrice(rawPrice);
     const url = p.url || p.link || p.product_url || '';
 
     if (lang === 'zh') return `${i + 1}. ${name}\n价格: ${price}${url ? `\n链接: ${url}` : ''}`;
@@ -464,9 +475,7 @@ function buildCatalogRecommendationReply(products, lang, scopeBrand = '') {
   const rows = (products || []).map((product, index) => {
     const name = productDisplayName(product, `Sản phẩm ${index + 1}`);
     const rawPrice = product._price || product.price || product.compare_at_price || product.gia || '';
-    const price = lang === 'en' && Number(rawPrice)
-      ? `${Number(rawPrice).toLocaleString('en-US')} VND`
-      : formatPrice(rawPrice);
+    const price = formatPrice(rawPrice);
     const url = product.url || product.link || product.product_url || '';
     if (lang === 'en') return `${index + 1}. ${name}\nPrice: ${price}${url ? `\nLink: ${url}` : ''}`;
     if (lang === 'zh') return `${index + 1}. ${name}\n价格: ${price}${url ? `\n链接: ${url}` : ''}`;
@@ -519,8 +528,7 @@ function fallbackReply(intent, userText, products) {
     if (products && products.length) {
       const rows = products.slice(0, 3).map((p, i) => {
         const name = p.name || p.title || `产品 ${i + 1}`;
-        const priceNumber = Number(String(p.price || p.compare_at_price || p.gia || '').replace(/[^0-9]/g, ''));
-        const price = priceNumber ? `${priceNumber.toLocaleString('en-US')} VND` : '请联系';
+        const price = formatPrice(p.price || p.compare_at_price || p.gia || '');
         const url = p.url || p.link || p.product_url || '';
         return `${i + 1}. ${name}\n价格: ${price}${url ? `\n链接: ${url}` : ''}`;
       }).join('\n\n');
@@ -622,7 +630,10 @@ function productQueryLabel(userText) {
   const words = queryWords(userText)
     .filter(w => w.length >= 2)
     .slice(0, 4);
-  return words.join(' ').trim();
+  return words.join(' ')
+    .replace(/\bden\b/g, 'đèn')
+    .replace(/\bmic\b/g, 'micro')
+    .trim();
 }
 
 function buildNoCatalogMatchReply(userText, lang, scopeBrand = '') {
@@ -881,7 +892,11 @@ ${intent === 'greeting'
   }
 
   const searchQuery = buildSearchQuery(userText, history, customer);
-  const { context, products } = buildContext(searchQuery, { sourceKey, topK: policyQuestion ? 0 : (guidanceQuestion ? 1 : 8) });
+  const { context, products } = buildContext(searchQuery, {
+    sourceKey,
+    topK: policyQuestion ? 0 : (guidanceQuestion ? 1 : 8),
+    requireIdentityMatch: isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText)
+  });
   if (isPreviousAdviceComplaint(userText) && !guidanceQuestion && !policyQuestion) {
     return {
       reply: buildPreviousAdviceCorrectionReply(userText, products, scopeBrand),

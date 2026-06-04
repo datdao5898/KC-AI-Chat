@@ -13,31 +13,59 @@ const STOPWORDS = new Set([
   'duoi', 'tren', 'san', 'pham', 'hang', 'link', 'gui', 'kem', 'xem', 'tham', 'khao', 'muon', 'tu',
   'van', 'giup', 'voi', 'co', 'khong', 'nay', 'do', 'la', 'cai', 'mot', 'cac', 'va', 'hoac', 'chiec',
   'sp', 'shop', 'kingcom', 'hien', 'tai', 'trong', 'he', 'thong', 'du', 'lieu', 'chua', 'khop',
-  'chinh', 'xac', 'model', 'ma',
+  'chinh', 'xac', 'model', 'ma', 'thi', 'sao', 'vay',
   'please', 'pls', 'i', 'im', 'i-m', 'am', 'looking', 'look', 'for', 'need', 'want', 'to', 'buy',
   'one', 'a', 'an', 'the', 'of', 'with', 'me', 'my', 'your', 'you'
 ]);
 
-function parseCsvLine(line) {
-  const out = [];
-  let cur = '';
-  let q = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"' && line[i + 1] === '"') {
-      cur += '"';
-      i++;
-    } else if (ch === '"') {
-      q = !q;
-    } else if (ch === ',' && !q) {
-      out.push(cur);
-      cur = '';
-    } else {
-      cur += ch;
+const IDENTITY_STOPWORDS = new Set([
+  ...STOPWORDS,
+  'dang', 'ban', 'gi', 'nao', 'mau', 'loai', 'dong', 'hang', 'con', 'stock', 'thi', 'sao',
+  'den', 'led', 'light', 'ring', 'rgb', 'tube', 'video', 'fill',
+  'mic', 'micro', 'microphone', 'thu', 'am',
+  'tripod', 'chan', 'may', 'gia', 'do',
+  'lens', 'ong', 'kinh', 'camera', 'filter', 'gimbal', 'tui', 'bag'
+]);
+
+function parseCsvText(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  const input = String(text || '');
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (quoted) {
+      if (ch === '"' && input[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') {
+        quoted = false;
+      } else {
+        cell += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      quoted = true;
+    } else if (ch === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n') {
+      row.push(cell);
+      if (row.some(value => String(value || '').trim() !== '')) rows.push(row);
+      row = [];
+      cell = '';
+    } else if (ch !== '\r') {
+      cell += ch;
     }
   }
-  out.push(cur);
-  return out;
+
+  row.push(cell);
+  if (row.some(value => String(value || '').trim() !== '')) rows.push(row);
+  return rows;
 }
 
 function normalize(s) {
@@ -51,10 +79,52 @@ function normalize(s) {
     .trim();
 }
 
+function normalizeAccent(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFC')
+    .replace(/[^\p{L}0-9\s\-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function queryWords(query) {
   return normalize(query)
     .split(/\s+/)
     .filter(w => w.length > 1 && !STOPWORDS.has(w));
+}
+
+function accentQueryWords(query) {
+  return normalizeAccent(query)
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !STOPWORDS.has(normalize(w)));
+}
+
+function hasAccentWord(text, word) {
+  return new RegExp(`(^|\\s)${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|$)`, 'i').test(text);
+}
+
+function hasAnyWord(text, words) {
+  return words.some(word => hasAccentWord(text, word));
+}
+
+function isTrueLightProduct({ nameNorm, nameAccent }) {
+  const accessoryName = /\b(tai nghe|headphone|headset|microphone|micro|mic|audio interface|adapter|tui|bag|case|pin|battery|cap|cable|sac|charger|chan den|light stand|stand|diffuser|softbox|op tan sang|tan sang)\b/i.test(nameNorm);
+  const explicitLightName = /\b(led light|video light|fill light|ring light|tube light|panel light|den led)\b/i.test(nameNorm)
+    || hasAccentWord(nameAccent, 'đèn');
+  return explicitLightName && (!accessoryName || /\b(led light|video light|fill light|ring light|tube light|panel light)\b/i.test(nameNorm));
+}
+
+function isLensAccessory({ nameNorm, nameAccent }) {
+  return /\b(adapter|mount adapter|cleaning|kit|cap|hood|filter|bag|case|converter)\b/i.test(nameNorm)
+    || hasAnyWord(nameAccent, ['ngàm', 'ngoàm']);
+}
+
+function isTrueLensProduct({ nameNorm, nameAccent }) {
+  const looksLens = /\blens\b/i.test(nameNorm)
+    || nameNorm.includes('ong kinh')
+    || nameAccent.includes('ống kính');
+  return looksLens && !isLensAccessory({ nameNorm, nameAccent });
 }
 
 function parsePriceNumber(v) {
@@ -77,11 +147,10 @@ function extractMaxPrice(query) {
 
 function fileRows(file) {
   if (!fs.existsSync(file)) return [];
-  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean);
-  if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]).map(h => h.trim());
-  return lines.slice(1).map(line => {
-    const vals = parseCsvLine(line);
+  const rows = parseCsvText(fs.readFileSync(file, 'utf8'));
+  if (rows.length < 2) return [];
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).map(vals => {
     const obj = {};
     headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
     return obj;
@@ -191,7 +260,12 @@ function findProductsByExactPrice(query, limit = 5, options = {}) {
 function searchProducts(query, topK = 8, options = {}) {
   const products = loadProducts(options);
   const words = queryWords(query);
+  const accentedWords = accentQueryWords(query);
   const normQuery = normalize(query);
+  const accentQuery = normalizeAccent(query);
+  const identityWords = options.requireIdentityMatch
+    ? words.filter(w => w.length >= 3 && !IDENTITY_STOPWORDS.has(w))
+    : [];
   const scopeBrand = normalize(readSourceConfig(options.sourceKey || '').brand || '');
   const mentionedBrands = getKnownProductBrands().filter(brand => ` ${normQuery} `.includes(` ${brand} `));
   if (scopeBrand && mentionedBrands.some(brand => brand !== scopeBrand)) return [];
@@ -203,6 +277,15 @@ function searchProducts(query, topK = 8, options = {}) {
   const wantsTripod = /\b(tripod|chan may|chan den|gia do)\b/i.test(normQuery);
   const wantsMicrophone = /\b(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)\b/i.test(normQuery);
   const wantsPhone = /\b(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)\b/i.test(normQuery);
+  const accentLight = hasAccentWord(accentQuery, 'đèn');
+  const asciiLight = /\b(den|led|light|ring light|rgb|tube light)\b/i.test(normQuery);
+  const colorBlackOnly = hasAccentWord(accentQuery, 'đen') && !accentLight && !/\b(led|light|ring light|rgb|tube light)\b/i.test(normQuery);
+  const wantsLight = (accentLight || asciiLight)
+    && !colorBlackOnly
+    && !/\b(chan den|chan may)\b/i.test(normQuery);
+  const wantsAdapter = /\b(adapter|mount adapter|ngam|ngoam)\b/i.test(normQuery)
+    || hasAnyWord(accentQuery, ['ngàm', 'ngoàm']);
+  const wantsLens = (/\b(lens|ong kinh)\b/i.test(normQuery) || /\bống kính\b/i.test(accentQuery)) && !wantsAdapter;
   if (!words.length) return [];
 
   const scored = [];
@@ -211,12 +294,20 @@ function searchProducts(query, topK = 8, options = {}) {
     if (maxPrice && price && price > maxPrice) continue;
 
     const name = normalize(p.name || p.title || '');
+    const nameAccent = normalizeAccent(p.name || p.title || '');
     const sku = normalize(p.sku || '');
     const vendor = normalize(p.vendor || p.brand || '');
     const desc = normalize(`${p.description || ''} ${p.tags || ''}`);
+    const descAccent = normalizeAccent(`${p.description || ''} ${p.tags || ''}`);
     const haystack = `${name} ${desc}`;
+    const identityText = `${name} ${sku} ${vendor} ${normalize(p.url || p.link || p.product_url || '')}`;
+    const productShape = { nameNorm: name, nameAccent };
 
+    if (identityWords.length && !identityWords.some(w => identityText.includes(w))) continue;
     if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
+    if (wantsLight && !isTrueLightProduct(productShape)) continue;
+    if (wantsLens && !isTrueLensProduct(productShape)) continue;
+    if (wantsAdapter && !isLensAccessory(productShape)) continue;
     if (wantsMicrophone) {
       const microphoneText = `${name} ${vendor} ${desc}`;
       const nameVendorText = `${name} ${vendor}`;
@@ -240,9 +331,17 @@ function searchProducts(query, topK = 8, options = {}) {
       if (name.includes(w)) { score += 5; strongMatches++; }
       if (desc.includes(w)) score += 1;
     }
+    for (const w of accentedWords) {
+      if (normalize(w) === w) continue;
+      if (hasAccentWord(nameAccent, w)) { score += 3; strongMatches++; }
+      if (hasAccentWord(descAccent, w)) score += 1;
+    }
 
     if (wantsTripod && /(tripod|chan may|chan den|gia do)/i.test(name)) score += 8;
     if (wantsMicrophone && /(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)/i.test(`${name} ${vendor}`)) score += 8;
+    if (wantsLight && isTrueLightProduct(productShape)) score += 8;
+    if (wantsLens && isTrueLensProduct(productShape)) score += 8;
+    if (wantsAdapter && isLensAccessory(productShape)) score += 8;
     if (wantsPhone && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 6;
     if (wantsTripod && wantsPhone && /(tripod|chan may|chan den|gia do)/i.test(haystack) && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 10;
 

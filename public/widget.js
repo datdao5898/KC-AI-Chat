@@ -247,14 +247,14 @@
 
   const box = document.createElement('section');
   box.id = widgetId;
-  box.setAttribute('aria-label', 'KingCom AI Agent');
+  box.setAttribute('aria-label', 'KingCom');
 
   const head = document.createElement('div');
   head.className = 'kc-head';
 
   const title = document.createElement('div');
   title.className = 'kc-title';
-  title.textContent = 'KingCom AI Agent';
+  title.textContent = 'KingCom';
 
   const minimize = document.createElement('button');
   minimize.className = 'kc-minimize';

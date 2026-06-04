@@ -1,18 +1,16 @@
-# Chinh sach va pham vi Ulanzi
+# Viltrox Policies
 
-## Pham vi bat buoc
-- Chi tu van san pham Ulanzi co trong `data/sources/facebook/260016447958834/products.csv`.
-- Khong tu van sang Synco/Viltrox/Boya/Maono neu khach khong yeu cau.
-- Khong tu khang dinh ton kho, khuyen mai, combo, bao hanh rieng cua tung model neu products.csv khong co.
-- Neu khach hoi ngoai Ulanzi, noi: "Dạ fanpage này hiện hỗ trợ sản phẩm Ulanzi. Em sẽ chuyển thông tin cho nhân viên KingCom kiểm tra thêm nếu anh/chị cần ạ."
+## CHÍNH SÁCH GIAO HÀNG
+Thời gian xử lý đơn bình thường có thể từ 3-7 ngày làm việc (thứ Hai đến thứ Sáu), tùy theo tồn kho nếu hàng được gửi từ kho US/EU. Nếu hàng được gửi trực tiếp từ Trung Quốc thì thời gian sẽ phụ thuộc vào tuyến vận chuyển. Với các đơn gửi từ kho nước ngoài, phí vận chuyển sẽ được hỗ trợ và sẽ được hiển thị khi thanh toán. Các đơn vị vận chuyển có thể bao gồm DHL, FedEx, UPS, USPS và các bên khác tùy điểm đến.
 
-## Chinh sach thuong mai
-- Bao hanh, doi tra, giao hang theo chinh sach KingCom chung va/hoac nha phan phoi Ulanzi tai Viet Nam.
-- Khi khach can bao hanh/doi tra: xin model, so dien thoai, thoi diem mua, mo ta loi va hinh anh/video loi neu co.
-- Neu khach hoi tuong thich nhanh: can hoi thiet bi dang dung, khoi luong, cong gan/ren, nhu cau gan camera/dien thoai/den/monitor.
--Giá sản phẩm đã full vat
+## CHÍNH SÁCH ĐỔI TRẢ / HOÀN TIỀN
+Khách hàng có thể yêu cầu đổi trả hoặc đổi sản phẩm trong vòng 7 ngày kể từ khi nhận hàng, ngoại trừ các sản phẩm khuyến mãi hoặc đã giảm giá. Sản phẩm cần còn nguyên tình trạng như lúc nhận, phải được trả lại trong bao bì gốc và cần có hóa đơn hoặc chứng từ mua hàng hợp lệ. Tất cả yêu cầu đổi trả phải được phê duyệt trước khi gửi hàng về.
 
-## Mau cau nen dung
-- "Dạ em tìm thấy sản phẩm Ulanzi phù hợp trong catalog..."
-- "Anh/chị đang cần gắn với điện thoại, máy ảnh, action cam hay đèn quay ạ?"
-- "Để tránh tư vấn sai ngàm/ren, anh/chị cho em xin model thiết bị đang dùng hoặc số điện thoại để nhân viên KingCom kiểm tra giúp mình ạ."
+## CHÍNH SÁCH BẢO MẬT
+Chính sách này mô tả cách thông tin cá nhân của khách hàng được thu thập, sử dụng và chia sẻ khi truy cập hoặc mua hàng trên `https://viltrox.com`. Khi khách truy cập website, hệ thống sẽ tự động thu thập một số thông tin về thiết bị như trình duyệt, địa chỉ IP, múi giờ và cookie. Hệ thống cũng thu thập các trang hoặc sản phẩm đã xem, nguồn giới thiệu đến website và cách khách tương tác với website.
+
+## ĐIỀU KHOẢN DỊCH VỤ
+Website này được vận hành bởi VILTROX. Trong toàn bộ website, các cụm từ "chúng tôi", "của chúng tôi" hay "chúng ta" đều chỉ VILTROX. Khi truy cập website và/hoặc mua hàng, khách hàng sử dụng dịch vụ của chúng tôi và đồng ý với toàn bộ điều khoản, điều kiện, chính sách và thông báo được nêu tại đây.
+
+## CHÍNH SÁCH BẢO HÀNH
+VILTROX áp dụng bảo hành giới hạn 1 năm cho tất cả sản phẩm do VILTROX sản xuất và bán ra. Thời gian bảo hành bắt đầu từ ngày mua hàng. Chính sách bảo hành chỉ áp dụng cho lỗi phát sinh trong quá trình sử dụng bình thường và không bao gồm hỏng hóc do sử dụng sai cách, lạm dụng, bỏ mặc, thay đổi cấu trúc, sự cố về nguồn điện, sử dụng không đúng hướng dẫn sản phẩm, thiên tai, hoặc lắp đặt/sửa chữa không đúng bởi bên không được Viltrox ủy quyền.

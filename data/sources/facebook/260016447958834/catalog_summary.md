@@ -1,17 +1,37 @@
-# Tong quan catalog Ulanzi
+# Tổng quan danh mục Viltrox
 
-- Source key: facebook/260016447958834
-- Thuong hieu: Ulanzi
-- Che do: strictProducts = true
-- Catalog rieng hien co 387 san pham Ulanzi.
+Viltrox là thương hiệu thiết bị nhiếp ảnh từ năm 2009. Danh mục sản phẩm hiện có 168 sản phẩm, tập trung vào các nhóm chính sau:
 
-## Nhom uu tien
-- Tripod, monopod, selfie stick, phone tripod.
-- Den LED/RGB/fill light, softbox, light stand.
-- Cage, grip, handle, quick release, Falcam F22/F38/F50.
-- Phu kien DJI/action camera, bag/case, backpack strap clip.
+- Ống kính máy ảnh
+- Ngàm chuyển ống kính
+- Đèn LED quay phim / livestream
+- Màn hình camera
+- Đèn flash gắn máy
+- Pin và phụ kiện cấp nguồn
+- Lens hood, UV filter và các phụ kiện khác
+- Cine lens cho quay phim chuyên nghiệp
 
-## Nguyen tac
-- Chi tra san pham Ulanzi trong catalog rieng.
-- Neu cau hoi co model Ulanzi nhung khong tim thay trong catalog, khong tu gan sang Synco hay thuong hieu khac.
-- Neu khach hoi san pham nao hot, chon 3 san pham Ulanzi trong catalog va noi la goi y tham khao theo danh muc hien co.
+## Dải giá tham khảo
+
+- Đèn LED quay video: từ $24.99 đến $299.99
+- Ngàm chuyển ống kính: từ $34.99 đến $2599.00
+- Ống kính máy ảnh: từ $99.00 đến $2999.00
+- Cine lens: từ $415.00 đến $25800.00
+- Camera monitor: từ $138.00 đến $278.00
+- Battery: từ $69.99 đến $148.00
+- Camera flash: từ $35.99 đến $59.99
+- Accessories: từ $12.99 đến $599.00
+
+## Hướng tư vấn
+
+Khi khách hỏi về lens, nên ưu tiên lens thật, không tự nhảy sang ngàm chuyển hay phụ kiện vệ sinh.
+Khi khách hỏi ngàm chuyển, chỉ đưa các mẫu adapter đúng hệ mount.
+Khi khách hỏi đèn, hãy ưu tiên các mẫu LED / ring light / panel light phù hợp nhu cầu quay chụp.
+Khi khách hỏi về bảo hành, đổi trả, vận chuyển hoặc chính sách, hãy trả lời theo FAQ và policy đã train.
+
+## Thông tin hỗ trợ
+
+- Website chính thức: `https://viltrox.com`
+- Hỗ trợ sản phẩm, đơn hàng và hậu mãi: `info@viltrox.com`
+- Email thay thế: `marketing05@viltrox.com`
+

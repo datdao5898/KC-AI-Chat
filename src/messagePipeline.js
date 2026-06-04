@@ -4,7 +4,7 @@ const { generateReply, summarizeConversation, summarizeConversationFast, detectM
 const { notifyStaff, notifyWebsiteMessage } = require('./staffAlert');
 const { logAiResponse } = require('./aiTrace');
 const { buildSourceContext } = require('./sourceRegistry');
-const { validateAiReply } = require('./replyValidator');
+const { judgeAiReply } = require('./replyJudge');
 
 function normalizeForMatch(text) {
   return String(text || '')
@@ -63,6 +63,17 @@ function improveNoDataReply(reply, handoff, customerText = '') {
     return `${reply}\n\n${handoffAppendText(detectMessageLanguage(customerText || reply))}`;
   }
   return reply;
+}
+
+function buildJudgeRejectedReply(customerText = '') {
+  const lang = detectMessageLanguage(customerText);
+  if (lang === 'en') {
+    return 'I am checking again to avoid giving incorrect advice. I cannot safely confirm a matching product from the current data, so I have forwarded this to KingCom staff for a more accurate check.';
+  }
+  if (lang === 'zh') {
+    return '我会重新核对，避免提供错误建议。目前我无法从现有资料中安全确认匹配的产品，因此已转交 KingCom 员工进一步确认。';
+  }
+  return 'Dạ em kiểm tra lại để tránh tư vấn sai. Hiện em chưa thể xác nhận chắc chắn sản phẩm phù hợp trong dữ liệu hiện tại, nên em đã chuyển thông tin cho nhân viên KingCom kiểm tra chính xác hơn ạ.';
 }
 
 function normalizeCustomerReply(reply) {
@@ -208,13 +219,40 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceName: source.sourceName,
     sourceGroup: source.sourceGroup
   });
-  const validation = validateAiReply({ userText: text, history, reply: rawReply, ragProducts });
-  const generatedReply = validation.ok ? rawReply : validation.reply;
+  const validation = { ok: true, skipped: 'single_ai_judge_final_check' };
+  const generatedReply = rawReply;
   const baseHandoff = detectHandoff({ text, intent, aiError, ragProducts });
-  const handoff = validation.ok
-    ? baseHandoff
-    : { needed: true, reason: validation.reason || 'Validator chặn câu trả lời có rủi ro sai' };
-  const reply = normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, text));
+  let handoff = baseHandoff;
+  let reply = normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, text));
+  const judge = await judgeAiReply({
+    channel,
+    userText: text,
+    history,
+    reply,
+    ragProducts,
+    validation,
+    intent,
+    sourceKey: source.sourceKey,
+    sourceName: source.sourceName,
+    sourceGroup: source.sourceGroup,
+    customer: freshCustomer,
+    aiSource,
+    searchQuery
+  });
+  if (!judge.approve) {
+    if (judge.correctedReply) {
+      reply = normalizeCustomerReply(judge.correctedReply);
+    } else {
+      reply = normalizeCustomerReply(buildJudgeRejectedReply(text));
+    }
+    if (judge.needsHandoff || !judge.correctedReply) {
+      handoff = {
+        needed: true,
+        reason: judge.reason || 'AI judge chặn câu trả lời có độ liên quan thấp'
+      };
+    }
+    reply = normalizeCustomerReply(improveNoDataReply(reply, handoff, text));
+  }
   const humanDelayMs = estimateHumanReplyDelayMs(reply, Date.now() - startedAt);
   if (humanDelayMs > 0) await sleep(humanDelayMs);
 
@@ -264,7 +302,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     direction: 'out',
     senderType: 'ai',
     text: reply,
-    rawJson: { reply_to: inbound.id, handoff, validation, sendResult, aiError: !!aiError, humanDelayMs },
+    rawJson: { reply_to: inbound.id, handoff, validation, judge, judgeError: judge?.error || '', sendResult, aiError: !!aiError, humanDelayMs },
     intent,
     aiUsed,
     deliveryStatus,
@@ -301,6 +339,16 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     reply,
     validatorBlocked: validation.ok ? false : true,
     validatorReason: validation.reason || '',
+    judgeApproved: !!judge?.approve,
+    judgeReason: judge?.reason || '',
+    judgeInferredNeed: judge?.inferredCustomerNeed || '',
+    judgeRiskType: judge?.riskType || '',
+    judgeSeverity: judge?.severity || '',
+    judgeConfidence: typeof judge?.confidence === 'number' ? judge.confidence : undefined,
+    judgeNeedsHandoff: !!judge?.needsHandoff,
+    judgeCorrectedReply: judge?.correctedReply || '',
+    judgeCorrectedSimilarity: typeof judge?.correctedSimilarity === 'number' ? judge.correctedSimilarity : undefined,
+    judgeError: judge?.error || '',
     handoffNeeded: handoff.needed,
     handoffReason: handoff.reason || '',
     deliveryStatus,
