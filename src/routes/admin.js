@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const router = express.Router();
-const { listConversations, getConversation, updateConversationSummary, db, flagHandoff, resolveHandoff, listStaffAlerts, softDeleteMessage, softDeleteConversation, addStaffReply, getStats } = require('../db');
+const { listConversations, getConversation, updateConversationSummary, db, flagHandoff, resolveHandoff, listStaffAlerts, softDeleteMessage, hardDeleteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews } = require('../db');
 const { searchProducts, loadProducts } = require('../rag');
 const { summarizeConversation, summarizeConversationFast } = require('../ai');
 const { notifyStaff } = require('../staffAlert');
@@ -163,9 +163,9 @@ router.delete('/messages/:id', async (req, res) => {
 });
 
 router.delete('/conversations/:id', async (req, res) => {
-  const result = await softDeleteConversation(req.params.id);
+  const result = await hardDeleteConversation(req.params.id);
   if (!result) return res.status(404).json({ error: 'conversation_not_found' });
-  res.json({ ok: true, deleted: true, conversationId: req.params.id });
+  res.json({ ok: true, deleted: true, hardDeleted: true, conversationId: req.params.id, deletedCounts: result.deletedCounts });
 });
 
 router.patch('/conversations/:id', async (req, res) => {
@@ -244,12 +244,46 @@ router.post('/conversations/:id/summarize', async (req, res) => {
   res.json({ ok: true, summary, data: await getConversation(req.params.id) });
 });
 
+router.post('/conversations/:id/reviews', async (req, res) => {
+  try {
+    const data = await getConversation(req.params.id);
+    if (!data.conversation) return res.status(404).json({ error: 'conversation_not_found' });
+    const message = (data.messages || []).find(item => item.id === req.body.messageId);
+    const previousCustomer = [...(data.messages || [])]
+      .slice(0, Math.max(0, (data.messages || []).findIndex(item => item.id === req.body.messageId)))
+      .reverse()
+      .find(item => item.direction === 'in');
+    const review = await addAiReplyReview({
+      sourceGroup: data.conversation.source_group || data.conversation.channel || '',
+      sourceKey: data.conversation.source_key || '',
+      sourceName: data.conversation.source_name || '',
+      conversationId: data.conversation.id,
+      messageId: req.body.messageId || '',
+      issueType: req.body.issueType || 'wrong_reply',
+      customerText: req.body.customerText || previousCustomer?.text || '',
+      aiReply: req.body.aiReply || message?.text || '',
+      notes: req.body.notes || ''
+    });
+    res.json({ ok: true, review, data: await getConversation(req.params.id) });
+  } catch (e) {
+    console.error('AI reply review error:', e);
+    res.status(500).json({ error: 'ai_reply_review_failed' });
+  }
+});
+
 router.get('/stats', async (req, res) => {
   const stats = { ...(await getStats()), products: loadProducts().length };
   res.json(stats);
 });
 
 router.get('/alerts', async (req, res) => res.json(await listStaffAlerts(req.query.status || 'open')));
+router.get('/reply-reviews', async (req, res) => {
+  res.json(await listAiReplyReviews({
+    sourceKey: req.query.sourceKey || '',
+    status: req.query.status || 'active',
+    limit: req.query.limit || 100
+  }));
+});
 router.get('/logs', (req, res) => {
   res.json({
     type: LOG_FILES[req.query.type] ? req.query.type : 'ai',

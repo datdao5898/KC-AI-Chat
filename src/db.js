@@ -207,6 +207,22 @@ async function initDb() {
       resolved_at TIMESTAMPTZ
     );
 
+    CREATE TABLE IF NOT EXISTS ai_reply_reviews (
+      id TEXT PRIMARY KEY,
+      source_group TEXT DEFAULT '',
+      source_key TEXT DEFAULT '',
+      source_name TEXT DEFAULT '',
+      conversation_id TEXT DEFAULT '',
+      message_id TEXT DEFAULT '',
+      issue_type TEXT DEFAULT 'wrong_reply',
+      customer_text TEXT DEFAULT '',
+      ai_reply TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      status TEXT DEFAULT 'active',
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_created
       ON messages(conversation_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_conversations_customer_channel_source_updated
@@ -215,6 +231,8 @@ async function initDb() {
       ON conversations(deleted_at, needs_human DESC, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_staff_alerts_conversation_status_created
       ON staff_alerts(conversation_id, status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ai_reply_reviews_source_status_created
+      ON ai_reply_reviews(source_key, status, created_at DESC);
   `);
   await backfillConversationSources();
   await refreshConfiguredSourceNames();
@@ -424,6 +442,39 @@ async function softDeleteConversation(conversationId) {
   });
 }
 
+async function hardDeleteConversation(conversationId) {
+  return withTransaction(async client => {
+    const found = await client.query('SELECT id, customer_id FROM conversations WHERE id=$1', [conversationId]);
+    const row = found.rows[0];
+    if (!row) return null;
+
+    const reviews = await client.query('DELETE FROM ai_reply_reviews WHERE conversation_id=$1', [conversationId]);
+    const alerts = await client.query('DELETE FROM staff_alerts WHERE conversation_id=$1', [conversationId]);
+    const intents = await client.query(`
+      DELETE FROM intents
+      WHERE message_id IN (
+        SELECT id FROM messages WHERE conversation_id=$1
+      )
+    `, [conversationId]);
+    const messages = await client.query('DELETE FROM messages WHERE conversation_id=$1', [conversationId]);
+    const conversation = await client.query('DELETE FROM conversations WHERE id=$1', [conversationId]);
+
+    return {
+      conversation_id: conversationId,
+      customer_id: row.customer_id,
+      deleted: true,
+      hardDeleted: true,
+      deletedCounts: {
+        reviews: reviews.rowCount || 0,
+        alerts: alerts.rowCount || 0,
+        intents: intents.rowCount || 0,
+        messages: messages.rowCount || 0,
+        conversations: conversation.rowCount || 0
+      }
+    };
+  });
+}
+
 async function markProcessed(channel, externalEventId) {
   if (!externalEventId) return true;
   try {
@@ -454,9 +505,16 @@ async function listConversations() {
   const { rows } = await db.query(`
     SELECT c.*, cu.name, cu.phone, cu.email, cu.external_id, cu.profile_summary, cu.interested_products,
       (SELECT text FROM messages WHERE conversation_id=c.id AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message,
-      (SELECT COUNT(*)::int FROM staff_alerts WHERE conversation_id=c.id AND status='open') AS open_alerts
+      (SELECT COUNT(*)::int FROM staff_alerts WHERE conversation_id=c.id AND status='open') AS open_alerts,
+      COALESCE(r.reply_review_count, 0)::int AS reply_review_count
     FROM conversations c
     JOIN customers cu ON cu.id = c.customer_id
+    LEFT JOIN (
+      SELECT conversation_id, COUNT(*)::int AS reply_review_count
+      FROM ai_reply_reviews
+      WHERE status='active'
+      GROUP BY conversation_id
+    ) r ON r.conversation_id = c.id
     WHERE c.deleted_at IS NULL
     ORDER BY c.needs_human DESC, c.updated_at DESC
     LIMIT 100
@@ -466,9 +524,16 @@ async function listConversations() {
 
 async function getConversation(id) {
   const found = await db.query(`
-    SELECT c.*, cu.name, cu.phone, cu.email, cu.external_id, cu.profile_summary, cu.interested_products
+    SELECT c.*, cu.name, cu.phone, cu.email, cu.external_id, cu.profile_summary, cu.interested_products,
+      COALESCE(r.reply_review_count, 0)::int AS reply_review_count
     FROM conversations c
     JOIN customers cu ON cu.id = c.customer_id
+    LEFT JOIN (
+      SELECT conversation_id, COUNT(*)::int AS reply_review_count
+      FROM ai_reply_reviews
+      WHERE status='active'
+      GROUP BY conversation_id
+    ) r ON r.conversation_id = c.id
     WHERE c.id=$1 AND c.deleted_at IS NULL
   `, [id]);
   const conversation = found.rows[0];
@@ -623,6 +688,50 @@ async function listStaffAlerts(status = 'open') {
   }));
 }
 
+async function addAiReplyReview({
+  sourceGroup = '', sourceKey = '', sourceName = '', conversationId = '', messageId = '',
+  issueType = 'wrong_reply', customerText = '', aiReply = '', notes = ''
+}) {
+  const cleanIssue = String(issueType || 'wrong_reply').trim() || 'wrong_reply';
+  const { rows } = await db.query(`
+    INSERT INTO ai_reply_reviews (
+      id, source_group, source_key, source_name, conversation_id, message_id,
+      issue_type, customer_text, ai_reply, notes
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    RETURNING *
+  `, [
+    uuidv4(),
+    sourceGroup || '',
+    sourceKey || '',
+    sourceName || '',
+    conversationId || '',
+    messageId || '',
+    cleanIssue,
+    customerText || '',
+    aiReply || '',
+    notes || ''
+  ]);
+  return rows[0];
+}
+
+async function listAiReplyReviews({ sourceKey = '', status = 'active', limit = 100 } = {}) {
+  const safeLimit = Math.max(1, Math.min(Number(limit || 100), 300));
+  const params = [status || 'active'];
+  let where = 'WHERE status=$1';
+  if (sourceKey) {
+    params.push(sourceKey);
+    where += ` AND source_key=$${params.length}`;
+  }
+  const { rows } = await db.query(`
+    SELECT *
+    FROM ai_reply_reviews
+    ${where}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${safeLimit}
+  `, params);
+  return rows;
+}
+
 async function updateCustomerLearning(customerId, conversationId, intent, userText) {
   const productWords = (String(userText || '').match(/[A-Za-z0-9\-]{3,}|[\p{L}]{3,}/gu) || [])
     .filter(w => !['mua', 'giá', 'bao', 'nhiêu', 'cần', 'tìm', 'sản', 'phẩm', 'cho', 'tôi'].includes(w.toLowerCase()))
@@ -656,6 +765,6 @@ async function getStats() {
 module.exports = {
   db, initDb, getOrCreateCustomer, getOrCreateConversation, saveMessage, markProcessed, getRecentMessages,
   listConversations, getConversation, updateConversationSummary, updateCustomerLearning, flagHandoff, resolveHandoff,
-  updateAlertDelivery, listStaffAlerts, softDeleteMessage, softDeleteConversation, getWebsiteConversationByVisitor,
-  listWebsiteConversationMessages, addStaffReply, getStats
+  updateAlertDelivery, listStaffAlerts, softDeleteMessage, softDeleteConversation, hardDeleteConversation, getWebsiteConversationByVisitor,
+  listWebsiteConversationMessages, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews
 };

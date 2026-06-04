@@ -220,15 +220,25 @@
     }
 
     .nav-icon {
-      width: 22px;
-      height: 22px;
-      display: grid;
-      place-items: center;
-      border: 1px solid rgba(255, 255, 255, .24);
-      border-radius: 7px;
-      color: #ffffff;
-      font-size: 11px;
-      font-weight: 700;
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: currentColor;
+      opacity: .92;
+    }
+
+    .nav-icon svg {
+      width: 19px;
+      height: 19px;
+      display: block;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
     }
 
     .nav-footer {
@@ -1059,11 +1069,12 @@
       </div>
 
       <div class="nav-menu">
-        <button class="nav-btn active" data-view="dashboard"><span class="nav-icon">📊</span><span data-i18n="navDashboard">Tổng quan</span></button>
-        <button class="nav-btn" data-view="chat"><span class="nav-icon">💬</span><span data-i18n="navChat">Hội thoại</span></button>
-        <button class="nav-btn" data-view="alerts"><span class="nav-icon">🚨</span><span data-i18n="navAlerts">Cảnh báo</span></button>
-        <button class="nav-btn" data-view="knowledge"><span class="nav-icon">🧠</span><span data-i18n="navKnowledge">Dữ liệu AI</span></button>
-        <button class="nav-btn" data-view="logs"><span class="nav-icon">📜</span><span data-i18n="navLogs">Nhật ký</span></button>
+        <button class="nav-btn active" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg></span><span data-i18n="navDashboard">Tổng quan</span></button>
+        <button class="nav-btn" data-view="chat"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg></span><span data-i18n="navChat">Hội thoại</span></button>
+        <button class="nav-btn" data-view="alerts"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span><span data-i18n="navAlerts">Cảnh báo</span></button>
+        <button class="nav-btn" data-view="improvements"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4"></path><path d="M15 5l4 4"></path></svg></span><span data-i18n="navImprovements">Cần cải thiện</span></button>
+        <button class="nav-btn" data-view="knowledge"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"></path></svg></span><span data-i18n="navKnowledge">Dữ liệu AI</span></button>
+        <button class="nav-btn" data-view="logs"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h8l4 4v14H8z"></path><path d="M16 3v5h5"></path><path d="M4 7v14"></path><path d="M12 13h5"></path><path d="M12 17h5"></path></svg></span><span data-i18n="navLogs">Nhật ký</span></button>
       </div>
 
       <div class="nav-footer">
@@ -1104,6 +1115,7 @@ const I18N = {
     navChat: 'Hội thoại',
     navDashboard: 'Tổng quan',
     navAlerts: 'Cảnh báo',
+    navImprovements: 'Cần cải thiện',
     navKnowledge: 'Dữ liệu AI',
     navLogs: 'Nhật ký',
     pageChat: 'Hội thoại',
@@ -1112,6 +1124,8 @@ const I18N = {
     pageDashboardSub: 'Tổng quan vận hành AI Agent',
     pageAlerts: 'Cảnh báo',
     pageAlertsSub: 'Các trường hợp AI cần nhân viên kiểm tra',
+    pageImprovements: 'Cần cải thiện',
+    pageImprovementsSub: 'Các câu trả lời AI được đánh dấu sai để đội ngũ rà soát',
     pageKnowledge: 'FAQ/Policy',
     pageKnowledgeSub: 'Train kiến thức theo từng nguồn',
     pageLogs: 'Nhật ký',
@@ -1142,6 +1156,7 @@ const I18N = {
     autoOn: 'Auto ON',
     autoOff: 'Auto OFF',
     needsStaff: 'Cần nhân viên',
+    needsImprovement: 'Cần cải thiện',
     toggleAutoOn: 'Bật auto',
     toggleAutoOff: 'Tắt auto',
     handoff: 'Gọi nhân viên',
@@ -1150,6 +1165,10 @@ const I18N = {
     deleteConversation: 'Xóa hội thoại',
     saveSummary: 'Lưu tóm tắt',
     delete: 'Xóa',
+    markWrong: 'Đánh dấu sai',
+    reviewIssuePrompt: 'Mô tả lỗi của câu trả lời này:',
+    reviewNotesPrompt: 'Ghi chú thêm, có thể bỏ trống:',
+    reviewedAi: 'Đã lưu vào danh sách cần cải thiện',
     showMore: 'Xem thêm',
     collapse: 'Thu gọn',
     staffReply: 'Nhân viên trực chat website',
@@ -1165,6 +1184,12 @@ const I18N = {
     statsNeed: 'Cần xử lý',
     statsAlerts: 'Alert mở',
     latestAlerts: 'Alert mới nhất',
+    reviewCount: 'mục cần xem',
+    customerMessage: 'Tin khách',
+    aiReply: 'AI trả lời',
+    issueType: 'Lỗi được ghi nhận',
+    reviewNotes: 'Ghi chú',
+    openConversation: 'Mở hội thoại',
     common: 'Dùng chung',
     trainingSource: 'Nguồn train',
     faq: 'FAQ',
@@ -1204,8 +1229,8 @@ const I18N = {
     saved: 'Đã lưu',
     sentTest: 'Đã gửi test',
     sentReply: 'Đã gửi tin nhắn cho khách',
-    deleteConvConfirm: 'Xóa mềm toàn bộ hội thoại này? Tin nhắn sẽ bị ẩn khỏi dashboard và context AI.',
-    deletedConversation: 'Đã xóa mềm hội thoại',
+    deleteConvConfirm: 'Xóa vĩnh viễn toàn bộ hội thoại này khỏi database? Thao tác này không thể hoàn tác.',
+    deletedConversation: 'Đã xóa vĩnh viễn hội thoại',
     deleteMsgConfirm: 'Xóa mềm tin nhắn này?',
     deletedMessage: 'Đã xóa mềm tin nhắn',
     allSources: 'Tất cả nguồn',
@@ -1216,6 +1241,7 @@ const I18N = {
     navChat: 'Conversations',
     navDashboard: 'Overview',
     navAlerts: 'Alerts',
+    navImprovements: 'Improvements',
     navKnowledge: 'AI data',
     navLogs: 'Logs',
     pageChat: 'Conversations',
@@ -1224,6 +1250,8 @@ const I18N = {
     pageDashboardSub: 'AI Agent operating overview',
     pageAlerts: 'Alerts',
     pageAlertsSub: 'Cases that need staff review',
+    pageImprovements: 'Improvements',
+    pageImprovementsSub: 'AI replies marked wrong for staff review',
     pageKnowledge: 'FAQ/Policy',
     pageKnowledgeSub: 'Train knowledge per source',
     pageLogs: 'Logs',
@@ -1254,6 +1282,7 @@ const I18N = {
     autoOn: 'Auto ON',
     autoOff: 'Auto OFF',
     needsStaff: 'Needs staff',
+    needsImprovement: 'Needs improvement',
     toggleAutoOn: 'Turn auto on',
     toggleAutoOff: 'Turn auto off',
     handoff: 'Ask staff',
@@ -1262,6 +1291,10 @@ const I18N = {
     deleteConversation: 'Delete conversation',
     saveSummary: 'Save summary',
     delete: 'Delete',
+    markWrong: 'Mark wrong',
+    reviewIssuePrompt: 'Describe what is wrong with this reply:',
+    reviewNotesPrompt: 'Extra notes, optional:',
+    reviewedAi: 'Saved for review',
     showMore: 'Show more',
     collapse: 'Collapse',
     staffReply: 'Website live reply',
@@ -1277,6 +1310,12 @@ const I18N = {
     statsNeed: 'Needs action',
     statsAlerts: 'Open alerts',
     latestAlerts: 'Latest alerts',
+    reviewCount: 'items to review',
+    customerMessage: 'Customer message',
+    aiReply: 'AI reply',
+    issueType: 'Marked issue',
+    reviewNotes: 'Notes',
+    openConversation: 'Open conversation',
     common: 'Common',
     trainingSource: 'Training source',
     faq: 'FAQ',
@@ -1316,8 +1355,8 @@ const I18N = {
     saved: 'Saved',
     sentTest: 'Test sent',
     sentReply: 'Reply sent',
-    deleteConvConfirm: 'Soft delete this conversation? Messages will be hidden from dashboard and AI context.',
-    deletedConversation: 'Conversation soft-deleted',
+    deleteConvConfirm: 'Permanently delete this conversation from the database? This cannot be undone.',
+    deletedConversation: 'Conversation permanently deleted',
     deleteMsgConfirm: 'Soft delete this message?',
     deletedMessage: 'Message soft-deleted',
     allSources: 'All sources',
@@ -1328,6 +1367,7 @@ const I18N = {
     navChat: '会话',
     navDashboard: '概览',
     navAlerts: '提醒',
+    navImprovements: '待改进',
     navKnowledge: 'AI 数据',
     navLogs: '日志',
     pageChat: '会话',
@@ -1336,6 +1376,8 @@ const I18N = {
     pageDashboardSub: 'AI Agent 运营概览',
     pageAlerts: '提醒',
     pageAlertsSub: '需要人工检查的情况',
+    pageImprovements: '待改进',
+    pageImprovementsSub: '被标记为错误的 AI 回复',
     pageKnowledge: 'FAQ/政策',
     pageKnowledgeSub: '按来源训练知识',
     pageLogs: '日志',
@@ -1366,6 +1408,7 @@ const I18N = {
     autoOn: '自动开启',
     autoOff: '自动关闭',
     needsStaff: '需要人工',
+    needsImprovement: '待改进',
     toggleAutoOn: '开启自动',
     toggleAutoOff: '关闭自动',
     handoff: '请求人工',
@@ -1389,6 +1432,12 @@ const I18N = {
     statsNeed: '待处理',
     statsAlerts: '未处理提醒',
     latestAlerts: '最新提醒',
+    reviewCount: '条待查看',
+    customerMessage: '客户消息',
+    aiReply: 'AI 回复',
+    issueType: '问题类型',
+    reviewNotes: '备注',
+    openConversation: '打开会话',
     common: '通用',
     trainingSource: '训练来源',
     faq: 'FAQ',
@@ -1428,8 +1477,8 @@ const I18N = {
     saved: '已保存',
     sentTest: '测试已发送',
     sentReply: '回复已发送',
-    deleteConvConfirm: '确认软删除该会话？消息将从后台和 AI 上下文中隐藏。',
-    deletedConversation: '会话已软删除',
+    deleteConvConfirm: '确认从数据库永久删除该会话？此操作无法撤销。',
+    deletedConversation: '会话已永久删除',
     deleteMsgConfirm: '确认软删除该消息？',
     deletedMessage: '消息已软删除',
     allSources: '全部来源',
@@ -1441,6 +1490,7 @@ const state = {
   stats: {},
   convs: [],
   alerts: [],
+  replyReviews: [],
   logs: { type: 'ai', entries: [] },
   logType: 'ai',
   selected: null,
@@ -1553,9 +1603,10 @@ function setLang(lang) {
 }
 
 function setView(view) {
-  state.view = ['chat', 'dashboard', 'alerts', 'knowledge', 'logs'].includes(view) ? view : 'chat';
+  state.view = ['chat', 'dashboard', 'alerts', 'improvements', 'knowledge', 'logs'].includes(view) ? view : 'chat';
   localStorage.setItem('kc-admin-view', state.view);
   if (state.view === 'dashboard' || state.view === 'alerts') loadAlerts().then(render).catch(e => toast(t('loadError') + e.message));
+  if (state.view === 'improvements') loadReplyReviews().then(render).catch(e => toast(t('loadError') + e.message));
   if (state.view === 'knowledge') loadKnowledge(state.kSource).catch(e => toast(t('loadError') + e.message));
   if (state.view === 'logs') loadLogs(state.logType).then(render).catch(e => toast(t('loadError') + e.message));
   render();
@@ -1604,6 +1655,7 @@ function renderShell() {
     chat: [t('pageChat'), t('pageChatSub')],
     dashboard: [t('pageDashboard'), t('pageDashboardSub')],
     alerts: [t('pageAlerts'), t('pageAlertsSub')],
+    improvements: [t('pageImprovements'), t('pageImprovementsSub')],
     knowledge: [t('pageKnowledge'), t('pageKnowledgeSub')],
     logs: [t('pageLogs'), t('pageLogsSub')]
   };
@@ -1640,15 +1692,19 @@ function buildSourceTree() {
     const group = conv.source_group || conv.channel || 'common';
     const key = getConvSourceKey(conv);
     const name = conv.source_name || sourceGroupLabel(group);
-    if (!map.has(group)) map.set(group, { group, count: 0, need: 0, sources: new Map() });
+    if (!map.has(group)) map.set(group, { group, count: 0, need: 0, review: 0, sources: new Map() });
     const g = map.get(group);
-    if (!g.sources.has(key)) g.sources.set(key, { key, group, name, count: 0, need: 0 });
+    if (!g.sources.has(key)) g.sources.set(key, { key, group, name, count: 0, need: 0, review: 0 });
     const source = g.sources.get(key);
     g.count += 1;
     source.count += 1;
     if (conv.needs_human) {
       g.need += 1;
       source.need += 1;
+    }
+    if (Number(conv.reply_review_count || 0) > 0) {
+      g.review += 1;
+      source.review += 1;
     }
   }
   return [...map.values()].sort((a, b) => {
@@ -1692,7 +1748,7 @@ function filteredConversations() {
 function renderSourceTree() {
   const groups = buildSourceTree();
   const total = state.convs.length;
-  const countText = (count, need) => need ? `${count} · ${need}` : String(count);
+  const countText = (count, need, review = 0) => [count, need ? `${need} !` : '', review ? `${review} ${t('navImprovements')}` : ''].filter(Boolean).join(' · ');
   return `
     <div class="source-tree">
       <button class="source-item ${state.activeSource === 'all' ? 'active' : ''}" data-source-filter="all">
@@ -1702,11 +1758,11 @@ function renderSourceTree() {
         <details class="source-group" open>
           <summary>
             <span>${esc(sourceGroupLabel(group.group))}</span>
-            <span class="count">${countText(group.count, group.need)}</span>
+            <span class="count">${countText(group.count, group.need, group.review)}</span>
           </summary>
           ${[...group.sources.values()].sort((a, b) => b.need - a.need || b.count - a.count || a.name.localeCompare(b.name, 'vi')).map(src => `
             <button class="source-item ${state.activeSource === `source:${src.key}` ? 'active' : ''}" data-source-filter="source:${esc(src.key)}">
-              <span>${esc(src.name)}</span><span class="count">${countText(src.count, src.need)}</span>
+              <span>${esc(src.name)}</span><span class="count">${countText(src.count, src.need, src.review)}</span>
             </button>
           `).join('')}
         </details>
@@ -1728,6 +1784,7 @@ function renderConversationList() {
         <span class="badge">${esc(conv.source_name || sourceGroupLabel(conv.source_group || conv.channel))}</span>
         <span class="badge ${conv.auto_reply ? 'on' : 'off'}">${conv.auto_reply ? t('autoOn') : t('autoOff')}</span>
         ${conv.needs_human ? `<span class="badge need">${t('needsStaff')}</span>` : ''}
+        ${Number(conv.reply_review_count || 0) > 0 ? `<span class="badge warn">${esc(t('needsImprovement'))} ${esc(conv.reply_review_count)}</span>` : ''}
       </div>
     </button>
   `).join('')}</div>`;
@@ -1751,11 +1808,17 @@ function bindExpandable() {
   });
 }
 
+function canReviewMessage(message) {
+  const sender = String(message.sender_type || '').toLowerCase();
+  return message.direction === 'out' && sender === 'ai';
+}
+
 function renderMessage(message) {
   return `
     <div class="msg ${message.direction === 'in' ? 'in' : 'out'}">
       <div class="msg-meta">
         <span>${esc(message.sender_type || '')} · ${esc(formatDate(message.created_at))}</span>
+        ${canReviewMessage(message) ? `<button class="mini" type="button" data-review-msg="${esc(message.id)}">${esc(t('markWrong'))}</button>` : ''}
         <button class="mini" type="button" data-delete-msg="${esc(message.id)}">${esc(t('delete'))}</button>
       </div>
       ${expandableText(message.text)}
@@ -1872,6 +1935,7 @@ function renderDetailPanel() {
             <div class="row">
               <span class="badge ${conv.auto_reply ? 'on' : 'off'}">${conv.auto_reply ? t('autoOn') : t('autoOff')}</span>
               ${conv.needs_human ? `<span class="badge need">${t('needsStaff')}</span>` : ''}
+              ${Number(conv.reply_review_count || 0) > 0 ? `<span class="badge warn">${esc(t('needsImprovement'))} ${esc(conv.reply_review_count)}</span>` : ''}
             </div>
           </div>
         </section>
@@ -1975,6 +2039,51 @@ function renderAlertsPage() {
             </div>
           </div>
           <div class="panel-body">${renderAlerts(state.alerts)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderReplyReview(review) {
+  return `
+    <div class="alert-box">
+      <div class="row space">
+        <span class="alert-title">${esc(review.issue_type || t('issueType'))}</span>
+        <span class="badge warn">${esc(review.source_name || review.source_key || sourceGroupLabel(review.source_group))}</span>
+      </div>
+      <div class="alert-message">
+        <b>${esc(t('customerMessage'))}</b>
+        <div>${esc(review.customer_text || t('noData'))}</div>
+      </div>
+      <div class="alert-message">
+        <b>${esc(t('aiReply'))}</b>
+        <div>${esc(review.ai_reply || t('noData'))}</div>
+      </div>
+      ${review.notes ? `<div class="alert-message"><b>${esc(t('reviewNotes'))}</b><div>${esc(review.notes)}</div></div>` : ''}
+      <div class="alert-meta">
+        <span>${esc(formatDate(review.created_at))} · ${esc(review.status || '')}</span>
+        ${review.conversation_id ? `<button class="mini" type="button" data-review-conv="${esc(review.conversation_id)}">${esc(t('openConversation'))}</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderImprovementsPage() {
+  return `
+    <div class="page">
+      <div class="dashboard-grid">
+        <div class="page-card">
+          <div class="panel-head">
+            <div class="row space">
+              <div>
+                <h3>${esc(t('navImprovements'))}</h3>
+                <div class="muted">${state.replyReviews.length} ${esc(t('reviewCount'))}</div>
+              </div>
+              <button class="btn ghost" id="reloadReviewsBtn" type="button">${esc(t('refresh'))}</button>
+            </div>
+          </div>
+          <div class="panel-body">${state.replyReviews.length ? state.replyReviews.map(renderReplyReview).join('') : `<div class="muted">${esc(t('noData'))}</div>`}</div>
         </div>
       </div>
     </div>
@@ -2165,8 +2274,16 @@ function bindRenderedEvents() {
     btn.onclick = () => deleteMessage(btn.dataset.deleteMsg);
   });
 
+  $$('[data-review-msg]').forEach(btn => {
+    btn.onclick = () => markAiReplyWrong(btn.dataset.reviewMsg);
+  });
+
   $$('[data-alert-conv]').forEach(btn => {
     btn.onclick = () => openConv(btn.dataset.alertConv);
+  });
+
+  $$('[data-review-conv]').forEach(btn => {
+    btn.onclick = () => openConv(btn.dataset.reviewConv);
   });
 
   if ($('#toggleAutoBtn')) $('#toggleAutoBtn').onclick = toggleAuto;
@@ -2188,6 +2305,11 @@ function bindRenderedEvents() {
   if ($('#sendTestBtn')) $('#sendTestBtn').onclick = sendTest;
   if ($('#reloadAlertsBtn')) $('#reloadAlertsBtn').onclick = async () => {
     await loadAlerts();
+    render();
+    toast(t('reloaded'));
+  };
+  if ($('#reloadReviewsBtn')) $('#reloadReviewsBtn').onclick = async () => {
+    await loadReplyReviews();
     render();
     toast(t('reloaded'));
   };
@@ -2227,6 +2349,7 @@ function render() {
   renderShell();
   if (state.view === 'dashboard') $('#content').innerHTML = renderDashboard();
   else if (state.view === 'alerts') $('#content').innerHTML = renderAlertsPage();
+  else if (state.view === 'improvements') $('#content').innerHTML = renderImprovementsPage();
   else if (state.view === 'knowledge') $('#content').innerHTML = renderKnowledge();
   else if (state.view === 'logs') $('#content').innerHTML = renderLogs();
   else $('#content').innerHTML = renderChatView();
@@ -2244,6 +2367,10 @@ async function load() {
 
 async function loadAlerts() {
   state.alerts = await api(API + '/alerts?status=open');
+}
+
+async function loadReplyReviews() {
+  state.replyReviews = await api(API + '/reply-reviews?status=active&limit=200');
 }
 
 async function loadLogs(type = state.logType) {
@@ -2361,6 +2488,30 @@ async function deleteMessage(id) {
   toast(t('deletedMessage'));
 }
 
+async function markAiReplyWrong(id) {
+  const messages = state.selected?.messages || [];
+  const index = messages.findIndex(item => item.id === id);
+  const message = messages[index];
+  if (!message || !state.selected?.conversation) return;
+  const previousCustomer = [...messages.slice(0, index)].reverse().find(item => item.direction === 'in');
+  const issueType = prompt(t('reviewIssuePrompt'), 'Tra loi sai/lac de/cau chu chua tu nhien');
+  if (!issueType) return;
+  const notes = prompt(t('reviewNotesPrompt'), '') || '';
+  await api(API + '/conversations/' + encodeURIComponent(state.selected.conversation.id) + '/reviews', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messageId: id,
+      issueType,
+      customerText: previousCustomer?.text || '',
+      aiReply: message.text || '',
+      notes
+    })
+  });
+  await Promise.all([refreshSelected(), loadReplyReviews()]);
+  toast(t('reviewedAi'));
+}
+
 async function saveKnowledge(type) {
   const box = $(`[data-knowledge-type="${type}"]`);
   if (!box) return;
@@ -2429,6 +2580,7 @@ async function sendTest() {
 async function startDashboard() {
   try {
     await Promise.all([load(), loadAlerts()]);
+    if (state.view === 'improvements') await loadReplyReviews();
     if (state.view === 'knowledge') await loadKnowledge(state.kSource);
     if (state.view === 'logs') await loadLogs(state.logType);
     const id = new URLSearchParams(location.search).get('conversation');
@@ -2445,6 +2597,7 @@ $('#refreshBtn').onclick = async () => {
   await Promise.all([
     load(),
     (state.view === 'dashboard' || state.view === 'alerts') ? loadAlerts() : Promise.resolve(),
+    state.view === 'improvements' ? loadReplyReviews() : Promise.resolve(),
     state.view === 'logs' ? loadLogs(state.logType) : Promise.resolve()
   ]);
   render();

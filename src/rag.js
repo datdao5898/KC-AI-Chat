@@ -196,8 +196,12 @@ function searchProducts(query, topK = 8, options = {}) {
   const mentionedBrands = getKnownProductBrands().filter(brand => ` ${normQuery} `.includes(` ${brand} `));
   if (scopeBrand && mentionedBrands.some(brand => brand !== scopeBrand)) return [];
   const maxPrice = extractMaxPrice(query);
-  const codeWords = words.filter(w => w.length >= 4 && /[a-z]/.test(w) && /\d/.test(w));
+  const codeWords = words.filter(w => {
+    if (!(w.length >= 4 && /[a-z]/.test(w) && /\d/.test(w))) return false;
+    return !/^\d+(?:k|m|tr|trieu|nghin|ngan)$/i.test(w);
+  });
   const wantsTripod = /\b(tripod|chan may|chan den|gia do)\b/i.test(normQuery);
+  const wantsMicrophone = /\b(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)\b/i.test(normQuery);
   const wantsPhone = /\b(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)\b/i.test(normQuery);
   if (!words.length) return [];
 
@@ -213,6 +217,17 @@ function searchProducts(query, topK = 8, options = {}) {
     const haystack = `${name} ${desc}`;
 
     if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
+    if (wantsMicrophone) {
+      const microphoneText = `${name} ${vendor} ${desc}`;
+      const nameVendorText = `${name} ${vendor}`;
+      const nameLooksAccessory = /\b(hdmi|cable|cap|adapter|dau chuyen|mount adapter|usb hub|the nho|memory card)\b/i.test(nameVendorText)
+        && !/\b(thu am|maono|fifine|boya|comica|synco|xlr|condenser|dynamic|lavalier|wireless)\b/i.test(nameVendorText);
+      if (nameLooksAccessory) continue;
+      const audioMic = /(\bmic\b|\bmicrophone\b|\bthu am\b|\bmaono\b|\bfifine\b|\bboya\b|\bcomica\b|\bsynco\b|\bxlr\b|\bcondenser\b|\bdynamic\b|\blavalier\b|\bwireless\b)/i.test(microphoneText);
+      const connectorOnly = /\b(hdmi|cable|cap|adapter|dau chuyen|mount adapter|usb hub|the nho|memory card)\b/i.test(microphoneText)
+        && !/\b(thu am|maono|fifine|boya|comica|synco|xlr|condenser|dynamic|lavalier|wireless)\b/i.test(microphoneText);
+      if (!audioMic || connectorOnly) continue;
+    }
 
     if (codeWords.length && !codeWords.some(w => sku.includes(w) || name.includes(w))) continue;
 
@@ -227,6 +242,7 @@ function searchProducts(query, topK = 8, options = {}) {
     }
 
     if (wantsTripod && /(tripod|chan may|chan den|gia do)/i.test(name)) score += 8;
+    if (wantsMicrophone && /(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)/i.test(`${name} ${vendor}`)) score += 8;
     if (wantsPhone && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 6;
     if (wantsTripod && wantsPhone && /(tripod|chan may|chan den|gia do)/i.test(haystack) && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 10;
 

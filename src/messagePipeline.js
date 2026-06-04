@@ -4,13 +4,14 @@ const { generateReply, summarizeConversation, summarizeConversationFast, detectM
 const { notifyStaff, notifyWebsiteMessage } = require('./staffAlert');
 const { logAiResponse } = require('./aiTrace');
 const { buildSourceContext } = require('./sourceRegistry');
+const { validateAiReply } = require('./replyValidator');
 
 function normalizeForMatch(text) {
   return String(text || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
+    .replace(/[đĐ]/g, 'd')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -24,9 +25,13 @@ function isPolicyFollowUpText(text, intent) {
 
 function detectHandoff({ text, intent, aiError, ragProducts }) {
   const t = String(text || '').toLowerCase();
+  const normalized = normalizeForMatch(text);
   if (intent === 'human') return { needed: true, reason: 'Khách yêu cầu gặp nhân viên' };
   if (/(không phản hồi|khong phan hoi|chưa phản hồi|chua phan hoi|không ai trả lời|khong ai tra loi|gọi lại|goi lai|liên hệ lại|lien he lai|khiếu nại|khieu nai|bảo hành lỗi|bao hanh loi)/i.test(t)) {
     return { needed: true, reason: 'Khách cần follow-up/khiếu nại' };
+  }
+  if (/\b(hoi|hỏi).{0,30}(tu van|tư vấn|gioi thieu|giới thiệu)|\b(tu van|tư vấn).{0,30}(sai|nham|nhầm|lac de|lạc đề)|\b(dang hoi|đang hỏi).{0,50}(tu van|tư vấn)/i.test(normalized)) {
+    return { needed: true, reason: 'Khách phản hồi AI tư vấn sai/lạc đề' };
   }
   if (aiError) return { needed: true, reason: 'AI lỗi hoặc hết quota, cần nhân viên kiểm tra' };
   if (isPolicyFollowUpText(text, intent)) {
@@ -203,8 +208,13 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceName: source.sourceName,
     sourceGroup: source.sourceGroup
   });
-  const handoff = detectHandoff({ text, intent, aiError, ragProducts });
-  const reply = normalizeCustomerReply(improveNoDataReply(rawReply, handoff, text));
+  const validation = validateAiReply({ userText: text, history, reply: rawReply, ragProducts });
+  const generatedReply = validation.ok ? rawReply : validation.reply;
+  const baseHandoff = detectHandoff({ text, intent, aiError, ragProducts });
+  const handoff = validation.ok
+    ? baseHandoff
+    : { needed: true, reason: validation.reason || 'Validator chặn câu trả lời có rủi ro sai' };
+  const reply = normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, text));
   const humanDelayMs = estimateHumanReplyDelayMs(reply, Date.now() - startedAt);
   if (humanDelayMs > 0) await sleep(humanDelayMs);
 
@@ -254,7 +264,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     direction: 'out',
     senderType: 'ai',
     text: reply,
-    rawJson: { reply_to: inbound.id, handoff, sendResult, aiError: !!aiError, humanDelayMs },
+    rawJson: { reply_to: inbound.id, handoff, validation, sendResult, aiError: !!aiError, humanDelayMs },
     intent,
     aiUsed,
     deliveryStatus,
@@ -289,6 +299,8 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceName: source.sourceName,
     humanDelayMs,
     reply,
+    validatorBlocked: validation.ok ? false : true,
+    validatorReason: validation.reason || '',
     handoffNeeded: handoff.needed,
     handoffReason: handoff.reason || '',
     deliveryStatus,

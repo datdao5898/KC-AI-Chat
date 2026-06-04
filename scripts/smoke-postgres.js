@@ -84,10 +84,36 @@ async function main() {
   if (polled.messages.length !== 2) throw new Error(`Expected 2 widget messages, got ${polled.messages.length}`);
   if (!await runtime.markProcessed('smoke', 'event-1')) throw new Error('First processed event insert failed');
   if (await runtime.markProcessed('smoke', 'event-1')) throw new Error('Duplicate processed event was not rejected');
+  const review = await runtime.addAiReplyReview({
+    sourceGroup: 'website',
+    sourceKey: 'website/smoke',
+    sourceName: 'Smoke',
+    conversationId: conversation.id,
+    messageId: polled.messages[1].id,
+    issueType: 'wrong_reply',
+    customerText: 'full vat',
+    aiReply: 'wrong',
+    notes: 'Review only'
+  });
+  if (!review.id) throw new Error('AI reply review was not saved');
+  const reviews = await runtime.listAiReplyReviews({ sourceKey: 'website/smoke', limit: 5 });
+  if (!reviews.some(item => item.notes === 'Review only')) throw new Error('AI reply review was not returned');
   await runtime.resolveHandoff(conversation.id, 'done');
-  await runtime.softDeleteConversation(conversation.id);
+  const hardDeleted = await runtime.hardDeleteConversation(conversation.id);
+  if (!hardDeleted?.hardDeleted) throw new Error('Conversation was not hard-deleted');
   const deleted = await runtime.getConversation(conversation.id);
-  if (deleted.conversation) throw new Error('Soft-deleted conversation is still visible');
+  if (deleted.conversation) throw new Error('Hard-deleted conversation is still visible');
+  const leftovers = await runtime.db.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM conversations WHERE id=$1) AS conversations,
+      (SELECT COUNT(*)::int FROM messages WHERE conversation_id=$1) AS messages,
+      (SELECT COUNT(*)::int FROM staff_alerts WHERE conversation_id=$1) AS alerts,
+      (SELECT COUNT(*)::int FROM ai_reply_reviews WHERE conversation_id=$1) AS reviews
+  `, [conversation.id]);
+  const remaining = leftovers.rows[0];
+  for (const [table, count] of Object.entries(remaining)) {
+    if (Number(count) !== 0) throw new Error(`Hard delete left ${count} rows in ${table}`);
+  }
 
   console.log(JSON.stringify({ ok: true, migrated: expected, autoReplyAfterAlert: 1, widgetMessages: polled.messages.length }));
   await runtime.db.end();

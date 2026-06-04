@@ -4,6 +4,7 @@ const {
   getPriceExtremes,
   isPriceExtremeQuery,
   requestedPriceExtremes,
+  extractMaxPrice,
   extractExactPrice,
   findProductsByExactPrice,
   loadProducts,
@@ -271,6 +272,51 @@ function productLine(product, index = 1) {
   const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
   const url = product.url || product.link || product.product_url || '';
   return `${index}. ${name}\n${sku}\nGiá: ${price}${url ? `\nLink: ${url}` : ''}`;
+}
+
+function isPreviousAdviceComplaint(userText) {
+  const normalized = normalize(userText);
+  return (
+    /\b(tai sao|sao|vi sao)\b/i.test(normalized)
+    && /\b(nay|luc nay|hoi|tu van|tra loi|khong co|khong thay)\b/i.test(normalized)
+  ) || /\b(hoi|dang hoi).{0,50}(sai|nham|lac de|tra loi|tu van)\b/i.test(normalized);
+}
+
+function buildBudgetProductReply(userText, products, scopeBrand = '') {
+  const maxPrice = extractMaxPrice(userText);
+  if (!maxPrice || !products?.length) return null;
+  const lang = detectMessageLanguage(userText);
+  const rows = products.slice(0, 3).map((p, i) => productLine(p, i + 1)).join('\n\n');
+  const scope = scopeBrand ? ` trong catalog ${scopeBrand}` : '';
+  if (lang === 'en') {
+    return `I found matching products${scope} within ${formatPrice(maxPrice)}:\n\n${rows}\n\nPlease tell me which model you prefer, or share your phone number so KingCom staff can check current stock.`;
+  }
+  if (lang === 'zh') {
+    return `我找到以下${scope}中符合 ${formatPrice(maxPrice)} 以内的产品：\n\n${rows}\n\n请告诉我您想了解哪一款，或留下电话号码，方便 KingCom 员工确认库存。`;
+  }
+  return `Dạ em tìm thấy sản phẩm phù hợp${scope} trong tầm giá dưới ${formatPrice(maxPrice)}:\n\n${rows}\n\nAnh/chị muốn xem kỹ mẫu nào, hoặc để lại số điện thoại để nhân viên KingCom kiểm tra tồn kho hỗ trợ thêm ạ?`;
+}
+
+function buildPreviousAdviceCorrectionReply(userText, products, scopeBrand = '') {
+  const lang = detectMessageLanguage(userText);
+  const rows = (products || []).slice(0, 3).map((p, i) => productLine(p, i + 1)).join('\n\n');
+  const scope = scopeBrand ? ` trong catalog ${scopeBrand}` : '';
+  if (lang === 'en') {
+    if (rows) {
+      return `Sorry, the previous reply did not match the catalog correctly.\n\nI checked again and found matching products${scope}:\n\n${rows}\n\nThank you for pointing that out. KingCom staff can also check current stock if you share your phone number.`;
+    }
+    return 'Sorry, the previous reply may not have matched the catalog correctly. I have forwarded this to KingCom staff so they can check again and support you accurately.';
+  }
+  if (lang === 'zh') {
+    if (rows) {
+      return `不好意思，刚才的回复没有正确匹配目录。\n\n我重新检查后，找到以下符合的产品${scope}：\n\n${rows}\n\n感谢您指出，如需确认库存，可以留下电话号码。`;
+    }
+    return '不好意思，刚才的回复可能没有正确匹配目录。我已转交 KingCom 员工重新检查，以便更准确地支持您。';
+  }
+  if (rows) {
+    return `Dạ em xin lỗi anh/chị, lúc nãy em kiểm tra chưa khớp đúng catalog nên trả lời chưa chính xác.\n\nEm xác nhận lại có sản phẩm phù hợp${scope}:\n\n${rows}\n\nCảm ơn anh/chị đã nhắc lại. Nếu anh/chị muốn chốt mẫu nào, em có thể chuyển nhân viên KingCom kiểm tra tồn kho thêm ạ.`;
+  }
+  return 'Dạ em xin lỗi anh/chị, lúc nãy em có thể đã kiểm tra chưa khớp đúng catalog. Em đã chuyển thông tin cho nhân viên KingCom kiểm tra lại để hỗ trợ chính xác hơn ạ.';
 }
 
 function buildDirectPriceReply(userText, options = {}) {
@@ -836,6 +882,29 @@ ${intent === 'greeting'
 
   const searchQuery = buildSearchQuery(userText, history, customer);
   const { context, products } = buildContext(searchQuery, { sourceKey, topK: policyQuestion ? 0 : (guidanceQuestion ? 1 : 8) });
+  if (isPreviousAdviceComplaint(userText) && !guidanceQuestion && !policyQuestion) {
+    return {
+      reply: buildPreviousAdviceCorrectionReply(userText, products, scopeBrand),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_previous_advice_correction',
+      searchQuery,
+      ragProducts: products
+    };
+  }
+  const budgetProductReply = (!guidanceQuestion && !policyQuestion && ['buy', 'price', 'product_search', 'order'].includes(intent))
+    ? buildBudgetProductReply(userText, products, scopeBrand)
+    : null;
+  if (budgetProductReply) {
+    return {
+      reply: budgetProductReply,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'direct_budget_lookup',
+      searchQuery,
+      ragProducts: products.slice(0, 3)
+    };
+  }
   if (!products.length && hasSpecificProductQuery(userText, intent) && !guidanceQuestion && !policyQuestion) {
     return {
       reply: buildNoCatalogMatchReply(userText, messageLanguage, scopeBrand),
