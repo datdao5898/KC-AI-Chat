@@ -530,6 +530,11 @@ function buildCatalogOverviewReply({ lang = 'vi', scopeBrand = '', products = []
   return 'Dạ KingCom đang kinh doanh phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod, màn hình phụ, thiết bị livestream và các phụ kiện quay chụp khác. Anh/chị đang quan tâm nhóm sản phẩm nào để em tư vấn mẫu phù hợp ạ?';
 }
 
+function isCatalogScopeQuestion(userText) {
+  const normalized = normalize(userText);
+  return /\b(chi ban moi|chi co moi|moi mat hang|moi san pham|ban nhung mat hang gi|ban nhung mat hang nao|ban mat hang gi|ban mat hang nao|dang ban nhung mat hang|dang ban mat hang|bay ban)\b/i.test(normalized);
+}
+
 function buildPolicyRuleReply(userText, lang, scopeBrand = '') {
   const normalized = normalize(userText);
   const scope = normalize(scopeBrand);
@@ -827,7 +832,7 @@ async function generateReply({
     };
   }
 
-  if (intent === 'catalog_info') {
+  if (intent === 'catalog_info' || isCatalogScopeQuestion(userText)) {
     return {
       reply: buildCatalogOverviewReply({ lang: messageLanguage, scopeBrand, products: scopedProducts }),
       aiUsed: 0,

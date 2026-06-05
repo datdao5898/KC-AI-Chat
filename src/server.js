@@ -46,6 +46,7 @@ app.use(express.json({
   }
 }));
 
+app.get('/', (req, res) => res.redirect('/admin/'));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/webhooks', webhooks);
 // Alias tương thích với prototype cũ: /webhook/facebook
@@ -95,7 +96,6 @@ function requireAdminAuth(req, res, next) {
 
 app.use('/api', requireAdminAuth, admin);
 app.get('/health', (req, res) => res.json({ ok: true, service: 'KingCom AI Agent', channels: ['facebook','zalo','haravan_website'] }));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 
 app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid_json' });

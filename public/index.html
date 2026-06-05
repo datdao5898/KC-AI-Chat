@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>KingCom AI Agent</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
+
     :root {
       --kc-primary: #007f7b;
       --kc-primary-dark: #005f5c;
@@ -52,7 +54,7 @@
       margin: 0;
       background: var(--kc-bg);
       color: var(--kc-text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      font-family: "Quicksand", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
       font-size: 14px;
       letter-spacing: 0;
     }
@@ -1493,6 +1495,7 @@ const state = {
   replyReviews: [],
   logs: { type: 'ai', entries: [] },
   logType: 'ai',
+  logOpen: new Set(),
   selected: null,
   view: localStorage.getItem('kc-admin-view') || 'dashboard',
   filter: 'all',
@@ -1793,14 +1796,15 @@ function renderConversationList() {
 function expandableText(text, cls = 'msg-text') {
   const raw = String(text ?? '');
   const long = raw.length > 460 || raw.split(/\r?\n/).length > 8;
-  return `<div class="${cls}${long ? ' collapsed' : ''}">${esc(raw)}</div>${long ? `<button class="show-more" type="button">${esc(t('showMore'))}</button>` : ''}`;
+  return `<div class="${cls}${long ? ' collapsed' : ''}">${esc(raw)}</div>${long ? `<button class="show-more" data-expandable-toggle type="button">${esc(t('showMore'))}</button>` : ''}`;
 }
 
 function bindExpandable() {
-  $$('.show-more').forEach(btn => {
+  $$('[data-expandable-toggle]').forEach(btn => {
     btn.onclick = event => {
       event.stopPropagation();
       const box = btn.previousElementSibling;
+      if (!box) return;
       const expanded = box.classList.toggle('expanded');
       box.classList.toggle('collapsed', !expanded);
       btn.textContent = expanded ? t('collapse') : t('showMore');
@@ -2090,8 +2094,14 @@ function renderImprovementsPage() {
   `;
 }
 
-function renderLogEntry(entry) {
+function logEntryKey(entry, index) {
+  return [entry.ts || '', entry.type || '', entry.status || '', entry.source || '', entry.title || '', index].join('|');
+}
+
+function renderLogEntry(entry, index = 0) {
   const raw = entry.raw ? JSON.stringify(entry.raw, null, 2) : entry.detail || '';
+  const key = logEntryKey(entry, index);
+  const isOpen = state.logOpen.has(key);
   return `
     <div class="alert-box">
       <div class="row space">
@@ -2102,7 +2112,7 @@ function renderLogEntry(entry) {
       <div class="alert-meta">
         <span>${esc(entry.source || '')} ${entry.ts ? `· ${esc(formatDate(entry.ts))}` : ''}</span>
       </div>
-      <details>
+      <details data-log-key="${esc(key)}" ${isOpen ? 'open' : ''}>
         <summary class="show-more">${esc(t('showMore'))}</summary>
         <pre style="white-space:pre-wrap;word-break:break-word;margin:8px 0 0;font-size:12px">${esc(raw)}</pre>
       </details>
@@ -2130,7 +2140,7 @@ function renderLogs() {
               </div>
             </div>
           </div>
-          <div class="panel-body">${state.logs.entries.length ? state.logs.entries.map(renderLogEntry).join('') : `<div class="muted">${esc(t('noData'))}</div>`}</div>
+          <div class="panel-body">${state.logs.entries.length ? state.logs.entries.map((entry, index) => renderLogEntry(entry, index)).join('') : `<div class="muted">${esc(t('noData'))}</div>`}</div>
         </div>
       </div>
     </div>
@@ -2320,9 +2330,18 @@ function bindRenderedEvents() {
   };
   if ($('#logType')) $('#logType').onchange = async event => {
     state.logType = event.target.value;
+    state.logOpen.clear();
     await loadLogs(state.logType);
     render();
   };
+  $$('details[data-log-key]').forEach(details => {
+    details.ontoggle = () => {
+      const key = details.dataset.logKey;
+      if (!key) return;
+      if (details.open) state.logOpen.add(key);
+      else state.logOpen.delete(key);
+    };
+  });
   if ($('#kSource')) $('#kSource').onchange = event => loadKnowledge(event.target.value);
   if ($('#reloadKnowledgeBtn')) $('#reloadKnowledgeBtn').onclick = () => loadKnowledge(state.kSource, true);
   $$('[data-save-knowledge]').forEach(btn => {

@@ -7,9 +7,11 @@
   if (document.getElementById(widgetId)) return;
 
   const css = `
+    @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
+
     #kc-chat-widget, #kc-chat-launcher {
       box-sizing: border-box;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: "Quicksand", Arial, Helvetica, sans-serif;
       letter-spacing: 0;
     }
     #kc-chat-widget * {
