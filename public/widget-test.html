@@ -31,6 +31,17 @@
     </div>
   </div>
 
-  <script src="/widget.js" data-site-name="widget-test"></script>
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const site = (params.get('site') || 'kingcom').toLowerCase();
+      const allowed = new Set(['kingcom', 'newlite']);
+      const script = document.createElement('script');
+      script.src = '/widget.js';
+      script.dataset.siteName = allowed.has(site) ? site : 'kingcom';
+      if (allowed.has(site)) document.title = `${site === 'newlite' ? 'NewLite' : 'KingCom'} Widget Test`;
+      document.body.appendChild(script);
+    })();
+  </script>
 </body>
 </html>

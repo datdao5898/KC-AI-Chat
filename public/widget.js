@@ -6,6 +6,21 @@
     newlite: 'NewLite',
     kingcom: 'KingCom'
   };
+  const siteThemes = {
+    newlite: {
+      primary: '#ff2d94',
+      primaryDark: '#d91f79',
+      primarySoft: '#ffe3f0',
+      primaryRgb: '255, 45, 148'
+    },
+    kingcom: {
+      primary: '#007f7b',
+      primaryDark: '#005f5c',
+      primarySoft: '#e6f7f6',
+      primaryRgb: '0, 127, 123'
+    }
+  };
+  const siteTheme = siteThemes[siteName.toLowerCase()] || siteThemes.kingcom;
   const widgetTitle = currentScript?.dataset?.title
     || siteBrandNames[siteName.toLowerCase()]
     || 'KingCom';
@@ -50,7 +65,7 @@
     .kc-head {
       min-height: 56px;
       padding: 0 14px 0 16px;
-      background: #2563eb;
+      background: var(--kc-primary);
       color: #fff;
       display: flex;
       align-items: center;
@@ -115,8 +130,8 @@
       outline: none;
     }
     .kc-lead-input:focus {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+      border-color: var(--kc-primary);
+      box-shadow: 0 0 0 3px rgba(var(--kc-primary-rgb), 0.12);
     }
     .kc-row {
       display: flex;
@@ -148,7 +163,7 @@
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
     }
     .kc-row-user .kc-bubble {
-      background: #2563eb;
+      background: var(--kc-primary);
       color: #fff;
       border-bottom-right-radius: 5px;
     }
@@ -165,8 +180,8 @@
       margin: 2px 0;
       padding: 4px 8px;
       border-radius: 999px;
-      background: #eaf2ff;
-      color: #075985;
+      background: var(--kc-primary-soft);
+      color: var(--kc-primary-dark);
       font-weight: 700;
       text-decoration: none;
       vertical-align: baseline;
@@ -203,13 +218,13 @@
       padding: 0;
       border: 1px solid #cbd5e1;
       border-radius: 12px;
-      color: #007f7b;
+      color: var(--kc-primary);
       background: #fff;
       cursor: pointer;
     }
     .kc-attach:hover {
-      border-color: #007f7b;
-      background: #e8f7f6;
+      border-color: var(--kc-primary);
+      background: var(--kc-primary-soft);
     }
     .kc-attach:disabled {
       cursor: wait;
@@ -285,8 +300,8 @@
       outline: none;
     }
     .kc-input:focus {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+      border-color: var(--kc-primary);
+      box-shadow: 0 0 0 3px rgba(var(--kc-primary-rgb), 0.14);
     }
     .kc-send {
       width: 58px;
@@ -311,9 +326,9 @@
       height: 46px;
       border: 0;
       border-radius: 999px;
-      background: #2563eb;
+      background: var(--kc-primary);
       color: #fff;
-      box-shadow: 0 18px 45px rgba(37, 99, 235, 0.32);
+      box-shadow: 0 18px 45px rgba(var(--kc-primary-rgb), 0.32);
       cursor: pointer;
       font-weight: 700;
       z-index: 99999;
@@ -352,6 +367,10 @@
   const box = document.createElement('section');
   box.id = widgetId;
   box.setAttribute('aria-label', widgetTitle);
+  box.style.setProperty('--kc-primary', siteTheme.primary);
+  box.style.setProperty('--kc-primary-dark', siteTheme.primaryDark);
+  box.style.setProperty('--kc-primary-soft', siteTheme.primarySoft);
+  box.style.setProperty('--kc-primary-rgb', siteTheme.primaryRgb);
 
   const head = document.createElement('div');
   head.className = 'kc-head';
@@ -450,6 +469,10 @@
   launcher.id = 'kc-chat-launcher';
   launcher.type = 'button';
   launcher.textContent = 'Chat';
+  launcher.style.setProperty('--kc-primary', siteTheme.primary);
+  launcher.style.setProperty('--kc-primary-dark', siteTheme.primaryDark);
+  launcher.style.setProperty('--kc-primary-soft', siteTheme.primarySoft);
+  launcher.style.setProperty('--kc-primary-rgb', siteTheme.primaryRgb);
 
   form.append(attachButton, input, button, fileInput);
   box.append(head, lead, messages, attachmentPreview, form);
