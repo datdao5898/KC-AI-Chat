@@ -120,11 +120,21 @@ App se uu tien doc file trong dung thu muc nguon truoc, sau do moi fallback ve d
 
 ## Nhung widget vao Haravan website
 
-Them truoc `</body>`:
+Them truoc `</body>`.
+
+Website NewLite:
 
 ```html
 <script src="https://YOUR_DOMAIN/widget.js" data-site-name="newlite"></script>
 ```
+
+Website KingCom:
+
+```html
+<script src="https://YOUR_DOMAIN/widget.js" data-site-name="kingcom"></script>
+```
+
+Widget tu hien thi `NewLite` hoac `KingCom` theo `data-site-name`.
 
 Nho them domain storefront vao `CORS_ORIGINS`, vi du:
 

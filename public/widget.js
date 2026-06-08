@@ -1,6 +1,16 @@
 (function () {
   const currentScript = document.currentScript;
   const apiBase = currentScript && currentScript.src ? new URL(currentScript.src).origin : window.location.origin;
+  const siteName = String(currentScript?.dataset?.siteName || '').trim();
+  const siteBrandNames = {
+    newlite: 'NewLite',
+    kingcom: 'KingCom'
+  };
+  const widgetTitle = currentScript?.dataset?.title
+    || siteBrandNames[siteName.toLowerCase()]
+    || 'KingCom';
+  const agentName = currentScript?.dataset?.agentName || widgetTitle;
+  const externalLauncherSelector = currentScript?.dataset?.launcher || '';
   const widgetId = 'kc-chat-widget';
   const styleId = 'kc-chat-widget-style';
 
@@ -341,14 +351,14 @@
 
   const box = document.createElement('section');
   box.id = widgetId;
-  box.setAttribute('aria-label', 'KingCom');
+  box.setAttribute('aria-label', widgetTitle);
 
   const head = document.createElement('div');
   head.className = 'kc-head';
 
   const title = document.createElement('div');
   title.className = 'kc-title';
-  title.textContent = 'KingCom';
+  title.textContent = widgetTitle;
 
   const minimize = document.createElement('button');
   minimize.className = 'kc-minimize';
@@ -366,7 +376,7 @@
 
   const leadTitle = document.createElement('p');
   leadTitle.className = 'kc-lead-title';
-  leadTitle.textContent = 'Anh/chị có thể để lại tên và số điện thoại để KingCom hỗ trợ nhanh hơn.';
+  leadTitle.textContent = `Anh/chị có thể để lại tên và số điện thoại để ${widgetTitle} hỗ trợ nhanh hơn.`;
 
   const leadGrid = document.createElement('div');
   leadGrid.className = 'kc-lead-grid';
@@ -445,6 +455,9 @@
   box.append(head, lead, messages, attachmentPreview, form);
   document.body.append(box, launcher);
 
+  const externalLauncher = externalLauncherSelector
+    ? document.querySelector(externalLauncherSelector)
+    : null;
   const vid = localStorage.kcVisitorId || (localStorage.kcVisitorId = 'web-' + Date.now());
   const renderedMessageIds = new Set();
   let lastPollAt = '';
@@ -460,20 +473,34 @@
   nameInput.onkeydown = e => { if (e.key === 'Enter') input.focus(); };
   phoneInput.onkeydown = e => { if (e.key === 'Enter') input.focus(); };
 
-  box.classList.add('kc-closed');
-  launcher.style.display = 'block';
-
-  minimize.onclick = () => {
+  function closeChat() {
     box.classList.add('kc-closed');
-    launcher.style.display = 'block';
-  };
+    launcher.style.display = externalLauncher ? 'none' : 'block';
+    if (externalLauncher) externalLauncher.style.display = '';
+  }
 
-  launcher.onclick = () => {
+  function openChat() {
     launcher.style.display = 'none';
+    if (externalLauncher) externalLauncher.style.display = 'none';
     box.classList.remove('kc-closed');
     pollWebsiteMessages();
     input.focus();
+  }
+
+  window.KingComChat = {
+    open: openChat,
+    close: closeChat,
+    toggle() {
+      if (box.classList.contains('kc-closed')) openChat();
+      else closeChat();
+    }
   };
+
+  box.classList.add('kc-closed');
+  launcher.style.display = externalLauncher ? 'none' : 'block';
+  if (externalLauncher) externalLauncher.addEventListener('click', openChat);
+  minimize.onclick = closeChat;
+  launcher.onclick = openChat;
 
   async function send() {
     const text = input.value.trim();
@@ -483,7 +510,7 @@
     input.value = '';
     clearSelectedImage();
     add('Bạn', text || 'Đã gửi hình ảnh', 'user', localImageUrl ? [localImageUrl] : []);
-    const typing = add('KingCom', 'Đang soạn...', 'bot');
+    const typing = add(agentName, 'Đang soạn...', 'bot');
     button.disabled = true;
     attachButton.disabled = true;
 
@@ -500,7 +527,7 @@
           attachments: uploadedMedia ? [{ id: uploadedMedia.id, token: uploadedMedia.token }] : [],
           name: customerName,
           phone: customerPhone,
-          siteName: currentScript?.dataset?.siteName || '',
+          siteName,
           siteHost: window.location.hostname,
           siteUrl: window.location.href,
           origin: window.location.origin,
@@ -513,10 +540,10 @@
       if (!res.ok) throw new Error(data.error || `http_${res.status}`);
 
       typing.remove();
-      add('KingCom', data.reply || 'Đã nhận tin nhắn', 'bot');
+      add(agentName, data.reply || 'Đã nhận tin nhắn', 'bot');
     } catch (e) {
       typing.remove();
-      add('KingCom', 'Xin lỗi, hiện chưa gửi được tin nhắn. Anh/chị thử lại sau ít phút giúp em nhé.', 'bot');
+      add(agentName, 'Xin lỗi, hiện chưa gửi được tin nhắn. Anh/chị thử lại sau ít phút giúp em nhé.', 'bot');
     } finally {
       button.disabled = false;
       attachButton.disabled = false;
@@ -551,11 +578,11 @@
   function setSelectedImage(file) {
     const allowed = new Set(['image/jpeg', 'image/png', 'image/webp']);
     if (!file || !allowed.has(file.type)) {
-      add('KingCom', 'Ảnh cần có định dạng JPG, PNG hoặc WebP.', 'bot');
+      add(agentName, 'Ảnh cần có định dạng JPG, PNG hoặc WebP.', 'bot');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      add('KingCom', 'Ảnh vượt quá 5 MB. Anh/chị chọn ảnh nhỏ hơn giúp em nhé.', 'bot');
+      add(agentName, 'Ảnh vượt quá 5 MB. Anh/chị chọn ảnh nhỏ hơn giúp em nhé.', 'bot');
       return;
     }
     clearSelectedImage();
@@ -606,7 +633,7 @@
         if (isInitialHistory) {
           add(messageName(msg), msg.text, messageRole(msg), messageMediaUrls(msg));
         } else if (msg.sender_type === 'staff') {
-          add('KingCom', msg.text, 'bot', messageMediaUrls(msg));
+          add(agentName, msg.text, 'bot', messageMediaUrls(msg));
         }
       }
       historyLoaded = true;
@@ -622,7 +649,7 @@
   }
 
   function messageName(msg) {
-    return msg.direction === 'in' ? 'Bạn' : 'KingCom';
+    return msg.direction === 'in' ? 'Bạn' : agentName;
   }
 
   function messageMediaUrls(msg) {
@@ -703,7 +730,7 @@
     setSelectedImage(image.getAsFile());
   });
   input.onkeydown = e => { if (e.key === 'Enter') send(); };
-  add('KingCom', 'Xin chào! Bạn cần tư vấn sản phẩm gì ạ?', 'bot');
+  add(agentName, 'Xin chào! Bạn cần tư vấn sản phẩm gì ạ?', 'bot');
   pollWebsiteMessages();
   setInterval(pollWebsiteMessages, 3000);
 })();
