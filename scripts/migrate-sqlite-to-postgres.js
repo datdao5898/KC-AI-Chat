@@ -62,6 +62,9 @@ async function migrateTable(sqlite, table) {
 }
 
 async function migrateSqliteToPostgres({ sourcePath = sqlitePath, closePool = true } = {}) {
+  if (process.env.NODE_ENV === 'production' && process.env.CONFIRM_SQLITE_MIGRATION !== 'true') {
+    throw new Error('Refusing to run SQLite migration in production without CONFIRM_SQLITE_MIGRATION=true');
+  }
   if (!fs.existsSync(sourcePath)) throw new Error(`SQLite file not found: ${sourcePath}`);
   console.log(`[MIGRATE] source: ${sourcePath}`);
   await initDb();

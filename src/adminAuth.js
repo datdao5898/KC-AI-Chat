@@ -128,6 +128,7 @@ module.exports = {
   COOKIE_NAME,
   getAdminUsername,
   hashPassword,
+  verifyPassword,
   verifyAdminPassword,
   getSessionFromRequest,
   setSessionCookie,

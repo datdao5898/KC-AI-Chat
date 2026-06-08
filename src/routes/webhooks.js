@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { rateLimit } = require('express-rate-limit');
 const { markProcessed, listWebsiteConversationMessages } = require('../db');
 const { processIncoming } = require('../messagePipeline');
 const { sendFacebookMessage, getFacebookUserProfile, verifySignature, requireSignedWebhook } = require('../channels/facebook');
@@ -12,6 +13,26 @@ const {
   resolveWebsiteImage,
   saveWebsiteImage
 } = require('../websiteMedia');
+
+function parseLimit(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function createWebsiteChatLimiter() {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    limit: parseLimit(process.env.WEBSITE_CHAT_RATE_LIMIT_PER_MINUTE, 20),
+    standardHeaders: false,
+    legacyHeaders: false,
+    handler(req, res) {
+      res.setHeader('Retry-After', '60');
+      return res.status(429).json({ error: 'too_many_requests', retry_after_seconds: 60 });
+    }
+  });
+}
+
+const websiteChatLimiter = createWebsiteChatLimiter();
 
 router.get('/facebook', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -91,6 +112,7 @@ router.post('/haravan', async (req, res) => {
 
 router.post(
   '/website-chat/media',
+  websiteChatLimiter,
   express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: maxImageBytes() }),
   (req, res) => {
     try {
@@ -114,7 +136,7 @@ router.get('/website-chat/media/:id', (req, res) => {
   return res.sendFile(image.filePath);
 });
 
-router.post('/website-chat', async (req, res) => {
+router.post('/website-chat', websiteChatLimiter, async (req, res) => {
   try {
     const { visitorId, message, name, phone, email, siteName, siteHost, siteUrl, origin, referrer, attachments } = req.body;
     const resolvedMedia = resolveWebsiteAttachments(attachments, visitorId);

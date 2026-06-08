@@ -6,21 +6,25 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
+    "test": "node --test",
     "init-db": "node src/init-db.js",
     "migrate-sqlite-to-postgres": "node scripts/migrate-sqlite-to-postgres.js",
     "smoke-postgres": "node scripts/smoke-postgres.js",
+    "rotate-logs": "node scripts/rotate-logs.js",
+    "cleanup-media": "node scripts/cleanup-website-media.js",
     "hash-admin-password": "node src/hash-admin-password.js",
     "split-facebook-products": "node scripts/split-facebook-products.js",
     "crawl-newlite-products": "node scripts/crawl-newlite-products.js"
   },
   "dependencies": {
-    "axios": "latest",
-    "better-sqlite3": "latest",
-    "cors": "latest",
-    "dotenv": "latest",
-    "express": "latest",
+    "axios": "1.16.1",
+    "better-sqlite3": "12.10.0",
+    "cors": "2.8.6",
+    "dotenv": "17.4.2",
+    "express": "5.2.1",
+    "express-rate-limit": "8.5.2",
     "pg": "^8.21.0",
-    "uuid": "latest"
+    "uuid": "14.0.0"
   },
   "devDependencies": {
     "pg-mem": "^3.0.14"

@@ -14,6 +14,7 @@ const {
 } = require('../websiteMedia');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
+const WEBSITE_MEDIA_DIR = path.join(DATA_DIR, 'website-media');
 const KNOWLEDGE_FILES = { faq: 'faq.md', policies: 'policies.md', catalog_summary: 'catalog_summary.md' };
 const TRAINING_FILES = { products: 'products.csv', faq: 'faq.md', policies: 'policies.md' };
 const LOG_FILES = {
@@ -152,8 +153,72 @@ function listKnowledgeSources() {
   });
 }
 
+function envFlag(name, fallback = true) {
+  if (process.env[name] === 'false') return false;
+  if (process.env[name] === 'true') return true;
+  return fallback;
+}
+
+function fileStatus(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { exists: false, bytes: 0, updatedAt: null };
+  }
+  const stat = fs.statSync(filePath);
+  return { exists: true, bytes: stat.size, updatedAt: stat.mtime.toISOString() };
+}
+
+async function countTable(table) {
+  const { rows } = await db.query(`SELECT COUNT(*)::int AS count FROM ${table}`);
+  return Number(rows?.[0]?.count || 0);
+}
+
 router.get('/conversations', async (req, res) => res.json(await listConversations()));
 router.get('/conversations/:id', async (req, res) => res.json(await getConversation(req.params.id)));
+
+router.get('/health/deep', async (req, res) => {
+  try {
+    const dbCheck = await db.query('SELECT 1 AS ok');
+    const tableCounts = {};
+    let dbOk = Number(dbCheck.rows?.[0]?.ok || 0) === 1;
+
+    for (const table of ['customers', 'conversations', 'messages', 'staff_alerts']) {
+      try {
+        tableCounts[table] = await countTable(table);
+      } catch {
+        tableCounts[table] = null;
+        dbOk = false;
+      }
+    }
+
+    const payload = {
+      ok: dbOk,
+      uptime_seconds: Math.round(process.uptime()),
+      db: {
+        ok: dbOk,
+        tables: tableCounts
+      },
+      flags: {
+        autoReply: envFlag('AUTO_REPLY', true),
+        replyJudgeEnabled: envFlag('REPLY_JUDGE_ENABLED', true),
+        imageRecognitionEnabled: envFlag('WEBSITE_IMAGE_RECOGNITION_ENABLED', true)
+      },
+      files: {
+        media: fileStatus(WEBSITE_MEDIA_DIR),
+        aiTrace: fileStatus(path.join(DATA_DIR, 'ai_responses.log')),
+        staffAlerts: fileStatus(path.join(DATA_DIR, 'staff_alerts.log'))
+      }
+    };
+
+    res.status(dbOk ? 200 : 503).json(payload);
+  } catch (err) {
+    res.status(503).json({
+      ok: false,
+      uptime_seconds: Math.round(process.uptime()),
+      error: 'health_check_failed',
+      detail: err.message
+    });
+  }
+});
 
 router.delete('/messages/:id', async (req, res) => {
   const result = await softDeleteMessage(req.params.id);
