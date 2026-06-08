@@ -566,7 +566,7 @@ async function listWebsiteConversationMessages(visitorId, since = '', limit = 20
   const safeLimit = Math.max(1, Math.min(50, Number(limit || 20)));
   if (sinceText) {
     const { rows } = await db.query(`
-      SELECT id, direction, sender_type, text, created_at
+      SELECT id, direction, sender_type, text, raw_json, created_at
       FROM messages
       WHERE conversation_id=$1 AND deleted_at IS NULL AND created_at >= $2::timestamptz
       ORDER BY created_at ASC, id ASC
@@ -575,9 +575,9 @@ async function listWebsiteConversationMessages(visitorId, since = '', limit = 20
     return { conversation, messages: rows };
   }
   const { rows } = await db.query(`
-    SELECT id, direction, sender_type, text, created_at
+    SELECT id, direction, sender_type, text, raw_json, created_at
     FROM (
-      SELECT id, direction, sender_type, text, created_at
+      SELECT id, direction, sender_type, text, raw_json, created_at
       FROM messages
       WHERE conversation_id=$1 AND deleted_at IS NULL
       ORDER BY created_at DESC, id DESC
@@ -588,9 +588,10 @@ async function listWebsiteConversationMessages(visitorId, since = '', limit = 20
   return { conversation, messages: rows };
 }
 
-async function addStaffReply(conversationId, text) {
+async function addStaffReply(conversationId, text, attachments = []) {
   const cleanText = String(text || '').trim();
-  if (!cleanText) return null;
+  const cleanAttachments = (Array.isArray(attachments) ? attachments : []).slice(0, 3);
+  if (!cleanText && !cleanAttachments.length) return null;
   const found = await db.query(`
     SELECT c.*, cu.id AS customer_id
     FROM conversations c
@@ -606,8 +607,14 @@ async function addStaffReply(conversationId, text) {
   }
   const message = await saveMessage({
     conversationId: conversation.id, customerId: conversation.customer_id, channel: conversation.channel,
-    externalMessageId: `staff-${Date.now()}`, direction: 'out', senderType: 'staff', text: cleanText,
-    rawJson: { source: 'admin_live_chat' }, intent: 'staff_reply', aiUsed: 0, deliveryStatus: 'returned_via_poll',
+    externalMessageId: `staff-${Date.now()}`, direction: 'out', senderType: 'staff',
+    text: cleanText,
+    rawJson: {
+      source: 'admin_live_chat',
+      attachments: cleanAttachments,
+      _media: { imageUrls: cleanAttachments.map(item => item.url) }
+    },
+    intent: 'staff_reply', aiUsed: 0, deliveryStatus: 'returned_via_poll',
     sourceGroup: conversation.source_group || 'website', sourceKey: conversation.source_key || '',
     sourceName: conversation.source_name || ''
   });

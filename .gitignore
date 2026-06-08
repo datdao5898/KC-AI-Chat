@@ -16,6 +16,7 @@ node_modules/
 # Logs
 *.log
 data/*.log
+data/website-media/
 tools/logs/
 
 # Local working copies
@@ -26,6 +27,7 @@ scripts/run-local-server.cmd
 # Local tunnels/tools
 tools/
 ngrok.exe
+ssh/
 
 # OS/editor noise
 .DS_Store

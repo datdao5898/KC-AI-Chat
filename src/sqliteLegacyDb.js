@@ -530,7 +530,7 @@ function listWebsiteConversationMessages(visitorId, since = '', limit = 20) {
   if (sinceText) {
     params.push(sinceText);
     const messages = db.prepare(`
-      SELECT id, direction, sender_type, text, created_at
+      SELECT id, direction, sender_type, text, raw_json, created_at
       FROM messages
       WHERE conversation_id=?
         AND COALESCE(deleted_at,'')=''
@@ -544,7 +544,7 @@ function listWebsiteConversationMessages(visitorId, since = '', limit = 20) {
   const messages = db.prepare(`
     SELECT *
     FROM (
-      SELECT id, direction, sender_type, text, created_at, rowid
+      SELECT id, direction, sender_type, text, raw_json, created_at, rowid
       FROM messages
       WHERE conversation_id=?
         AND COALESCE(deleted_at,'')=''
@@ -556,9 +556,10 @@ function listWebsiteConversationMessages(visitorId, since = '', limit = 20) {
   return { conversation, messages };
 }
 
-function addStaffReply(conversationId, text) {
+function addStaffReply(conversationId, text, attachments = []) {
   const cleanText = String(text || '').trim();
-  if (!cleanText) return null;
+  const cleanAttachments = (Array.isArray(attachments) ? attachments : []).slice(0, 3);
+  if (!cleanText && !cleanAttachments.length) return null;
   const conversation = db.prepare(`
     SELECT c.*, cu.id AS customer_id
     FROM conversations c
@@ -579,7 +580,11 @@ function addStaffReply(conversationId, text) {
     direction: 'out',
     senderType: 'staff',
     text: cleanText,
-    rawJson: { source: 'admin_live_chat' },
+    rawJson: {
+      source: 'admin_live_chat',
+      attachments: cleanAttachments,
+      _media: { imageUrls: cleanAttachments.map(item => item.url) }
+    },
     intent: 'staff_reply',
     aiUsed: 0,
     deliveryStatus: 'returned_via_poll',

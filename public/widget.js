@@ -164,12 +164,104 @@
     .kc-bubble a:hover {
       text-decoration: underline;
     }
+    .kc-message-images {
+      display: grid;
+      gap: 7px;
+      margin-top: 8px;
+    }
+    .kc-message-images img {
+      display: block;
+      width: min(240px, 100%);
+      max-height: 260px;
+      object-fit: contain;
+      border-radius: 10px;
+      background: #f8fafc;
+    }
     .kc-form {
       display: flex;
       gap: 8px;
       padding: 12px;
       border-top: 1px solid #dbe7f0;
       background: #fff;
+    }
+    .kc-attach {
+      width: 42px;
+      height: 42px;
+      flex: 0 0 42px;
+      display: inline-grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      color: #007f7b;
+      background: #fff;
+      cursor: pointer;
+    }
+    .kc-attach:hover {
+      border-color: #007f7b;
+      background: #e8f7f6;
+    }
+    .kc-attach:disabled {
+      cursor: wait;
+      opacity: 0.55;
+    }
+    .kc-attach svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .kc-attachment-preview {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-top: 1px solid #dbe7f0;
+      background: #fff;
+    }
+    .kc-attachment-preview[hidden] {
+      display: none;
+    }
+    .kc-attachment-preview img {
+      width: 54px;
+      height: 54px;
+      flex: 0 0 54px;
+      object-fit: cover;
+      border: 1px solid #dbe7f0;
+      border-radius: 10px;
+      background: #f8fafc;
+    }
+    .kc-attachment-info {
+      min-width: 0;
+      flex: 1;
+    }
+    .kc-attachment-name {
+      overflow: hidden;
+      color: #0f172a;
+      font-size: 12px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .kc-attachment-note {
+      margin-top: 3px;
+      color: #64748b;
+      font-size: 11px;
+    }
+    .kc-attachment-remove {
+      width: 30px;
+      height: 30px;
+      flex: 0 0 30px;
+      border: 1px solid #cbd5e1;
+      border-radius: 9px;
+      color: #475569;
+      background: #fff;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
     }
     .kc-input {
       min-width: 0;
@@ -296,6 +388,44 @@
   const form = document.createElement('div');
   form.className = 'kc-form';
 
+  const attachmentPreview = document.createElement('div');
+  attachmentPreview.className = 'kc-attachment-preview';
+  attachmentPreview.hidden = true;
+
+  const attachmentImage = document.createElement('img');
+  attachmentImage.alt = 'Ảnh đã chọn';
+
+  const attachmentInfo = document.createElement('div');
+  attachmentInfo.className = 'kc-attachment-info';
+
+  const attachmentName = document.createElement('div');
+  attachmentName.className = 'kc-attachment-name';
+
+  const attachmentNote = document.createElement('div');
+  attachmentNote.className = 'kc-attachment-note';
+  attachmentNote.textContent = 'JPG, PNG hoặc WebP, tối đa 5 MB';
+
+  const attachmentRemove = document.createElement('button');
+  attachmentRemove.className = 'kc-attachment-remove';
+  attachmentRemove.type = 'button';
+  attachmentRemove.setAttribute('aria-label', 'Bỏ ảnh đã chọn');
+  attachmentRemove.textContent = '×';
+
+  attachmentInfo.append(attachmentName, attachmentNote);
+  attachmentPreview.append(attachmentImage, attachmentInfo, attachmentRemove);
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/jpeg,image/png,image/webp';
+  fileInput.hidden = true;
+
+  const attachButton = document.createElement('button');
+  attachButton.className = 'kc-attach';
+  attachButton.type = 'button';
+  attachButton.title = 'Gửi hình ảnh';
+  attachButton.setAttribute('aria-label', 'Gửi hình ảnh');
+  attachButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.3-8.3"></path></svg>';
+
   const input = document.createElement('input');
   input.className = 'kc-input';
   input.placeholder = 'Nhập câu hỏi...';
@@ -311,8 +441,8 @@
   launcher.type = 'button';
   launcher.textContent = 'Chat';
 
-  form.append(input, button);
-  box.append(head, lead, messages, form);
+  form.append(attachButton, input, button, fileInput);
+  box.append(head, lead, messages, attachmentPreview, form);
   document.body.append(box, launcher);
 
   const vid = localStorage.kcVisitorId || (localStorage.kcVisitorId = 'web-' + Date.now());
@@ -320,6 +450,8 @@
   let lastPollAt = '';
   let isPolling = false;
   let historyLoaded = false;
+  let selectedImage = null;
+  let selectedPreviewUrl = '';
   nameInput.value = localStorage.kcCustomerName || '';
   phoneInput.value = localStorage.kcCustomerPhone || '';
 
@@ -345,14 +477,19 @@
 
   async function send() {
     const text = input.value.trim();
-    if (!text || button.disabled) return;
+    const imageFile = selectedImage;
+    if ((!text && !imageFile) || button.disabled) return;
+    const localImageUrl = imageFile ? await readFileDataUrl(imageFile) : '';
     input.value = '';
-    add('Bạn', text, 'user');
+    clearSelectedImage();
+    add('Bạn', text || 'Đã gửi hình ảnh', 'user', localImageUrl ? [localImageUrl] : []);
     const typing = add('KingCom', 'Đang soạn...', 'bot');
     button.disabled = true;
+    attachButton.disabled = true;
 
     try {
       const { customerName, customerPhone } = saveOptionalContact();
+      const uploadedMedia = imageFile ? await uploadImage(imageFile) : null;
 
       const res = await fetch(`${apiBase}/webhooks/website-chat`, {
         method: 'POST',
@@ -360,6 +497,7 @@
         body: JSON.stringify({
           visitorId: vid,
           message: text,
+          attachments: uploadedMedia ? [{ id: uploadedMedia.id, token: uploadedMedia.token }] : [],
           name: customerName,
           phone: customerPhone,
           siteName: currentScript?.dataset?.siteName || '',
@@ -381,8 +519,61 @@
       add('KingCom', 'Xin lỗi, hiện chưa gửi được tin nhắn. Anh/chị thử lại sau ít phút giúp em nhé.', 'bot');
     } finally {
       button.disabled = false;
+      attachButton.disabled = false;
       input.focus();
     }
+  }
+
+  async function uploadImage(file) {
+    const res = await fetch(`${apiBase}/webhooks/website-chat/media`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type,
+        'X-KC-Visitor-Id': vid
+      },
+      body: file
+    });
+    const raw = await res.text();
+    const data = raw ? JSON.parse(raw) : {};
+    if (!res.ok || !data.media) throw new Error(data.error || `image_http_${res.status}`);
+    return data.media;
+  }
+
+  function readFileDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('image_read_failed'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function setSelectedImage(file) {
+    const allowed = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    if (!file || !allowed.has(file.type)) {
+      add('KingCom', 'Ảnh cần có định dạng JPG, PNG hoặc WebP.', 'bot');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      add('KingCom', 'Ảnh vượt quá 5 MB. Anh/chị chọn ảnh nhỏ hơn giúp em nhé.', 'bot');
+      return;
+    }
+    clearSelectedImage();
+    selectedImage = file;
+    selectedPreviewUrl = URL.createObjectURL(file);
+    attachmentImage.src = selectedPreviewUrl;
+    attachmentName.textContent = file.name || 'Ảnh từ clipboard';
+    attachmentPreview.hidden = false;
+  }
+
+  function clearSelectedImage() {
+    if (selectedPreviewUrl) URL.revokeObjectURL(selectedPreviewUrl);
+    selectedImage = null;
+    selectedPreviewUrl = '';
+    attachmentImage.removeAttribute('src');
+    attachmentName.textContent = '';
+    attachmentPreview.hidden = true;
+    fileInput.value = '';
   }
 
   function saveOptionalContact() {
@@ -413,9 +604,9 @@
         if (renderedMessageIds.has(msg.id)) continue;
         renderedMessageIds.add(msg.id);
         if (isInitialHistory) {
-          add(messageName(msg), msg.text, messageRole(msg));
+          add(messageName(msg), msg.text, messageRole(msg), messageMediaUrls(msg));
         } else if (msg.sender_type === 'staff') {
-          add('KingCom', msg.text, 'bot');
+          add('KingCom', msg.text, 'bot', messageMediaUrls(msg));
         }
       }
       historyLoaded = true;
@@ -434,7 +625,21 @@
     return msg.direction === 'in' ? 'Bạn' : 'KingCom';
   }
 
-  function add(who, text, role) {
+  function messageMediaUrls(msg) {
+    let raw = msg?.raw_json || {};
+    if (typeof raw === 'string') {
+      try { raw = JSON.parse(raw); } catch { raw = {}; }
+    }
+    const mediaUrls = Array.isArray(raw?._media?.imageUrls)
+      ? raw._media.imageUrls
+      : (Array.isArray(raw?.attachments) ? raw.attachments.map(item => item?.url) : []);
+    return [...new Set(mediaUrls)]
+      .filter(url => /^https:\/\//i.test(String(url || '')) || /^\/webhooks\/website-chat\/media\//i.test(String(url || '')))
+      .slice(0, 3)
+      .map(url => new URL(url, apiBase).href);
+  }
+
+  function add(who, text, role, imageUrls = []) {
     const row = document.createElement('div');
     row.className = `kc-row kc-row-${role || 'bot'}`;
 
@@ -445,6 +650,19 @@
     const bubble = document.createElement('div');
     bubble.className = 'kc-bubble';
     appendMessageContent(bubble, String(text || ''));
+    if (imageUrls.length) {
+      const gallery = document.createElement('div');
+      gallery.className = 'kc-message-images';
+      imageUrls.forEach(url => {
+        const image = document.createElement('img');
+        image.src = url;
+        image.alt = 'Hình ảnh trong hội thoại';
+        image.loading = 'lazy';
+        image.addEventListener('error', () => image.remove(), { once: true });
+        gallery.appendChild(image);
+      });
+      bubble.appendChild(gallery);
+    }
 
     row.append(name, bubble);
     messages.appendChild(row);
@@ -474,6 +692,16 @@
   }
 
   button.onclick = send;
+  attachButton.onclick = () => fileInput.click();
+  fileInput.onchange = () => setSelectedImage(fileInput.files?.[0]);
+  attachmentRemove.onclick = clearSelectedImage;
+  input.addEventListener('paste', event => {
+    const image = [...(event.clipboardData?.items || [])]
+      .find(item => item.kind === 'file' && String(item.type || '').startsWith('image/'));
+    if (!image) return;
+    event.preventDefault();
+    setSelectedImage(image.getAsFile());
+  });
   input.onkeydown = e => { if (e.key === 'Enter') send(); };
   add('KingCom', 'Xin chào! Bạn cần tư vấn sản phẩm gì ạ?', 'bot');
   pollWebsiteMessages();

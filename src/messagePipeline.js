@@ -5,6 +5,7 @@ const { notifyStaff, notifyWebsiteMessage } = require('./staffAlert');
 const { logAiResponse } = require('./aiTrace');
 const { buildSourceContext } = require('./sourceRegistry');
 const { judgeAiReply } = require('./replyJudge');
+const { analyzeProductImages } = require('./mediaVision');
 
 function normalizeForMatch(text) {
   return String(text || '')
@@ -164,16 +165,73 @@ function updateConversationSummaryInBackground(conversationId, customerId, custo
   }, Number(process.env.AUTO_SUMMARY_DELAY_MS || 250));
 }
 
-async function processIncoming({ channel, externalUserId, text, externalMessageId, raw, customerAttrs = {}, sendFn }) {
+function parseRawJson(rawJson) {
+  if (!rawJson) return {};
+  if (typeof rawJson === 'object') return rawJson;
+  try {
+    return JSON.parse(rawJson);
+  } catch {
+    return {};
+  }
+}
+
+function enrichHistoryWithMediaContext(messages = []) {
+  return (messages || []).map(message => {
+    const raw = parseRawJson(message.raw_json);
+    const searchText = String(raw?._media?.vision?.searchText || '').trim();
+    if (!searchText) return message;
+    return {
+      ...message,
+      text: `${message.text || '[Customer sent a product image]'}\n[Internal image analysis: ${searchText}]`
+    };
+  });
+}
+
+function buildImageFallbackReply(customerText = '') {
+  const language = detectMessageLanguage(customerText);
+  if (language === 'en') {
+    return 'I received the product image, but I could not identify it reliably. Please send a clearer photo of the product label or model code. I have also forwarded the image to KingCom staff for checking.';
+  }
+  if (language === 'zh') {
+    return '我已收到产品图片，但目前无法可靠识别。请补充一张更清晰的产品标签或型号照片；我也已将图片转交给 KingCom 员工进一步确认。';
+  }
+  return 'Dạ em đã nhận được hình ảnh sản phẩm nhưng chưa thể nhận dạng chắc chắn. Anh/chị gửi thêm ảnh rõ phần nhãn hoặc mã model giúp em; em cũng đã chuyển hình cho nhân viên KingCom kiểm tra thêm ạ.';
+}
+
+async function processIncoming({ channel, externalUserId, text, externalMessageId, raw, imageUrls = [], visionImageInputs = [], customerAttrs = {}, sendFn }) {
   const startedAt = Date.now();
-  const contactInfo = extractContactInfo(text);
+  const originalText = String(text || '').trim();
+  const mediaUrls = [...new Set((imageUrls || []).filter(Boolean))].slice(0, 3);
+  const visionEnabled = channel === 'facebook'
+    ? process.env.FACEBOOK_IMAGE_RECOGNITION_ENABLED !== 'false'
+    : process.env.WEBSITE_IMAGE_RECOGNITION_ENABLED !== 'false';
+  const source = buildSourceContext({ channel, raw, customerAttrs });
+  const vision = mediaUrls.length
+    ? await analyzeProductImages({
+        imageUrls: mediaUrls,
+        imageInputs: visionImageInputs,
+        customerText: originalText,
+        sourceName: source.sourceName,
+        enabled: visionEnabled
+      })
+    : null;
+  const storedText = originalText || (mediaUrls.length ? '[Khách gửi hình ảnh sản phẩm]' : '');
+  const processingText = vision?.recognized && vision.searchText
+    ? `${originalText || 'Khách gửi hình ảnh sản phẩm.'}\n\n[Internal image analysis: ${vision.searchText}]`
+    : (originalText || 'Khách gửi hình ảnh sản phẩm và cần hỗ trợ nhận dạng.');
+  const rawWithMedia = mediaUrls.length
+    ? {
+        ...(raw && typeof raw === 'object' ? raw : { original: raw }),
+        _media: { imageUrls: mediaUrls, vision }
+      }
+    : raw;
+  const contactInfo = extractContactInfo(originalText);
   const enrichedCustomerAttrs = { ...customerAttrs };
   if (contactInfo.name) enrichedCustomerAttrs.name = contactInfo.name;
   if (contactInfo.phone) enrichedCustomerAttrs.phone = contactInfo.phone;
   const customer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
-  const source = buildSourceContext({ channel, raw, customerAttrs });
   const conversation = await getOrCreateConversation(customer.id, channel, source.sourceKey, source.sourceName, source.sourceGroup);
-  const { intent, confidence } = classifyIntent(text);
+  const { intent, confidence } = classifyIntent(processingText);
   const inbound = await saveMessage({
     conversationId: conversation.id,
     customerId: customer.id,
@@ -181,19 +239,19 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     externalMessageId,
     direction: 'in',
     senderType: 'customer',
-    text,
-    rawJson: raw,
+    text: storedText,
+    rawJson: rawWithMedia,
     intent,
     sourceGroup: source.sourceGroup,
     sourceKey: source.sourceKey,
     sourceName: source.sourceName
   });
-  await updateCustomerLearning(customer.id, conversation.id, intent, text);
+  await updateCustomerLearning(customer.id, conversation.id, intent, processingText);
 
   if (channel === 'haravan_website') {
     notifyWebsiteMessage({
       externalUserId,
-      text,
+      text: storedText,
       conversationId: conversation.id,
       sourceName: source.sourceName,
       sourceKey: source.sourceKey,
@@ -201,7 +259,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     }).catch(e => console.error('notifyWebsiteMessage error:', e.message));
   }
 
-  const history = await getRecentMessages(conversation.id, 12);
+  const history = enrichHistoryWithMediaContext(await getRecentMessages(conversation.id, 12));
   const autoReply = process.env.AUTO_REPLY !== 'false' && conversation.auto_reply !== 0;
   if (!autoReply) {
     logAiResponse({
@@ -211,31 +269,48 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       inboundMessageId: inbound.id,
       intent,
       confidence,
-      customerText: text,
+      customerText: processingText,
+      imageCount: mediaUrls.length,
+      visionRecognized: !!vision?.recognized,
+      visionError: vision?.error || '',
       skipped: 'auto_reply_off'
     });
     return { ok: true, skipped: 'auto_reply_off', conversationId: conversation.id };
   }
 
   const freshCustomer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
-  const { reply: rawReply, aiUsed, aiError, aiErrorMessage, aiSource, searchQuery, ragProducts } = await generateReply({
-    channel,
-    userText: text,
-    history,
-    customer: freshCustomer,
-    intent,
-    sourceKey: source.sourceKey,
-    sourceName: source.sourceName,
-    sourceGroup: source.sourceGroup
-  });
+  const mediaRecognitionFailed = mediaUrls.length > 0 && !vision?.recognized;
+  const replyResult = mediaRecognitionFailed
+    ? {
+        reply: buildImageFallbackReply(originalText),
+        aiUsed: 0,
+        aiError: false,
+        aiErrorMessage: vision?.error || '',
+        aiSource: 'vision_fallback',
+        searchQuery: '',
+        ragProducts: []
+      }
+    : await generateReply({
+        channel,
+        userText: processingText,
+        history,
+        customer: freshCustomer,
+        intent,
+        sourceKey: source.sourceKey,
+        sourceName: source.sourceName,
+        sourceGroup: source.sourceGroup
+      });
+  const { reply: rawReply, aiUsed, aiError, aiErrorMessage, aiSource, searchQuery, ragProducts } = replyResult;
   const validation = { ok: true, skipped: 'single_ai_judge_final_check' };
   const generatedReply = rawReply;
-  const baseHandoff = detectHandoff({ text, intent, aiError, ragProducts });
+  const baseHandoff = mediaRecognitionFailed
+    ? { needed: true, reason: `Không nhận dạng được hình ảnh sản phẩm ${channel === 'facebook' ? 'Facebook' : 'website'}` }
+    : detectHandoff({ text: processingText, intent, aiError, ragProducts });
   let handoff = baseHandoff;
-  let reply = normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, text));
+  let reply = normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, originalText || processingText));
   const judge = await judgeAiReply({
     channel,
-    userText: text,
+    userText: processingText,
     history,
     reply,
     ragProducts,
@@ -252,7 +327,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     if (judge.correctedReply) {
       reply = normalizeCustomerReply(judge.correctedReply);
     } else {
-      reply = normalizeCustomerReply(buildJudgeRejectedReply(text));
+      reply = normalizeCustomerReply(buildJudgeRejectedReply(originalText || processingText));
     }
     if (judge.needsHandoff || !judge.correctedReply) {
       handoff = {
@@ -260,7 +335,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
         reason: judge.reason || 'AI judge chặn câu trả lời có độ liên quan thấp'
       };
     }
-    reply = normalizeCustomerReply(improveNoDataReply(reply, handoff, text));
+    reply = normalizeCustomerReply(improveNoDataReply(reply, handoff, originalText || processingText));
   }
   const humanDelayMs = estimateHumanReplyDelayMs(reply, Date.now() - startedAt);
   if (humanDelayMs > 0) await sleep(humanDelayMs);
@@ -271,12 +346,12 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       customerId: customer.id,
       channel,
       reason: handoff.reason,
-      message: text,
+      message: storedText,
       sourceGroup: source.sourceGroup,
       sourceKey: source.sourceKey,
       sourceName: source.sourceName
     });
-    notifyStaff(alertId, { channel, externalUserId, intent, reason: handoff.reason, text, conversationId: conversation.id, sourceGroup: source.sourceGroup, sourceKey: source.sourceKey, sourceName: source.sourceName }).catch(e => console.error('notifyStaff error:', e.message));
+    notifyStaff(alertId, { channel, externalUserId, intent, reason: handoff.reason, text: storedText, conversationId: conversation.id, sourceGroup: source.sourceGroup, sourceKey: source.sourceKey, sourceName: source.sourceName }).catch(e => console.error('notifyStaff error:', e.message));
   }
 
   let deliveryStatus = sendFn ? 'pending' : 'returned_via_http';
@@ -300,7 +375,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
         sourceKey: source.sourceKey,
         sourceName: source.sourceName
       });
-      notifyStaff(alertId, { channel, externalUserId, intent, reason: 'Không gửi được tin nhắn trả lời tự động', text: `${text}\n\nLỗi gửi: ${deliveryError}`, conversationId: conversation.id, sourceGroup: source.sourceGroup, sourceKey: source.sourceKey, sourceName: source.sourceName }).catch(err => console.error('notifyStaff error:', err.message));
+      notifyStaff(alertId, { channel, externalUserId, intent, reason: 'Không gửi được tin nhắn trả lời tự động', text: `${storedText}\n\nLỗi gửi: ${deliveryError}`, conversationId: conversation.id, sourceGroup: source.sourceGroup, sourceKey: source.sourceKey, sourceName: source.sourceName }).catch(err => console.error('notifyStaff error:', err.message));
     }
   }
 
@@ -328,7 +403,14 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     inboundMessageId: inbound.id,
     intent,
     confidence,
-    customerText: text,
+    customerText: processingText,
+    imageCount: mediaUrls.length,
+    visionRecognized: !!vision?.recognized,
+    visionConfidence: typeof vision?.confidence === 'number' ? vision.confidence : undefined,
+    visionProductType: vision?.productType || '',
+    visionBrand: vision?.brand || '',
+    visionModel: vision?.model || '',
+    visionError: vision?.error || '',
     aiSource: aiSource || (aiUsed ? 'provider' : 'rule_or_fallback'),
     aiUsed: !!aiUsed,
     aiError: !!aiError,

@@ -35,8 +35,8 @@
 
   function render() {
     return `
-      <div class="page">
-        <div class="grid cols-3">
+      <div class="page dashboard-page">
+        <div class="dashboard-stats">
           ${stat(KC.t('dashboardCustomers'), data.stats.customers)}
           ${stat(KC.t('dashboardConversations'), data.stats.conversations)}
           ${stat(KC.t('dashboardMessages'), data.stats.messages)}
@@ -44,7 +44,7 @@
           ${stat(KC.t('dashboardOpenAlerts'), data.stats.open_alerts)}
           ${stat(KC.t('dashboardProducts'), data.stats.products)}
         </div>
-        <div class="card">
+        <div class="card dashboard-alerts">
           <div class="card-head">
             <h3>${KC.esc(KC.t('latestAlerts'))}</h3>
             <a class="mini" href="/admin/alerts.html">${KC.esc(KC.t('viewAll'))}</a>

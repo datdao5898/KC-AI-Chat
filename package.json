@@ -10,7 +10,8 @@
     "migrate-sqlite-to-postgres": "node scripts/migrate-sqlite-to-postgres.js",
     "smoke-postgres": "node scripts/smoke-postgres.js",
     "hash-admin-password": "node src/hash-admin-password.js",
-    "split-facebook-products": "node scripts/split-facebook-products.js"
+    "split-facebook-products": "node scripts/split-facebook-products.js",
+    "crawl-newlite-products": "node scripts/crawl-newlite-products.js"
   },
   "dependencies": {
     "axios": "latest",

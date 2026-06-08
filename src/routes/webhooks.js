@@ -5,6 +5,13 @@ const { processIncoming } = require('../messagePipeline');
 const { sendFacebookMessage, getFacebookUserProfile, verifySignature, requireSignedWebhook } = require('../channels/facebook');
 const { sendZaloMessage } = require('../channels/zalo');
 const { sendHaravanMessage } = require('../channels/haravan');
+const { extractFacebookImageUrls } = require('../mediaVision');
+const {
+  maxImageBytes,
+  resolveWebsiteAttachments,
+  resolveWebsiteImage,
+  saveWebsiteImage
+} = require('../websiteMedia');
 
 router.get('/facebook', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -35,7 +42,8 @@ router.post('/facebook', async (req, res) => {
     for (const entry of body.entry || []) {
       for (const event of entry.messaging || []) {
         const msg = event.message;
-        if (!msg || !msg.text || msg.is_echo) continue;
+        const imageUrls = extractFacebookImageUrls(msg);
+        if (!msg || msg.is_echo || (!msg.text && !imageUrls.length)) continue;
         const mid = msg.mid || `${event.sender?.id}-${event.timestamp}`;
         if (!await markProcessed('facebook', mid)) continue;
         const profile = await getFacebookUserProfile(event.sender.id, { raw: event });
@@ -45,6 +53,7 @@ router.post('/facebook', async (req, res) => {
           text: msg.text,
           externalMessageId: mid,
           raw: event,
+          imageUrls,
           customerAttrs: profile?.name ? { name: profile.name } : {},
           sendFn: sendFacebookMessage
         });
@@ -80,15 +89,54 @@ router.post('/haravan', async (req, res) => {
   } catch (e) { console.error('Haravan webhook error:', e); }
 });
 
+router.post(
+  '/website-chat/media',
+  express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: maxImageBytes() }),
+  (req, res) => {
+    try {
+      const visitorId = String(req.headers['x-kc-visitor-id'] || '').trim();
+      const media = saveWebsiteImage(req.body, visitorId);
+      res.json({ ok: true, media });
+    } catch (e) {
+      const status = e.message === 'image_too_large' ? 413
+        : ['visitor_id_required', 'image_required', 'unsupported_image_type'].includes(e.message) ? 400
+          : 500;
+      res.status(status).json({ error: e.message });
+    }
+  }
+);
+
+router.get('/website-chat/media/:id', (req, res) => {
+  const image = resolveWebsiteImage(req.params.id, req.query.token);
+  if (!image) return res.status(404).json({ error: 'image_not_found' });
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.type(image.mime);
+  return res.sendFile(image.filePath);
+});
+
 router.post('/website-chat', async (req, res) => {
   try {
-    const { visitorId, message, name, phone, email, siteName, siteHost, siteUrl, origin, referrer } = req.body;
+    const { visitorId, message, name, phone, email, siteName, siteHost, siteUrl, origin, referrer, attachments } = req.body;
+    const resolvedMedia = resolveWebsiteAttachments(attachments, visitorId);
+    if (!String(message || '').trim() && !resolvedMedia.length) {
+      return res.status(400).json({ error: 'message_or_image_required' });
+    }
     const result = await processIncoming({
       channel: 'haravan_website',
       externalUserId: visitorId || phone || 'web-' + Date.now(),
       text: message,
       externalMessageId: 'web-' + Date.now(),
-      raw: { ...req.body, siteName, siteHost, siteUrl, origin, referrer },
+      raw: {
+        ...req.body,
+        attachments: resolvedMedia.map(({ id, token, mime, bytes, url }) => ({ id, token, mime, bytes, url })),
+        siteName,
+        siteHost,
+        siteUrl,
+        origin,
+        referrer
+      },
+      imageUrls: resolvedMedia.map(item => item.url),
+      visionImageInputs: resolvedMedia.map(item => item.visionInput),
       customerAttrs: { name, phone, email },
       sendFn: null
     });

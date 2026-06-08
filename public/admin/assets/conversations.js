@@ -21,6 +21,8 @@
     testOpen: false,
     summaryDraft: null,
     staffDraft: '',
+    staffImage: null,
+    staffImagePreviewUrl: '',
     testDraft: 'tôi muốn mua sản phẩm chưa có dữ liệu xyzabc',
     messageScrollTop: 0,
     messageStickBottom: true,
@@ -246,6 +248,29 @@
   }
 
   function messageItem(message) {
+    const raw = (() => {
+      if (message.raw_json && typeof message.raw_json === 'object') return message.raw_json;
+      try { return JSON.parse(message.raw_json || '{}'); } catch { return {}; }
+    })();
+    const media = raw?._media || {};
+    const attachmentUrls = Array.isArray(media.imageUrls)
+      ? media.imageUrls
+      : (raw?.message?.attachments || [])
+          .filter(attachment => attachment?.type === 'image')
+          .map(attachment => attachment?.payload?.url);
+    const imageUrls = [...new Set(attachmentUrls)]
+      .filter(url =>
+        /^https:\/\//i.test(String(url || ''))
+        || /^\/webhooks\/website-chat\/media\//i.test(String(url || ''))
+      )
+      .slice(0, 3);
+    const vision = media.vision || {};
+    const imageHtml = imageUrls.length ? `
+      <div class="message-images">
+        ${imageUrls.map(url => `<a href="${KC.esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${KC.esc(url)}" alt="Hình ảnh trong hội thoại" loading="lazy"></a>`).join('')}
+      </div>
+      ${vision.recognized && vision.searchText ? `<div class="message-image-caption">${KC.esc(vision.searchText)}</div>` : ''}
+    ` : '';
     return `
       <div class="msg ${message.direction === 'out' ? 'out' : 'in'}">
         <div class="msg-meta">
@@ -256,6 +281,7 @@
           </span>
         </div>
         <div class="msg-text">${KC.esc(message.text || '')}</div>
+        ${imageHtml}
       </div>
     `;
   }
@@ -377,8 +403,26 @@
         </div>
         ${isWebsiteChat ? `
           <div class="website-composer">
-            <textarea id="staffReplyText" placeholder="${KC.esc(KC.t('replyPlaceholder'))}">${KC.esc(data.staffDraft)}</textarea>
-            <button class="btn" id="staffReplyBtn" type="button">${KC.esc(KC.t('sendCustomer'))}</button>
+            ${data.staffImage ? `
+              <div class="staff-image-preview">
+                <img src="${KC.esc(data.staffImagePreviewUrl)}" alt="${KC.esc(KC.t('attachImage'))}">
+                <div>
+                  <strong>${KC.esc(data.staffImage.name || KC.t('attachImage'))}</strong>
+                  <span>${KC.esc(KC.t('imageRequirements'))}</span>
+                </div>
+                <button class="icon-button" id="removeStaffImageBtn" type="button" title="${KC.esc(KC.t('removeImage'))}" aria-label="${KC.esc(KC.t('removeImage'))}">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+                </button>
+              </div>
+            ` : ''}
+            <div class="website-composer-row">
+              <button class="composer-attach" id="staffImageBtn" type="button" title="${KC.esc(KC.t('attachImage'))}" aria-label="${KC.esc(KC.t('attachImage'))}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.3-8.3"></path></svg>
+              </button>
+              <textarea id="staffReplyText" placeholder="${KC.esc(KC.t('replyPlaceholder'))}">${KC.esc(data.staffDraft)}</textarea>
+              <button class="btn" id="staffReplyBtn" type="button">${KC.esc(KC.t('sendCustomer'))}</button>
+              <input id="staffImageInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+            </div>
           </div>
         ` : ''}
         ${renderDetailsDrawer(conv, alerts)}
@@ -453,6 +497,7 @@
   }
 
   async function openConversation(id, rerenderPage = true) {
+    clearStaffImage();
     data.selected = await KC.api(KC.API + '/conversations/' + encodeURIComponent(id));
     data.detailsOpen = false;
     data.summaryDraft = null;
@@ -531,16 +576,66 @@
 
   async function sendStaffReply() {
     const text = KC.$('#staffReplyText')?.value.trim();
-    if (!text) return;
-    await KC.api(KC.API + '/conversations/' + encodeURIComponent(data.selected.conversation.id) + '/staff-reply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
-    });
-    await refreshSelected();
-    data.staffDraft = '';
-    rerender(false);
-    KC.toast(KC.t('sentReply'));
+    const image = data.staffImage;
+    if (!text && !image) return;
+    const sendButton = KC.$('#staffReplyBtn');
+    if (sendButton) sendButton.disabled = true;
+    try {
+      const uploadedMedia = image ? await uploadStaffImage(image) : null;
+      await KC.api(KC.API + '/conversations/' + encodeURIComponent(data.selected.conversation.id) + '/staff-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          attachments: uploadedMedia ? [{ id: uploadedMedia.id, token: uploadedMedia.token }] : []
+        })
+      });
+      await refreshSelected();
+      data.staffDraft = '';
+      clearStaffImage();
+      rerender(false);
+      KC.toast(KC.t('sentReply'));
+    } catch (error) {
+      KC.toast(`${KC.t('loadError')}: ${error.message}`);
+    } finally {
+      const currentButton = KC.$('#staffReplyBtn');
+      if (currentButton) currentButton.disabled = false;
+    }
+  }
+
+  async function uploadStaffImage(file) {
+    const result = await KC.api(
+      KC.API + '/conversations/' + encodeURIComponent(data.selected.conversation.id) + '/staff-media',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file
+      }
+    );
+    return result.media;
+  }
+
+  function setStaffImage(file) {
+    const allowed = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    if (!file || !allowed.has(file.type)) {
+      KC.toast(KC.t('imageRequirements'));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      KC.toast(KC.t('imageRequirements'));
+      return;
+    }
+    clearStaffImage();
+    data.staffImage = file;
+    data.staffImagePreviewUrl = URL.createObjectURL(file);
+    rerender();
+  }
+
+  function clearStaffImage(rerenderPage = false) {
+    if (data.staffImagePreviewUrl) URL.revokeObjectURL(data.staffImagePreviewUrl);
+    data.staffImage = null;
+    data.staffImagePreviewUrl = '';
+    if (rerenderPage) rerender();
   }
 
   async function sendTest() {
@@ -680,10 +775,22 @@
     if (KC.$('#saveSummaryBtn')) KC.$('#saveSummaryBtn').onclick = saveSummary;
     if (KC.$('#summarizeBtn')) KC.$('#summarizeBtn').onclick = summarize;
     if (KC.$('#staffReplyBtn')) KC.$('#staffReplyBtn').onclick = sendStaffReply;
+    if (KC.$('#staffImageBtn')) KC.$('#staffImageBtn').onclick = () => KC.$('#staffImageInput')?.click();
+    if (KC.$('#staffImageInput')) KC.$('#staffImageInput').onchange = event => setStaffImage(event.target.files?.[0]);
+    if (KC.$('#removeStaffImageBtn')) KC.$('#removeStaffImageBtn').onclick = () => clearStaffImage(true);
     if (KC.$('#sendTestBtn')) KC.$('#sendTestBtn').onclick = sendTest;
     if (KC.$('#deleteConvBtn')) KC.$('#deleteConvBtn').onclick = deleteConversation;
     if (KC.$('#summaryText')) KC.$('#summaryText').oninput = event => { data.summaryDraft = event.target.value; };
-    if (KC.$('#staffReplyText')) KC.$('#staffReplyText').oninput = event => { data.staffDraft = event.target.value; };
+    if (KC.$('#staffReplyText')) {
+      KC.$('#staffReplyText').oninput = event => { data.staffDraft = event.target.value; };
+      KC.$('#staffReplyText').onpaste = event => {
+        const image = [...(event.clipboardData?.items || [])]
+          .find(item => item.kind === 'file' && String(item.type || '').startsWith('image/'));
+        if (!image) return;
+        event.preventDefault();
+        setStaffImage(image.getAsFile());
+      };
+    }
     if (KC.$('#testMsg')) KC.$('#testMsg').oninput = event => { data.testDraft = event.target.value; };
     requestAnimationFrame(restoreUiState);
   }
