@@ -81,8 +81,10 @@ async function sendLarkMessage(message) {
 }
 
 function buildDashboardUrl(conversationId) {
-  const base = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 8660}`;
-  return `${base}/?conversation=${encodeURIComponent(conversationId)}`;
+  const base = String(
+    process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 8660}`
+  ).replace(/\/+$/, '');
+  return `${base}/admin/conversations.html?conversation=${encodeURIComponent(conversationId)}`;
 }
 
 function formatWebsiteMessageAlert({ externalUserId, text, conversationId, sourceName, sourceKey, customer }) {
@@ -181,4 +183,11 @@ async function notifyStaff(alertId, payload) {
   }
 }
 
-module.exports = { notifyStaff, notifyWebsiteMessage, formatAlert, formatWebsiteMessageAlert, sendLarkMessage };
+module.exports = {
+  notifyStaff,
+  notifyWebsiteMessage,
+  formatAlert,
+  formatWebsiteMessageAlert,
+  sendLarkMessage,
+  buildDashboardUrl
+};
