@@ -1,4 +1,5 @@
 const { detectMessageLanguage } = require('./ai');
+const { resolveCustomerBrand } = require('./sourceRegistry');
 
 function getApiConfig() {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -171,11 +172,13 @@ function buildJudgePrompt({
   sourceKey = '',
   sourceName = '',
   sourceGroup = '',
+  customerBrand = '',
   customer = {},
   aiSource = '',
   searchQuery = ''
 }) {
   const language = detectMessageLanguage(userText);
+  const expectedBrand = customerBrand || resolveCustomerBrand({ sourceKey, sourceName, sourceGroup });
   const languageLabel = language === 'en' ? 'English' : language === 'zh' ? 'Simplified Chinese' : 'Vietnamese';
   const historyText = summarizeHistory(history);
   const productsText = summarizeProducts(ragProducts);
@@ -184,7 +187,7 @@ function buildJudgePrompt({
     : 'Previous rule validator approved the draft reply.';
 
   return [
-    'You are a strict quality judge for KingCom customer support replies.',
+    `You are a strict quality judge for ${expectedBrand} customer support replies.`,
     'Your job is to decide whether the draft reply is contextually reasonable before it is sent to a real customer.',
     'You must infer the customer context yourself from the latest message, recent conversation, and retrieved catalog data.',
     '',
@@ -207,6 +210,7 @@ function buildJudgePrompt({
     `Source group: ${sourceGroup || 'unknown'}`,
     `Source name: ${sourceName || 'unknown'}`,
     `Source key: ${sourceKey || 'unknown'}`,
+    `Required customer-facing brand name: ${expectedBrand}`,
     `Reply source: ${aiSource || 'unknown'}`,
     `Search query used for retrieval: ${searchQuery || '(none)'}`,
     `Customer profile: ${JSON.stringify({
@@ -237,8 +241,9 @@ function buildJudgePrompt({
     '3. Check product relevance. Product name/category/brand/model in the reply must match the customer need and the retrieved catalog. Do not let a generic word match change the category, e.g. "computer mouse" must not become "microphone for computer".',
     '4. Check source scope. If a fanpage/source is scoped to one brand, the reply must not recommend another brand unless recent context clearly asks to switch.',
     '5. Check support. Any product, price, link, SKU, warranty, VAT, delivery, stock, or policy claim must be supported by retrieved catalog, recent conversation, or source data shown here.',
-    '6. Check broad catalog questions separately. If the customer asks what KingCom sells in general, the reply should describe product groups, not pretend one random product answers the question.',
+    `6. Check broad catalog questions separately. If the customer asks what ${expectedBrand} sells in general, the reply should describe product groups, not pretend one random product answers the question.`,
     '7. Check tone and format. No laughing at customers, no markdown bold, no emoji, no "AI/bot/system" wording to customers.',
+    `7a. The reply must speak as ${expectedBrand}. Reject or correct it if it presents the seller as KingCom, NewLite, or another page name that is not ${expectedBrand}. Product names and URLs may retain their original wording.`,
     '8. If the draft is correct enough and only mildly imperfect, approve it. Do not reject just because it asks staff to confirm stock.',
     '',
     'Correction rules:',

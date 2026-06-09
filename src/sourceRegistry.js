@@ -45,6 +45,35 @@ function lookupEnvMap(envName, key) {
   return '';
 }
 
+function knownWebsiteIdentity(host = '') {
+  const normalized = compactHost(host).toLowerCase();
+  if (normalized === 'newlite.vn' || normalized.endsWith('.newlite.vn')) {
+    return { sourceId: 'newlite', displayName: 'NewLite' };
+  }
+  if (
+    normalized === 'kingcom.com.vn'
+    || normalized.endsWith('.kingcom.com.vn')
+    || normalized === 'store.kingcom.vn'
+    || normalized.endsWith('.store.kingcom.vn')
+  ) {
+    return { sourceId: 'kingcom', displayName: 'KingCom' };
+  }
+  return null;
+}
+
+function canonicalDisplayName(value = '') {
+  const raw = String(value || '').trim();
+  const normalized = slugifyPart(raw);
+  if (!raw) return '';
+  if (normalized === 'newlite' || normalized === 'newlite-vn') return 'NewLite';
+  if (
+    normalized === 'kingcom'
+    || normalized === 'kingcom-com-vn'
+    || normalized === 'store-kingcom-com-vn'
+  ) return 'KingCom';
+  return raw;
+}
+
 function buildSourceContext({ channel, raw = {}, customerAttrs = {} }) {
   const channelKey = channel === 'haravan_website' ? 'website' : (channel === 'haravan' ? 'website' : (channel || 'common'));
   let sourceId = '';
@@ -61,8 +90,9 @@ function buildSourceContext({ channel, raw = {}, customerAttrs = {} }) {
   } else if (channelKey === 'website') {
     const siteName = raw?.siteName || raw?.site_name || customerAttrs.siteName || process.env.DEFAULT_WEBSITE_NAME || '';
     const host = compactHost(raw?.siteHost || raw?.site_host || raw?.siteUrl || raw?.site_url || raw?.origin || raw?.referrer || process.env.DEFAULT_WEBSITE_HOST || '');
-    sourceId = siteName || host || 'default';
-    sourceName = siteName || host || 'Website chung';
+    const knownWebsite = knownWebsiteIdentity(host);
+    sourceId = knownWebsite?.sourceId || siteName || host || 'default';
+    sourceName = knownWebsite?.displayName || canonicalDisplayName(siteName || host) || 'Website chung';
   } else {
     sourceId = slugifyPart(channelKey || 'common') || 'common';
     sourceName = channelKey || 'Common';
@@ -76,6 +106,57 @@ function buildSourceContext({ channel, raw = {}, customerAttrs = {} }) {
     sourceName,
     sourceLabel: sourceName,
   };
+}
+
+function resolveCustomerBrand({ sourceKey = '', sourceName = '', sourceGroup = '' } = {}) {
+  const config = readSourceConfig(sourceKey);
+  const configuredName = config.displayName || config.customerName || '';
+  if (configuredName) return canonicalDisplayName(configuredName);
+
+  const group = sourceGroup || String(sourceKey || '').split('/')[0] || '';
+  const sourceId = String(sourceKey || '').split('/').slice(1).join('/');
+  if (group === 'website') {
+    return canonicalDisplayName(sourceName || sourceId) || 'KingCom';
+  }
+  if (group === 'facebook') {
+    return canonicalDisplayName(config.brand || sourceName) || 'KingCom';
+  }
+  if (group === 'zalo') {
+    return canonicalDisplayName(config.brand || sourceName) || 'KingCom';
+  }
+  return canonicalDisplayName(config.brand || sourceName) || 'KingCom';
+}
+
+function applyCustomerBranding(text, brandName = 'KingCom', protectedProducts = []) {
+  const brand = canonicalDisplayName(brandName) || 'KingCom';
+  const input = String(text || '');
+  if (!input || brand.toLowerCase() === 'kingcom') return input;
+
+  const protectedValues = [
+    ...(protectedProducts || []).flatMap(product => [
+      product?.name,
+      product?.title,
+      product?.url,
+      product?.link,
+      product?.product_url
+    ]),
+    ...(input.match(/https?:\/\/\S+/g) || [])
+  ].filter(Boolean);
+  const placeholders = [];
+  let output = input;
+
+  for (const value of [...new Set(protectedValues.map(String).sort((a, b) => b.length - a.length))]) {
+    if (!output.includes(value)) continue;
+    const placeholder = `__KC_PROTECTED_${placeholders.length}__`;
+    placeholders.push(value);
+    output = output.split(value).join(placeholder);
+  }
+
+  output = output.replace(/\bKingCom\b/gi, brand);
+  placeholders.forEach((value, index) => {
+    output = output.split(`__KC_PROTECTED_${index}__`).join(value);
+  });
+  return output;
 }
 
 function getSourceCandidates(sourceKey) {
@@ -129,7 +210,11 @@ module.exports = {
   compactHost,
   slugifyPart,
   lookupEnvMap,
+  knownWebsiteIdentity,
+  canonicalDisplayName,
   buildSourceContext,
+  resolveCustomerBrand,
+  applyCustomerBranding,
   getSourceCandidates,
   resolveSourcePaths,
   readFirstExistingText,

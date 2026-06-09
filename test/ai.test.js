@@ -18,3 +18,35 @@ test('generateReply answers landscape lens starting price from catalog', async (
   assert.match(result.reply, /2\.290\.000/);
   assert.ok(result.ragProducts.length > 0);
 });
+
+test('generateReply uses NewLite identity for NewLite website rules', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'shop ban nhung san pham nao',
+    history: [],
+    customer: {},
+    intent: 'catalog_info',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+
+  assert.match(result.reply, /NewLite/);
+  assert.doesNotMatch(result.reply, /\bKingCom\b/);
+});
+
+test('generateReply uses configured Facebook brand identity', async () => {
+  const result = await generateReply({
+    channel: 'facebook',
+    userText: 'shop ban nhung san pham nao',
+    history: [],
+    customer: {},
+    intent: 'catalog_info',
+    sourceKey: 'facebook/260016447958834',
+    sourceName: 'AI Agent Seting Up',
+    sourceGroup: 'facebook'
+  });
+
+  assert.match(result.reply, /Viltrox/);
+  assert.doesNotMatch(result.reply, /\bKingCom\b/);
+});

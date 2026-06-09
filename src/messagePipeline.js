@@ -3,7 +3,11 @@ const { classifyIntent } = require('./intent');
 const { generateReply, summarizeConversation, summarizeConversationFast, detectMessageLanguage, extractContactInfo } = require('./ai');
 const { notifyStaff, notifyWebsiteMessage } = require('./staffAlert');
 const { logAiResponse } = require('./aiTrace');
-const { buildSourceContext } = require('./sourceRegistry');
+const {
+  buildSourceContext,
+  resolveCustomerBrand,
+  applyCustomerBranding
+} = require('./sourceRegistry');
 const { judgeAiReply } = require('./replyJudge');
 const { analyzeProductImages } = require('./mediaVision');
 
@@ -225,6 +229,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     ? process.env.FACEBOOK_IMAGE_RECOGNITION_ENABLED !== 'false'
     : process.env.WEBSITE_IMAGE_RECOGNITION_ENABLED !== 'false';
   const source = buildSourceContext({ channel, raw, customerAttrs });
+  const customerBrand = resolveCustomerBrand(source);
   const vision = mediaUrls.length
     ? await analyzeProductImages({
         imageUrls: mediaUrls,
@@ -327,7 +332,11 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     ? { needed: true, reason: `Không nhận dạng được hình ảnh sản phẩm ${channel === 'facebook' ? 'Facebook' : 'website'}` }
     : detectHandoff({ text: processingText, intent, aiError, ragProducts });
   let handoff = baseHandoff;
-  let reply = normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, originalText || processingText));
+  let reply = applyCustomerBranding(
+    normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, originalText || processingText)),
+    customerBrand,
+    ragProducts
+  );
   const judge = await judgeAiReply({
     channel,
     userText: processingText,
@@ -339,15 +348,24 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceKey: source.sourceKey,
     sourceName: source.sourceName,
     sourceGroup: source.sourceGroup,
+    customerBrand,
     customer: freshCustomer,
     aiSource,
     searchQuery
   });
   if (!judge.approve) {
     if (judge.correctedReply) {
-      reply = normalizeCustomerReply(judge.correctedReply);
+      reply = applyCustomerBranding(
+        normalizeCustomerReply(judge.correctedReply),
+        customerBrand,
+        ragProducts
+      );
     } else {
-      reply = normalizeCustomerReply(buildJudgeRejectedReply(originalText || processingText));
+      reply = applyCustomerBranding(
+        normalizeCustomerReply(buildJudgeRejectedReply(originalText || processingText)),
+        customerBrand,
+        ragProducts
+      );
     }
     if (judge.needsHandoff || !judge.correctedReply) {
       handoff = {
@@ -355,8 +373,13 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
         reason: judge.reason || 'AI judge chặn câu trả lời có độ liên quan thấp'
       };
     }
-    reply = normalizeCustomerReply(improveNoDataReply(reply, handoff, originalText || processingText));
+    reply = applyCustomerBranding(
+      normalizeCustomerReply(improveNoDataReply(reply, handoff, originalText || processingText)),
+      customerBrand,
+      ragProducts
+    );
   }
+  reply = applyCustomerBranding(reply, customerBrand, ragProducts);
   const humanDelayMs = estimateHumanReplyDelayMs(reply, Date.now() - startedAt);
   if (humanDelayMs > 0) await sleep(humanDelayMs);
 

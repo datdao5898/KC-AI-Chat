@@ -11,7 +11,11 @@ const {
   parsePriceNumber,
   normalize
 } = require('./rag');
-const { readSourceConfig } = require('./sourceRegistry');
+const {
+  readSourceConfig,
+  resolveCustomerBrand,
+  applyCustomerBranding
+} = require('./sourceRegistry');
 
 async function callOpenAI(prompt, timeoutMs) {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -818,7 +822,7 @@ function buildHumanRequestReply(userText, lang, channel) {
     : 'Dạ em đã ghi nhận yêu cầu gặp nhân viên của anh/chị. Em sẽ chuyển thông tin cho nhân viên KingCom hỗ trợ. Nếu tiện, anh/chị để lại số điện thoại để KingCom liên hệ nhanh hơn ạ.';
 }
 
-async function generateReply({
+async function generateReplyRaw({
   channel,
   userText,
   history,
@@ -833,6 +837,7 @@ async function generateReply({
   const policyQuestion = isCommercialPolicyQuestion(userText, intent);
   const sourceConfig = readSourceConfig(sourceKey);
   const scopeBrand = String(sourceConfig.brand || '').trim();
+  const customerBrand = resolveCustomerBrand({ sourceKey, sourceName, sourceGroup });
   const scopedProducts = loadProducts({ sourceKey });
   const contactInfoReply = buildContactInfoReply(userText, messageLanguage);
   if (contactInfoReply) {
@@ -947,10 +952,11 @@ async function generateReply({
     const sourceContext = [
       sourceGroup ? `Nguồn: ${sourceGroup}` : '',
       sourceName ? `Tên nguồn: ${sourceName}` : '',
+      `Tên thương hiệu giao tiếp bắt buộc: ${customerBrand}`,
       sourceKey ? `Source key: ${sourceKey}` : ''
     ].filter(Boolean).join('\n');
 
-    const greetingPrompt = `Bạn là nhân viên tư vấn của KingCom, cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung. Trả lời tiếng Việt, ngắn gọn, thân thiện, tự nhiên như người thật đang chat với khách.
+    const greetingPrompt = `Bạn là nhân viên tư vấn của ${customerBrand}, cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung. Trả lời tiếng Việt, ngắn gọn, thân thiện, tự nhiên như người thật đang chat với khách.
 
 Địa chỉ cửa hàng KingCom: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam
 
@@ -961,7 +967,8 @@ ${intent === 'human' ? 'Khách yêu cầu gặp nhân viên.' : 'Khách đang ch
 
 Quy tắc giọng nói:
 - Không tự xưng là AI, bot, trợ lý ảo, hệ thống tự động.
-- Xưng "em" hoặc "KingCom", gọi khách là "anh/chị" khi phù hợp.
+- Xưng "em" hoặc "${customerBrand}", gọi khách là "anh/chị" khi phù hợp.
+- Chỉ dùng tên thương hiệu "${customerBrand}" khi nói với khách. Không tự nhận là thương hiệu khác.
 - KingCom KHÔNG phải cửa hàng mỹ phẩm. Tuyệt đối không nói KingCom bán mỹ phẩm/làm đẹp.
 - Khi giới thiệu KingCom, chỉ nói là cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung.
 - Nếu không chắc thông tin, nói "em kiểm tra thêm" hoặc "em chuyển nhân viên phụ trách kiểm tra", không nói "AI không biết".
@@ -971,7 +978,10 @@ ${intent === 'greeting'
           : 'Ghi nhận yêu cầu. Hỏi khách để lại số điện thoại để nhân viên liên hệ. KHÔNG liệt kê sản phẩm.'}`;
 
     try {
-      const reply = await callOpenAI(greetingPrompt, Number(process.env.AI_TIMEOUT_MS || 45000));
+      const reply = await callOpenAI(
+        applyCustomerBranding(greetingPrompt, customerBrand),
+        Number(process.env.AI_TIMEOUT_MS || 45000)
+      );
       return { reply, aiUsed: 1, aiError: false, aiSource: 'provider', ragProducts: [] };
     } catch (e) {
       console.error('OpenAI greeting error:', e.message);
@@ -1087,10 +1097,11 @@ ${intent === 'greeting'
   const sourceContext = [
     sourceGroup ? `Nguồn: ${sourceGroup}` : '',
     sourceName ? `Tên nguồn: ${sourceName}` : '',
+    `Tên thương hiệu giao tiếp bắt buộc: ${customerBrand}`,
     sourceKey ? `Source key: ${sourceKey}` : ''
   ].filter(Boolean).join('\n');
 
-  const prompt = `Bạn là nhân viên tư vấn của KingCom, cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung. Trả lời tiếng Việt, ngắn gọn, thân thiện, tự nhiên như người thật đang chat với khách, đúng dữ liệu.
+  const prompt = `Bạn là nhân viên tư vấn của ${customerBrand}, cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung. Trả lời tiếng Việt, ngắn gọn, thân thiện, tự nhiên như người thật đang chat với khách, đúng dữ liệu.
 
 Địa chỉ cửa hàng KingCom: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam
 
@@ -1114,7 +1125,8 @@ Khách hỏi: ${userText}
 
 Quy tắc:
 - Không tự xưng là AI, bot, trợ lý ảo, chatbot, hệ thống tự động.
-- Không nói kiểu "tôi là trợ lý ảo". Hãy xưng "em" hoặc "KingCom", gọi khách là "anh/chị" khi phù hợp.
+- Không nói kiểu "tôi là trợ lý ảo". Hãy xưng "em" hoặc "${customerBrand}", gọi khách là "anh/chị" khi phù hợp.
+- Chỉ dùng tên thương hiệu "${customerBrand}" khi nói với khách. Không tự nhận là thương hiệu khác.
 - Với website chat, nếu khách yêu cầu gặp nhân viên, không được nói "giao diện tự động" hoặc "không thể trao đổi trực tiếp". Hãy nói đã chuyển nhân viên và khách có thể tiếp tục nhắn tại khung chat này.
 - KingCom KHÔNG phải cửa hàng mỹ phẩm. Tuyệt đối không nói KingCom bán mỹ phẩm/làm đẹp.
 - Khi giới thiệu KingCom, chỉ nói là cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung.
@@ -1138,7 +1150,8 @@ Quy tắc:
       : messageLanguage === 'zh'
         ? '\n\nFINAL LANGUAGE RULE: Reply in Simplified Chinese only. Do not use Vietnamese except product names copied from catalog.'
         : '\n\nFINAL LANGUAGE RULE: Reply in Vietnamese only unless the customer switches language.';
-    const reply = await callOpenAI(`${prompt}${finalLanguageRule}`, Number(process.env.AI_TIMEOUT_MS || 45000));
+    const brandedPrompt = applyCustomerBranding(`${prompt}${finalLanguageRule}`, customerBrand, products);
+    const reply = await callOpenAI(brandedPrompt, Number(process.env.AI_TIMEOUT_MS || 45000));
     const hasDisallowedUrl = policyQuestion ? hasProductCatalogUrl(reply) : hasUnapprovedProductUrl(reply, products);
     if (hasDisallowedUrl) {
       console.warn('OpenAI response rejected: unapproved product URL');
@@ -1195,6 +1208,16 @@ function summaryLanguageInstruction(language = 'vi') {
     return '请用简体中文总结以下客服对话，最多 5 个要点。请说明：客户需求、感兴趣的产品、购买意向、需要跟进的信息。不要编造信息。';
   }
   return 'Tóm tắt hội thoại CSKH dưới đây bằng tiếng Việt, tối đa 5 gạch đầu dòng. Nêu: nhu cầu khách, sản phẩm quan tâm, ý định mua, thông tin cần follow-up. Không bịa dữ liệu.';
+}
+
+async function generateReply(payload) {
+  const result = await generateReplyRaw(payload);
+  const customerBrand = resolveCustomerBrand(payload);
+  return {
+    ...result,
+    customerBrand,
+    reply: applyCustomerBranding(result.reply, customerBrand, result.ragProducts)
+  };
 }
 
 async function summarizeConversation({ messages, customer, language = 'vi' }) {
