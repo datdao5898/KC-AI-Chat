@@ -187,6 +187,25 @@ function enrichHistoryWithMediaContext(messages = []) {
   });
 }
 
+function trimHistoryToActiveSession(messages = [], maxGapMinutes = Number(process.env.CONVERSATION_CONTEXT_MAX_GAP_MINUTES || 360)) {
+  const rows = [...(messages || [])];
+  if (rows.length < 2) return rows;
+  const maxGapMs = Math.max(1, Number(maxGapMinutes) || 360) * 60 * 1000;
+  let sessionStart = 0;
+
+  for (let index = rows.length - 1; index > 0; index--) {
+    const currentTime = new Date(rows[index].created_at || rows[index].createdAt || 0).getTime();
+    const previousTime = new Date(rows[index - 1].created_at || rows[index - 1].createdAt || 0).getTime();
+    if (!Number.isFinite(currentTime) || !Number.isFinite(previousTime) || currentTime <= 0 || previousTime <= 0) continue;
+    if (currentTime - previousTime > maxGapMs) {
+      sessionStart = index;
+      break;
+    }
+  }
+
+  return rows.slice(sessionStart);
+}
+
 function buildImageFallbackReply(customerText = '') {
   const language = detectMessageLanguage(customerText);
   if (language === 'en') {
@@ -259,7 +278,8 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     }).catch(e => console.error('notifyWebsiteMessage error:', e.message));
   }
 
-  const history = enrichHistoryWithMediaContext(await getRecentMessages(conversation.id, 12));
+  const recentMessages = await getRecentMessages(conversation.id, 12);
+  const history = enrichHistoryWithMediaContext(trimHistoryToActiveSession(recentMessages));
   const autoReply = process.env.AUTO_REPLY !== 'false' && conversation.auto_reply !== 0;
   if (!autoReply) {
     logAiResponse({
@@ -451,4 +471,11 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   return { ok: deliveryStatus !== 'failed', conversationId: conversation.id, customerId: customer.id, intent, confidence, reply, aiUsed, aiError: !!aiError, aiErrorMessage, needsHuman: handoff.needed, handoffReason: handoff.reason || '', deliveryStatus, deliveryError, humanDelayMs };
 }
 
-module.exports = { processIncoming, detectHandoff, normalizeCustomerReply, estimateHumanReplyDelayMs, improveNoDataReply };
+module.exports = {
+  processIncoming,
+  detectHandoff,
+  normalizeCustomerReply,
+  estimateHumanReplyDelayMs,
+  improveNoDataReply,
+  trimHistoryToActiveSession
+};

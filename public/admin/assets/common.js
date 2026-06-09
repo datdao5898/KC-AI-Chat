@@ -6,6 +6,7 @@
     alerts: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path>',
     improvements: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4"></path><path d="M15 5l4 4"></path>',
     knowledge: '<ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"></path>',
+    guide: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M8 7h8"></path><path d="M8 11h6"></path>',
     logs: '<path d="M8 3h8l4 4v14H8z"></path><path d="M16 3v5h5"></path><path d="M4 7v14"></path><path d="M12 13h5"></path><path d="M12 17h5"></path>'
   };
 
@@ -16,6 +17,7 @@
       navAlerts: 'C\u1ea3nh b\u00e1o',
       navImprovements: 'C\u1ea7n c\u1ea3i thi\u1ec7n',
       navKnowledge: 'Training',
+      navGuide: 'T\u00e0i li\u1ec7u h\u01b0\u1edbng d\u1eabn',
       navLogs: 'Nh\u1eadt k\u00fd',
       titleDashboard: 'T\u1ed5ng quan',
       subtitleDashboard: 'Xem nhanh s\u1ed1 li\u1ec7u v\u00e0 c\u00e1c c\u1ea3nh b\u00e1o quan tr\u1ecdng',
@@ -27,6 +29,8 @@
       subtitleImprovements: 'C\u00e1c c\u00e2u tr\u1ea3 l\u1eddi AI c\u1ea7n xem l\u1ea1i',
       titleKnowledge: 'Training',
       subtitleKnowledge: 'M\u1ed7i ngu\u1ed3n training \u0111\u01b0\u1ee3c l\u01b0u ri\u00eang, d\u1ec5 qu\u1ea3n l\u00fd',
+      titleGuide: 'T\u00e0i li\u1ec7u h\u01b0\u1edbng d\u1eabn',
+      subtitleGuide: 'H\u01b0\u1edbng d\u1eabn s\u1eed d\u1ee5ng v\u00e0 v\u1eadn h\u00e0nh h\u1ec7 th\u1ed1ng h\u1eb1ng ng\u00e0y',
       titleLogs: 'Nh\u1eadt k\u00fd',
       subtitleLogs: 'Ghi l\u1ea1i c\u00e1c s\u1ef1 ki\u1ec7n c\u1ee7a h\u1ec7 th\u1ed1ng \u0111\u1ec3 ti\u1ec7n ki\u1ec3m tra',
       login: '\u0110\u0103ng nh\u1eadp',
@@ -129,6 +133,7 @@
       navAlerts: 'Alerts',
       navImprovements: 'Improvements',
       navKnowledge: 'Training',
+      navGuide: 'User guide',
       navLogs: 'Logs',
       titleDashboard: 'Overview',
       subtitleDashboard: 'Quick view of key numbers and important alerts',
@@ -140,6 +145,8 @@
       subtitleImprovements: 'AI replies to review',
       titleKnowledge: 'Training',
       subtitleKnowledge: 'Each training source is stored separately for easier management',
+      titleGuide: 'User guide',
+      subtitleGuide: 'How to use and operate the system day to day',
       titleLogs: 'Logs',
       subtitleLogs: 'System events recorded for later checking',
       login: 'Login',
@@ -242,6 +249,7 @@
       navAlerts: '\u63d0\u9192',
       navImprovements: '\u5f85\u6539\u8fdb',
       navKnowledge: '\u8bad\u7ec3',
+      navGuide: '\u4f7f\u7528\u6307\u5357',
       navLogs: '\u65e5\u5fd7',
       titleDashboard: '\u603b\u89c8',
       subtitleDashboard: '\u5feb\u901f\u67e5\u770b\u91cd\u8981\u6570\u636e\u548c\u63d0\u9192',
@@ -253,6 +261,8 @@
       subtitleImprovements: '\u9700\u8981\u590d\u6838\u7684 AI \u56de\u590d',
       titleKnowledge: '\u8bad\u7ec3',
       subtitleKnowledge: '\u6bcf\u4e2a\u8bad\u7ec3\u6765\u6e90\u72ec\u7acb\u4fdd\u5b58\uff0c\u66f4\u597d\u7ba1\u7406',
+      titleGuide: '\u4f7f\u7528\u6307\u5357',
+      subtitleGuide: '\u7cfb\u7edf\u65e5\u5e38\u4f7f\u7528\u4e0e\u8fd0\u8425\u8bf4\u660e',
       titleLogs: '\u65e5\u5fd7',
       subtitleLogs: '\u7cfb\u7edf\u4e8b\u4ef6\u8bb0\u5f55\uff0c\u65b9\u4fbf\u540e\u7eed\u67e5\u770b',
       login: '\u767b\u5f55',
@@ -357,6 +367,7 @@
     ['alerts', '/admin/alerts.html', 'navAlerts', icons.alerts],
     ['improvements', '/admin/improvements.html', 'navImprovements', icons.improvements],
     ['knowledge', '/admin/knowledge.html', 'navKnowledge', icons.knowledge],
+    ['guide', '/admin/guide.html', 'navGuide', icons.guide],
     ['logs', '/admin/logs.html', 'navLogs', icons.logs]
   ];
 
@@ -621,6 +632,8 @@
       return;
     }
     showShell();
+    const refreshButton = $('#refreshPageBtn');
+    if (refreshButton && config.refreshButton === false) refreshButton.hidden = true;
 
     async function refresh(silent = false) {
       try {
@@ -630,7 +643,9 @@
         pageTitle(title, subtitle);
         setContent(config.render ? config.render() : '');
         if (config.bind) config.bind();
-        $('#refreshPageBtn').onclick = () => refresh().then(() => toast(t('synced'))).catch(e => toast(e.message));
+        if (refreshButton && config.refreshButton !== false) {
+          refreshButton.onclick = () => refresh().then(() => toast(t('synced'))).catch(e => toast(e.message));
+        }
         if (!silent) toast(t('synced'));
       } catch (e) {
         setContent(`<div class="card"><div class="card-body">${esc(e.message)}</div></div>`);

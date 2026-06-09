@@ -8,6 +8,7 @@ const {
   extractExactPrice,
   findProductsByExactPrice,
   loadProducts,
+  parsePriceNumber,
   normalize
 } = require('./rag');
 const { readSourceConfig } = require('./sourceRegistry');
@@ -127,6 +128,10 @@ function isAvailabilityQuestion(text) {
   return /\b(?:do|does)\s+(?:you|u|kingcom|shop|store)?\s*(?:have|carry|sell)\b/i.test(raw)
     || /\b(?:available|in stock|stock status)\b/i.test(raw)
     || /(co hang|con hang|san pham nay co khong|ben em co|shop co|co ban|dang ban)/i.test(norm);
+}
+
+function isStartingPriceQuery(text) {
+  return /\b(gia tu bao nhieu|tu bao nhieu|gia khoang bao nhieu|starting price)\b/i.test(normalize(text));
 }
 
 function isShortSpecificFollowUp(text) {
@@ -309,6 +314,24 @@ function buildBudgetProductReply(userText, products, scopeBrand = '') {
     return `我找到以下${scope}中符合 ${formatPrice(maxPrice)} 以内的产品：\n\n${rows}\n\n请告诉我您想了解哪一款，或留下电话号码，方便 KingCom 员工确认库存。`;
   }
   return `Dạ em tìm thấy sản phẩm phù hợp${scope} trong tầm giá dưới ${formatPrice(maxPrice)}:\n\n${rows}\n\nAnh/chị muốn xem kỹ mẫu nào, hoặc để lại số điện thoại để nhân viên KingCom kiểm tra tồn kho hỗ trợ thêm ạ?`;
+}
+
+function buildStartingPriceReply(userText, products, scopeBrand = '') {
+  if (!isStartingPriceQuery(userText)) return null;
+  const priced = (products || [])
+    .map(product => ({
+      product,
+      price: parsePriceNumber(product.price || product.compare_at_price || product.gia || '')
+    }))
+    .filter(item => item.price > 0)
+    .sort((a, b) => a.price - b.price);
+  if (!priced.length) return null;
+
+  const { product, price } = priced[0];
+  const name = product.name || product.title || 'sản phẩm phù hợp';
+  const url = product.url || product.link || product.product_url || '';
+  const scope = scopeBrand ? ` trong catalog ${scopeBrand}` : '';
+  return `Dạ, sản phẩm phù hợp${scope} hiện có giá tham khảo từ ${formatPrice(price)}.\n\n${name}\nGiá: ${formatPrice(price)}${url ? `\nLink: ${url}` : ''}\n\nAnh/chị cho em biết dòng máy hoặc ngàm đang sử dụng để em chọn đúng mẫu tương thích ạ.`;
 }
 
 function buildPreviousAdviceCorrectionReply(userText, products, scopeBrand = '') {
@@ -969,7 +992,8 @@ ${intent === 'greeting'
   const { context, products } = buildContext(searchQuery, {
     sourceKey,
     topK: policyQuestion ? 0 : (guidanceQuestion ? 1 : 8),
-    requireIdentityMatch: isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText)
+    requireIdentityMatch: !isStartingPriceQuery(userText)
+      && (isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText))
   });
   if (isPreviousAdviceComplaint(userText) && !guidanceQuestion && !policyQuestion) {
     return {
@@ -990,6 +1014,19 @@ ${intent === 'greeting'
       aiUsed: 0,
       aiError: false,
       aiSource: 'direct_budget_lookup',
+      searchQuery,
+      ragProducts: products.slice(0, 3)
+    };
+  }
+  const startingPriceReply = (!guidanceQuestion && !policyQuestion && ['buy', 'price', 'product_search', 'order'].includes(intent))
+    ? buildStartingPriceReply(userText, products, scopeBrand)
+    : null;
+  if (startingPriceReply) {
+    return {
+      reply: startingPriceReply,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'direct_starting_price_lookup',
       searchQuery,
       ragProducts: products.slice(0, 3)
     };

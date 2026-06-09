@@ -155,7 +155,8 @@ function summarizeHistory(history = []) {
   return (history || []).slice(-14).map(message => {
     const sender = message.sender_type || message.senderType || 'unknown';
     const text = String(message.text || '').trim();
-    return `${sender}: ${text}`;
+    const createdAt = message.created_at || message.createdAt || '';
+    return `${createdAt ? `[${createdAt}] ` : ''}${sender}: ${text}`;
   }).join('\n');
 }
 
@@ -230,7 +231,8 @@ function buildJudgePrompt({
     validationText,
     '',
     'Audit checklist:',
-    '1. Infer the latest customer need from the newest message plus recent conversation. Resolve follow-ups like "that product", "the previous model", "link for it", "con mau do", "san pham do" using recent context.',
+    '1. The latest customer message has priority. Use recent conversation only to resolve a genuine follow-up such as "that product", "the previous model", "link for it", "con mau do", or "san pham do".',
+    '1a. If the latest message is self-contained, do not add a camera brand, mount, model, budget, or requirement that the customer did not mention. Never infer those details from an older image or an older topic.',
     '2. Check whether the draft reply answers that inferred need directly. Reject if it answers a different question or ignores the latest message.',
     '3. Check product relevance. Product name/category/brand/model in the reply must match the customer need and the retrieved catalog. Do not let a generic word match change the category, e.g. "computer mouse" must not become "microphone for computer".',
     '4. Check source scope. If a fanpage/source is scoped to one brand, the reply must not recommend another brand unless recent context clearly asks to switch.',

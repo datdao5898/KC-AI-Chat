@@ -116,7 +116,8 @@ function isTrueLightProduct({ nameNorm, nameAccent }) {
 }
 
 function isLensAccessory({ nameNorm, nameAccent }) {
-  return /\b(adapter|mount adapter|cleaning|kit|cap|hood|filter|bag|case|converter)\b/i.test(nameNorm)
+  return /\b(adapter|mount adapter|cleaning|kit|cap|hood|filter|bag|case|converter|support|holder|cloth|wrap|protector|cover)\b/i.test(nameNorm)
+    || /\b(khan|bao ve|nap|gia do|thanh ho tro|tui dung|lam sach|thoi khi|chuyen doi)\b/i.test(nameNorm)
     || hasAnyWord(nameAccent, ['ngàm', 'ngoàm']);
 }
 
@@ -125,6 +126,17 @@ function isTrueLensProduct({ nameNorm, nameAccent }) {
     || nameNorm.includes('ong kinh')
     || nameAccent.includes('ống kính');
   return looksLens && !isLensAccessory({ nameNorm, nameAccent });
+}
+
+function isMobileOrActionLensProduct({ nameNorm, descNorm = '' }) {
+  const text = `${nameNorm} ${descNorm}`;
+  return /\b(smartphone|dien thoai|iphone|android|osmo pocket|dji pocket|action camera)\b/i.test(text);
+}
+
+function isLandscapeLensCandidate({ nameNorm, descNorm = '' }) {
+  const text = `${nameNorm} ${descNorm}`;
+  return /\b(phong canh|landscape|goc rong|wide angle|ultra wide|sieu rong|kien truc|thien van|cityscape)\b/i.test(text)
+    || /\b(?:9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|30|32|35)\s*mm\b/i.test(nameNorm);
 }
 
 function parsePriceNumber(v) {
@@ -287,6 +299,8 @@ function searchProducts(query, topK = 8, options = {}) {
     || hasAnyWord(accentQuery, ['ngàm', 'ngoàm']);
   const wantsLens = (/\b(lens|ong kinh)\b/i.test(normQuery) || /\bống kính\b/i.test(accentQuery)) && !wantsAdapter;
   const wantsPortraitLens = wantsLens && /\b(chan dung|portrait|xoa phong|bokeh)\b/i.test(normQuery);
+  const wantsLandscapeLens = wantsLens && /\b(phong canh|landscape|goc rong|wide angle|sieu rong|kien truc|thien van)\b/i.test(normQuery);
+  const wantsMobileOrActionLens = wantsPhone || /\b(osmo|dji pocket|action camera)\b/i.test(normQuery);
   if (!words.length) return [];
 
   const scored = [];
@@ -302,12 +316,14 @@ function searchProducts(query, topK = 8, options = {}) {
     const descAccent = normalizeAccent(`${p.description || ''} ${p.tags || ''}`);
     const haystack = `${name} ${desc}`;
     const identityText = `${name} ${sku} ${vendor} ${normalize(p.url || p.link || p.product_url || '')}`;
-    const productShape = { nameNorm: name, nameAccent };
+    const productShape = { nameNorm: name, nameAccent, descNorm: desc };
 
     if (identityWords.length && !identityWords.some(w => identityText.includes(w))) continue;
     if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
     if (wantsLight && !isTrueLightProduct(productShape)) continue;
     if (wantsLens && !isTrueLensProduct(productShape)) continue;
+    if (wantsLens && !wantsMobileOrActionLens && isMobileOrActionLensProduct(productShape)) continue;
+    if (wantsLandscapeLens && !isLandscapeLensCandidate(productShape)) continue;
     if (wantsAdapter && !isLensAccessory(productShape)) continue;
     if (wantsMicrophone) {
       const microphoneText = `${name} ${vendor} ${desc}`;
@@ -344,6 +360,8 @@ function searchProducts(query, topK = 8, options = {}) {
     if (wantsLens && isTrueLensProduct(productShape)) score += 8;
     if (wantsPortraitLens && /\b(50|56|75|85)\s*mm\b/i.test(name)) score += 12;
     if (wantsPortraitLens && /\b(13|16|20|23|24)\s*mm\b/i.test(name)) score -= 6;
+    if (wantsLandscapeLens && isLandscapeLensCandidate(productShape)) score += 12;
+    if (wantsLandscapeLens && /\b(?:9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28)\s*mm\b/i.test(name)) score += 4;
     if (wantsAdapter && isLensAccessory(productShape)) score += 8;
     if (wantsPhone && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 6;
     if (wantsTripod && wantsPhone && /(tripod|chan may|chan den|gia do)/i.test(haystack) && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 10;
