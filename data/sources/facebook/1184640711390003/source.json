@@ -1,5 +1,12 @@
 {
   "displayName": "Synco",
   "brand": "Synco",
-  "strictProducts": true
+  "strictProducts": true,
+  "webGuidance": {
+    "enabled": true,
+    "allowedDomains": [
+      "syncoaudio.com"
+    ],
+    "maxResults": 3
+  }
 }

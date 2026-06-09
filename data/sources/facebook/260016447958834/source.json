@@ -1,5 +1,12 @@
 {
   "displayName": "Viltrox",
   "brand": "Viltrox",
-  "strictProducts": true
+  "strictProducts": true,
+  "webGuidance": {
+    "enabled": true,
+    "allowedDomains": [
+      "viltrox.com"
+    ],
+    "maxResults": 3
+  }
 }

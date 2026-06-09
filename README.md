@@ -70,8 +70,18 @@ App goi OpenRouter/OpenAI truc tiep, khong can CLI trung gian.
 - `OPENAI_JUDGE_MODEL`: de trong thi dung chung model voi `OPENAI_MODEL`; dien model khac neu muon tang judge rieng.
 - `OPENAI_JUDGE_MAX_OUTPUT_TOKENS`: so token toi da cho ket qua judge, nen de khoang `520`.
 - `OPENAI_JUDGE_RETRIES`: so lan thu lai neu judge tra JSON loi, mac dinh `2`.
+- `PRODUCT_GUIDANCE_WEB_SEARCH_ENABLED`: kill switch toan cuc. Dat `false` de tat web guidance cho tat ca source; neu bo trong thi moi source bat/tat rieng trong `source.json`.
+- `PRODUCT_GUIDANCE_WEB_SEARCH_MODEL`: model dung cho huong dan co tim web; de trong thi dung `OPENAI_MODEL`.
+- `PRODUCT_GUIDANCE_WEB_SEARCH_MAX_RESULTS`: so nguon chinh hang toi da, mac dinh `3`.
+- `PRODUCT_GUIDANCE_WEB_SEARCH_TIMEOUT_MS`: timeout rieng cho web guidance; de trong thi dung `AI_TIMEOUT_MS`.
 
 Neu anh muon thu model khac, chi can doi `OPENAI_MODEL`.
+
+### Huong dan su dung san pham tu website hang
+
+Khi khach hoi cach dung, ket noi, cai dat hoac pairing mot san pham co trong catalog, app uu tien dung dung san pham RAG da tim thay, sau do co the tim tai cac domain chinh hang duoc khai bao trong `data/sources/<source>/source.json`. Voi source co nhieu thuong hieu, `brandDomains` tiep tuc thu hep ket qua theo `vendor/brand` cua san pham RAG.
+
+Web search khong duoc dung de tra loi gia, ton kho, khuyen mai, VAT, giao hang hoac chinh sach cua cua hang. Cau tra loi chi duoc chap nhan khi OpenRouter tra ve citation thuoc allowlist cua source.
 
 ## Nhip tra loi tu nhien
 

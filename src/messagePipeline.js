@@ -325,7 +325,17 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
         sourceName: source.sourceName,
         sourceGroup: source.sourceGroup
       });
-  const { reply: rawReply, aiUsed, aiError, aiErrorMessage, aiSource, searchQuery, ragProducts } = replyResult;
+  const {
+    reply: rawReply,
+    aiUsed,
+    aiError,
+    aiErrorMessage,
+    aiSource,
+    searchQuery,
+    ragProducts,
+    webSources = [],
+    webSearchRequests = 0
+  } = replyResult;
   const validation = { ok: true, skipped: 'single_ai_judge_final_check' };
   const generatedReply = rawReply;
   const baseHandoff = mediaRecognitionFailed
@@ -351,7 +361,8 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     customerBrand,
     customer: freshCustomer,
     aiSource,
-    searchQuery
+    searchQuery,
+    webSources
   });
   if (!judge.approve) {
     if (judge.correctedReply) {
@@ -429,7 +440,18 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     direction: 'out',
     senderType: 'ai',
     text: reply,
-    rawJson: { reply_to: inbound.id, handoff, validation, judge, judgeError: judge?.error || '', sendResult, aiError: !!aiError, humanDelayMs },
+    rawJson: {
+      reply_to: inbound.id,
+      handoff,
+      validation,
+      judge,
+      judgeError: judge?.error || '',
+      sendResult,
+      aiError: !!aiError,
+      humanDelayMs,
+      webSources,
+      webSearchRequests
+    },
     intent,
     aiUsed,
     deliveryStatus,
@@ -459,6 +481,8 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     aiError: !!aiError,
     aiErrorMessage,
     searchQuery,
+    webSearchRequests,
+    webSources,
     ragProductCount: Array.isArray(ragProducts) ? ragProducts.length : 0,
     ragProducts: (ragProducts || []).slice(0, 5).map(p => ({
       name: p.name || p.title || '',

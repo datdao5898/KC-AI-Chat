@@ -152,6 +152,19 @@ function summarizeProducts(ragProducts = []) {
   }).join('\n');
 }
 
+function summarizeWebSources(webSources = []) {
+  return (webSources || []).slice(0, 5).map((source, index) => {
+    const url = String(source?.url || '').trim();
+    const title = String(source?.title || '').trim();
+    const content = String(source?.content || '').trim().slice(0, 800);
+    return [
+      `${index + 1}. ${title || url || 'Official source'}`,
+      url ? `URL: ${url}` : '',
+      content ? `Excerpt: ${content}` : ''
+    ].filter(Boolean).join(' | ');
+  }).join('\n');
+}
+
 function summarizeHistory(history = []) {
   return (history || []).slice(-14).map(message => {
     const sender = message.sender_type || message.senderType || 'unknown';
@@ -175,13 +188,15 @@ function buildJudgePrompt({
   customerBrand = '',
   customer = {},
   aiSource = '',
-  searchQuery = ''
+  searchQuery = '',
+  webSources = []
 }) {
   const language = detectMessageLanguage(userText);
   const expectedBrand = customerBrand || resolveCustomerBrand({ sourceKey, sourceName, sourceGroup });
   const languageLabel = language === 'en' ? 'English' : language === 'zh' ? 'Simplified Chinese' : 'Vietnamese';
   const historyText = summarizeHistory(history);
   const productsText = summarizeProducts(ragProducts);
+  const webSourcesText = summarizeWebSources(webSources);
   const validationText = validation?.ok === false
     ? `Previous rule validator rejected the draft reply: ${validation.reason || 'unknown reason'}`
     : 'Previous rule validator approved the draft reply.';
@@ -228,6 +243,9 @@ function buildJudgePrompt({
     'Catalog products returned by retrieval:',
     productsText || '(none)',
     '',
+    'Official web sources used for product guidance:',
+    webSourcesText || '(none)',
+    '',
     'Draft reply to judge:',
     String(reply || '').trim(),
     '',
@@ -240,7 +258,8 @@ function buildJudgePrompt({
     '2. Check whether the draft reply answers that inferred need directly. Reject if it answers a different question or ignores the latest message.',
     '3. Check product relevance. Product name/category/brand/model in the reply must match the customer need and the retrieved catalog. Do not let a generic word match change the category, e.g. "computer mouse" must not become "microphone for computer".',
     '4. Check source scope. If a fanpage/source is scoped to one brand, the reply must not recommend another brand unless recent context clearly asks to switch.',
-    '5. Check support. Any product, price, link, SKU, warranty, VAT, delivery, stock, or policy claim must be supported by retrieved catalog, recent conversation, or source data shown here.',
+    '5. Check support. Product identity, price, SKU, seller link, warranty, VAT, delivery, stock, or policy claims must be supported by retrieved catalog, recent conversation, or source data shown here. Product usage guidance may also be supported by the official web sources shown here.',
+    '5a. Official web sources may support only usage, setup, pairing, connection, configuration, and troubleshooting. They must not be used as evidence for store price, stock, promotions, VAT, delivery, or seller policy.',
     `6. Check broad catalog questions separately. If the customer asks what ${expectedBrand} sells in general, the reply should describe product groups, not pretend one random product answers the question.`,
     '7. Check tone and format. No laughing at customers, no markdown bold, no emoji, no "AI/bot/system" wording to customers.',
     `7a. The reply must speak as ${expectedBrand}. Reject or correct it if it presents the seller as KingCom, NewLite, or another page name that is not ${expectedBrand}. Product names and URLs may retain their original wording.`,

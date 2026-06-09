@@ -16,6 +16,7 @@ const {
   resolveCustomerBrand,
   applyCustomerBranding
 } = require('./sourceRegistry');
+const { answerProductGuidanceFromWeb } = require('./webGuidance');
 
 async function callOpenAI(prompt, timeoutMs) {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -1005,6 +1006,31 @@ ${intent === 'greeting'
     requireIdentityMatch: !isStartingPriceQuery(userText)
       && (isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText))
   });
+  if (guidanceQuestion && products.length) {
+    const webGuidance = await answerProductGuidanceFromWeb({
+      userText,
+      history,
+      products,
+      sourceConfig,
+      customerBrand,
+      language: messageLanguage
+    });
+    if (webGuidance.ok) {
+      return {
+        reply: webGuidance.reply,
+        aiUsed: 1,
+        aiError: false,
+        aiSource: 'provider_web_guidance',
+        searchQuery,
+        ragProducts: products.slice(0, 1),
+        webSources: webGuidance.webSources,
+        webSearchRequests: webGuidance.webSearchRequests
+      };
+    }
+    if (webGuidance.error) {
+      console.warn('Product guidance web search skipped after error:', webGuidance.error);
+    }
+  }
   if (isPreviousAdviceComplaint(userText) && !guidanceQuestion && !policyQuestion) {
     return {
       reply: buildPreviousAdviceCorrectionReply(userText, products, scopeBrand),

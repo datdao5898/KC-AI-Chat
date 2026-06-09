@@ -3,7 +3,7 @@
 Put page-specific knowledge in these folders:
 
 - `1184640711390003` -> Synco
-- `260016447958834` -> Ulanzi
+- `260016447958834` -> Viltrox
 
 Each folder can contain:
 
@@ -12,6 +12,21 @@ Each folder can contain:
 - `faq.md`
 - `policies.md`
 - `catalog_summary.md`
+
+`source.json` can also enable official web guidance for product setup questions:
+
+```json
+{
+  "displayName": "Viltrox",
+  "brand": "Viltrox",
+  "strictProducts": true,
+  "webGuidance": {
+    "enabled": true,
+    "allowedDomains": ["viltrox.com"],
+    "maxResults": 3
+  }
+}
+```
 
 The app will prefer the page folder first, then fall back to `facebook/` and `common/` if needed.
 

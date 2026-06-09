@@ -1,3 +1,42 @@
 {
-  "displayName": "NewLite"
+  "displayName": "NewLite",
+  "webGuidance": {
+    "enabled": true,
+    "allowedDomains": [
+      "ulanzi.com",
+      "zhiyun-tech.com",
+      "boyamic.com",
+      "viltrox.com",
+      "dji.com",
+      "colborlight.com",
+      "syncoaudio.com",
+      "comica-audio.com",
+      "accsoon.com",
+      "maono.com",
+      "rode.com",
+      "smallrig.com",
+      "godox.com",
+      "hollyland.com",
+      "nanlite.com"
+    ],
+    "restrictByProductBrand": true,
+    "brandDomains": {
+      "Ulanzi": ["ulanzi.com"],
+      "Zhiyun": ["zhiyun-tech.com"],
+      "Boya": ["boyamic.com"],
+      "Viltrox": ["viltrox.com"],
+      "DJI": ["dji.com"],
+      "Colbor": ["colborlight.com"],
+      "Synco": ["syncoaudio.com"],
+      "Comica": ["comica-audio.com"],
+      "Accsoon": ["accsoon.com"],
+      "Maono": ["maono.com"],
+      "Rode": ["rode.com"],
+      "SmallRig": ["smallrig.com"],
+      "Godox": ["godox.com"],
+      "Hollyland": ["hollyland.com"],
+      "Nanlite": ["nanlite.com"]
+    },
+    "maxResults": 3
+  }
 }
