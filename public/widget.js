@@ -336,20 +336,53 @@
     }
     @media (max-width: 520px) {
       #kc-chat-widget {
-        left: 12px;
-        right: 12px;
-        bottom: 12px;
-        width: auto;
-        height: min(620px, calc(100vh - 24px));
-        border-radius: 16px;
+        top: var(--kc-mobile-top, 0px);
+        right: 0;
+        bottom: auto;
+        left: 0;
+        width: 100%;
+        height: 100vh;
+        height: var(--kc-mobile-height, 100dvh);
+        max-height: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+      .kc-head {
+        min-height: calc(56px + env(safe-area-inset-top));
+        padding-top: env(safe-area-inset-top);
+        flex: 0 0 auto;
+      }
+      .kc-lead {
+        flex: 0 0 auto;
+      }
+      .kc-messages {
+        min-height: 0;
+        overscroll-behavior: contain;
       }
       .kc-bubble {
         max-width: 92%;
         font-size: 14px;
       }
+      .kc-attachment-preview {
+        flex: 0 0 auto;
+      }
+      .kc-form {
+        flex: 0 0 auto;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      }
+      #kc-chat-widget.kc-keyboard-open.kc-compose-focused .kc-lead {
+        display: none;
+      }
+      #kc-chat-widget.kc-keyboard-open:not(.kc-compose-focused) .kc-lead-title {
+        display: none;
+      }
+      #kc-chat-widget.kc-keyboard-open:not(.kc-compose-focused) .kc-lead-grid {
+        grid-template-columns: 1fr 1fr;
+      }
       #kc-chat-launcher {
         right: 12px;
-        bottom: 12px;
+        bottom: calc(12px + env(safe-area-inset-bottom));
       }
       .kc-lead-grid {
         grid-template-columns: 1fr;
@@ -483,11 +516,16 @@
     : null;
   const vid = localStorage.kcVisitorId || (localStorage.kcVisitorId = 'web-' + Date.now());
   const renderedMessageIds = new Set();
+  const mobileMedia = window.matchMedia('(max-width: 520px)');
   let lastPollAt = '';
   let isPolling = false;
   let historyLoaded = false;
   let selectedImage = null;
   let selectedPreviewUrl = '';
+  let bodyOverflowBeforeChat = '';
+  let htmlOverflowBeforeChat = '';
+  let mobileScrollLocked = false;
+  let mobileViewportBaseline = 0;
   nameInput.value = localStorage.kcCustomerName || '';
   phoneInput.value = localStorage.kcCustomerPhone || '';
 
@@ -498,6 +536,10 @@
 
   function closeChat() {
     box.classList.add('kc-closed');
+    box.classList.remove('kc-keyboard-open');
+    box.classList.remove('kc-compose-focused');
+    clearMobileViewport();
+    unlockPageScroll();
     launcher.style.display = externalLauncher ? 'none' : 'block';
     if (externalLauncher) externalLauncher.style.display = '';
   }
@@ -506,8 +548,58 @@
     launcher.style.display = 'none';
     if (externalLauncher) externalLauncher.style.display = 'none';
     box.classList.remove('kc-closed');
+    syncMobileViewport();
+    lockPageScroll();
     pollWebsiteMessages();
-    input.focus();
+    if (!mobileMedia.matches) input.focus();
+  }
+
+  function lockPageScroll() {
+    if (!mobileMedia.matches || mobileScrollLocked) return;
+    bodyOverflowBeforeChat = document.body.style.overflow;
+    htmlOverflowBeforeChat = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    mobileScrollLocked = true;
+  }
+
+  function unlockPageScroll() {
+    if (!mobileScrollLocked) return;
+    document.body.style.overflow = bodyOverflowBeforeChat;
+    document.documentElement.style.overflow = htmlOverflowBeforeChat;
+    mobileScrollLocked = false;
+  }
+
+  function clearMobileViewport() {
+    box.style.removeProperty('--kc-mobile-height');
+    box.style.removeProperty('--kc-mobile-top');
+    mobileViewportBaseline = 0;
+  }
+
+  function scrollToLatestMessage() {
+    window.requestAnimationFrame(() => {
+      messages.scrollTop = messages.scrollHeight;
+    });
+  }
+
+  function syncMobileViewport() {
+    if (!mobileMedia.matches || box.classList.contains('kc-closed')) {
+      box.classList.remove('kc-keyboard-open');
+      clearMobileViewport();
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    const viewportHeight = Math.max(320, Math.round(viewport?.height || window.innerHeight));
+    const viewportTop = Math.max(0, Math.round(viewport?.offsetTop || 0));
+    if (!mobileViewportBaseline || viewportHeight > mobileViewportBaseline) {
+      mobileViewportBaseline = viewportHeight;
+    }
+    const keyboardOpen = mobileViewportBaseline - viewportHeight > 120;
+    box.style.setProperty('--kc-mobile-height', `${viewportHeight}px`);
+    box.style.setProperty('--kc-mobile-top', `${viewportTop}px`);
+    box.classList.toggle('kc-keyboard-open', keyboardOpen);
+    if (keyboardOpen) scrollToLatestMessage();
   }
 
   window.KingComChat = {
@@ -524,6 +616,25 @@
   if (externalLauncher) externalLauncher.addEventListener('click', openChat);
   minimize.onclick = closeChat;
   launcher.onclick = openChat;
+  window.visualViewport?.addEventListener('resize', syncMobileViewport);
+  window.visualViewport?.addEventListener('scroll', syncMobileViewport);
+  window.addEventListener('orientationchange', () => {
+    mobileViewportBaseline = 0;
+    setTimeout(syncMobileViewport, 100);
+  });
+  const handleMobileBreakpointChange = () => {
+    if (box.classList.contains('kc-closed')) return;
+    if (mobileMedia.matches) {
+      syncMobileViewport();
+      lockPageScroll();
+    } else {
+      box.classList.remove('kc-keyboard-open');
+      clearMobileViewport();
+      unlockPageScroll();
+    }
+  };
+  if (mobileMedia.addEventListener) mobileMedia.addEventListener('change', handleMobileBreakpointChange);
+  else mobileMedia.addListener?.(handleMobileBreakpointChange);
 
   async function send() {
     const text = input.value.trim();
@@ -722,18 +833,25 @@
 
   function appendMessageContent(target, text) {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const hasGuidanceSources = /(nguồn hướng dẫn chính hãng|nguon huong dan chinh hang|official sources|官方资料)/i.test(text);
     let lastIndex = 0;
     let match;
-    let count = 0;
+    const labelCounts = new Map();
 
     while ((match = urlRegex.exec(text)) !== null) {
       if (match.index > lastIndex) target.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-      count += 1;
       const anchor = document.createElement('a');
       anchor.href = match[0];
       anchor.target = '_blank';
       anchor.rel = 'noopener noreferrer';
-      anchor.textContent = count === 1 ? 'Xem sản phẩm' : `Xem sản phẩm ${count}`;
+      const baseLabel = linkLabel(
+        match[0],
+        text.slice(Math.max(0, match.index - 120), match.index),
+        hasGuidanceSources
+      );
+      const count = (labelCounts.get(baseLabel) || 0) + 1;
+      labelCounts.set(baseLabel, count);
+      anchor.textContent = count === 1 ? baseLabel : `${baseLabel} ${count}`;
       target.appendChild(anchor);
       lastIndex = match.index + match[0].length;
     }
@@ -741,10 +859,35 @@
     if (lastIndex < text.length) target.appendChild(document.createTextNode(text.slice(lastIndex)));
   }
 
+  function linkLabel(rawUrl, precedingText = '', hasGuidanceSources = false) {
+    try {
+      const url = new URL(rawUrl);
+      const path = url.pathname.toLowerCase();
+      const context = String(precedingText || '').toLowerCase();
+      if (path.includes('/products/') || path.includes('/product/')) return 'Xem sản phẩm';
+      if (
+        hasGuidanceSources
+        ||
+        /(manual|guide|support|download|firmware|faq|help|instruction)/i.test(path)
+        || /(hướng dẫn|huong dan|tài liệu|tai lieu|nguồn chính hãng|nguon chinh hang)/i.test(context)
+      ) return 'Xem hướng dẫn';
+    } catch {}
+    return 'Mở liên kết';
+  }
+
   button.onclick = send;
   attachButton.onclick = () => fileInput.click();
   fileInput.onchange = () => setSelectedImage(fileInput.files?.[0]);
   attachmentRemove.onclick = clearSelectedImage;
+  input.addEventListener('focus', () => {
+    box.classList.add('kc-compose-focused');
+    syncMobileViewport();
+    scrollToLatestMessage();
+  });
+  input.addEventListener('blur', () => {
+    box.classList.remove('kc-compose-focused');
+    setTimeout(syncMobileViewport, 100);
+  });
   input.addEventListener('paste', event => {
     const image = [...(event.clipboardData?.items || [])]
       .find(item => item.kind === 'file' && String(item.type || '').startsWith('image/'));
