@@ -318,6 +318,105 @@
       cursor: wait;
       opacity: 0.64;
     }
+    .kc-rating-panel {
+      position: absolute;
+      inset: 56px 0 0;
+      z-index: 8;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(248, 250, 252, 0.98);
+    }
+    .kc-rating-panel[hidden] {
+      display: none;
+    }
+    .kc-rating-card {
+      width: min(340px, 100%);
+      padding: 22px;
+      border: 1px solid #dbe7f0;
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14);
+      text-align: center;
+    }
+    .kc-rating-title {
+      margin: 0;
+      color: #0f172a;
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .kc-rating-note {
+      margin: 6px 0 14px;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .kc-rating-stars {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .kc-rating-star {
+      width: 42px;
+      height: 42px;
+      padding: 0;
+      border: 0;
+      border-radius: 10px;
+      color: #cbd5e1;
+      background: transparent;
+      cursor: pointer;
+      font-size: 32px;
+      line-height: 1;
+    }
+    .kc-rating-star:hover,
+    .kc-rating-star.active {
+      color: #f5b301;
+      background: #fff8dc;
+    }
+    .kc-rating-feedback {
+      width: 100%;
+      min-height: 74px;
+      resize: vertical;
+      padding: 10px 11px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      color: #0f172a;
+      font: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+    .kc-rating-feedback:focus {
+      border-color: var(--kc-primary);
+      box-shadow: 0 0 0 3px rgba(var(--kc-primary-rgb), 0.12);
+    }
+    .kc-rating-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .kc-rating-actions button {
+      height: 38px;
+      flex: 1;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .kc-rating-skip {
+      border: 1px solid #cbd5e1;
+      color: #475569;
+      background: #fff;
+    }
+    .kc-rating-submit {
+      border: 0;
+      color: #fff;
+      background: var(--kc-primary);
+    }
+    .kc-rating-submit:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
     #kc-chat-launcher {
       position: fixed;
       right: 20px;
@@ -370,6 +469,10 @@
       .kc-form {
         flex: 0 0 auto;
         padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      }
+      .kc-rating-panel {
+        inset: calc(56px + env(safe-area-inset-top)) 0 0;
+        padding: 18px;
       }
       #kc-chat-widget.kc-keyboard-open.kc-compose-focused .kc-lead {
         display: none;
@@ -507,8 +610,64 @@
   launcher.style.setProperty('--kc-primary-soft', siteTheme.primarySoft);
   launcher.style.setProperty('--kc-primary-rgb', siteTheme.primaryRgb);
 
+  const ratingPanel = document.createElement('div');
+  ratingPanel.className = 'kc-rating-panel';
+  ratingPanel.hidden = true;
+
+  const ratingCard = document.createElement('div');
+  ratingCard.className = 'kc-rating-card';
+
+  const ratingTitle = document.createElement('h3');
+  ratingTitle.className = 'kc-rating-title';
+  ratingTitle.textContent = `Anh/chị đánh giá trải nghiệm với ${widgetTitle} thế nào?`;
+
+  const ratingNote = document.createElement('p');
+  ratingNote.className = 'kc-rating-note';
+  ratingNote.textContent = 'Đánh giá của anh/chị giúp chúng tôi cải thiện chất lượng tư vấn.';
+
+  const ratingStars = document.createElement('div');
+  ratingStars.className = 'kc-rating-stars';
+  ratingStars.setAttribute('role', 'radiogroup');
+  ratingStars.setAttribute('aria-label', 'Đánh giá từ 1 đến 5 sao');
+
+  const ratingStarButtons = Array.from({ length: 5 }, (_, index) => {
+    const star = document.createElement('button');
+    star.className = 'kc-rating-star';
+    star.type = 'button';
+    star.dataset.rating = String(index + 1);
+    star.setAttribute('role', 'radio');
+    star.setAttribute('aria-checked', 'false');
+    star.setAttribute('aria-label', `${index + 1} sao`);
+    star.textContent = '★';
+    ratingStars.appendChild(star);
+    return star;
+  });
+
+  const ratingFeedback = document.createElement('textarea');
+  ratingFeedback.className = 'kc-rating-feedback';
+  ratingFeedback.maxLength = 500;
+  ratingFeedback.placeholder = 'Góp ý thêm (không bắt buộc)';
+
+  const ratingActions = document.createElement('div');
+  ratingActions.className = 'kc-rating-actions';
+
+  const ratingSkip = document.createElement('button');
+  ratingSkip.className = 'kc-rating-skip';
+  ratingSkip.type = 'button';
+  ratingSkip.textContent = 'Để sau';
+
+  const ratingSubmit = document.createElement('button');
+  ratingSubmit.className = 'kc-rating-submit';
+  ratingSubmit.type = 'button';
+  ratingSubmit.textContent = 'Gửi đánh giá';
+  ratingSubmit.disabled = true;
+
+  ratingActions.append(ratingSkip, ratingSubmit);
+  ratingCard.append(ratingTitle, ratingNote, ratingStars, ratingFeedback, ratingActions);
+  ratingPanel.appendChild(ratingCard);
+
   form.append(attachButton, input, button, fileInput);
-  box.append(head, lead, messages, attachmentPreview, form);
+  box.append(head, lead, messages, attachmentPreview, form, ratingPanel);
   document.body.append(box, launcher);
 
   const externalLauncher = externalLauncherSelector
@@ -526,6 +685,10 @@
   let htmlOverflowBeforeChat = '';
   let mobileScrollLocked = false;
   let mobileViewportBaseline = 0;
+  let activeConversationId = '';
+  let hasCustomerMessage = false;
+  let customerRating = null;
+  let selectedRating = 0;
   nameInput.value = localStorage.kcCustomerName || '';
   phoneInput.value = localStorage.kcCustomerPhone || '';
 
@@ -535,6 +698,7 @@
   phoneInput.onkeydown = e => { if (e.key === 'Enter') input.focus(); };
 
   function closeChat() {
+    ratingPanel.hidden = true;
     box.classList.add('kc-closed');
     box.classList.remove('kc-keyboard-open');
     box.classList.remove('kc-compose-focused');
@@ -552,6 +716,42 @@
     lockPageScroll();
     pollWebsiteMessages();
     if (!mobileMedia.matches) input.focus();
+  }
+
+  function ratingPromptKey() {
+    return `kc-rating-prompted:${activeConversationId || vid}`;
+  }
+
+  function shouldRequestRating() {
+    return hasCustomerMessage
+      && !customerRating
+      && sessionStorage.getItem(ratingPromptKey()) !== 'true';
+  }
+
+  function requestClose() {
+    if (shouldRequestRating()) {
+      showRatingPanel();
+      return;
+    }
+    closeChat();
+  }
+
+  function showRatingPanel() {
+    selectedRating = 0;
+    ratingFeedback.value = '';
+    ratingNote.textContent = 'Đánh giá của anh/chị giúp chúng tôi cải thiện chất lượng tư vấn.';
+    updateRatingStars();
+    ratingPanel.hidden = false;
+    input.blur();
+    sessionStorage.setItem(ratingPromptKey(), 'true');
+  }
+
+  function updateRatingStars() {
+    ratingStarButtons.forEach((star, index) => {
+      star.classList.toggle('active', index < selectedRating);
+      star.setAttribute('aria-checked', index + 1 === selectedRating ? 'true' : 'false');
+    });
+    ratingSubmit.disabled = selectedRating < 1;
   }
 
   function lockPageScroll() {
@@ -604,17 +804,17 @@
 
   window.KingComChat = {
     open: openChat,
-    close: closeChat,
+    close: requestClose,
     toggle() {
       if (box.classList.contains('kc-closed')) openChat();
-      else closeChat();
+      else requestClose();
     }
   };
 
   box.classList.add('kc-closed');
   launcher.style.display = externalLauncher ? 'none' : 'block';
   if (externalLauncher) externalLauncher.addEventListener('click', openChat);
-  minimize.onclick = closeChat;
+  minimize.onclick = requestClose;
   launcher.onclick = openChat;
   window.visualViewport?.addEventListener('resize', syncMobileViewport);
   window.visualViewport?.addEventListener('scroll', syncMobileViewport);
@@ -674,6 +874,12 @@
       if (!res.ok) throw new Error(data.error || `http_${res.status}`);
 
       typing.remove();
+      const nextConversationId = String(data.conversationId || activeConversationId);
+      if (nextConversationId && nextConversationId !== activeConversationId) {
+        customerRating = null;
+      }
+      activeConversationId = nextConversationId;
+      hasCustomerMessage = true;
       add(agentName, data.reply || 'Đã nhận tin nhắn', 'bot');
     } catch (e) {
       typing.remove();
@@ -756,6 +962,10 @@
       const res = await fetch(`${apiBase}/webhooks/website-chat/messages?${params.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
+      if (data.conversation) {
+        activeConversationId = String(data.conversation.id || activeConversationId);
+        customerRating = Number(data.conversation.customer_rating) || null;
+      }
       const isInitialHistory = !historyLoaded && !lastPollAt;
       if (isInitialHistory && Array.isArray(data.messages) && data.messages.length) {
         messages.innerHTML = '';
@@ -764,6 +974,7 @@
         if (msg.created_at) lastPollAt = msg.created_at;
         if (renderedMessageIds.has(msg.id)) continue;
         renderedMessageIds.add(msg.id);
+        if (msg.direction === 'in') hasCustomerMessage = true;
         if (isInitialHistory) {
           add(messageName(msg), msg.text, messageRole(msg), messageMediaUrls(msg));
         } else if (msg.sender_type === 'staff') {
@@ -775,6 +986,34 @@
       // Polling is best-effort; sending still reports its own errors.
     } finally {
       isPolling = false;
+    }
+  }
+
+  async function submitRating() {
+    if (selectedRating < 1 || ratingSubmit.disabled) return;
+    ratingSubmit.disabled = true;
+    ratingSkip.disabled = true;
+    try {
+      const res = await fetch(`${apiBase}/webhooks/website-chat/rating`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          visitorId: vid,
+          conversationId: activeConversationId,
+          rating: selectedRating,
+          feedback: ratingFeedback.value.trim()
+        })
+      });
+      const raw = await res.text();
+      const data = raw ? JSON.parse(raw) : {};
+      if (!res.ok) throw new Error(data.error || `rating_http_${res.status}`);
+      customerRating = Number(data.rating) || selectedRating;
+      activeConversationId = String(data.conversationId || activeConversationId);
+      closeChat();
+    } catch {
+      ratingNote.textContent = 'Chưa gửi được đánh giá. Anh/chị thử lại giúp chúng tôi.';
+      ratingSubmit.disabled = false;
+      ratingSkip.disabled = false;
     }
   }
 
@@ -879,6 +1118,14 @@
   attachButton.onclick = () => fileInput.click();
   fileInput.onchange = () => setSelectedImage(fileInput.files?.[0]);
   attachmentRemove.onclick = clearSelectedImage;
+  ratingStarButtons.forEach(star => {
+    star.onclick = () => {
+      selectedRating = Number(star.dataset.rating);
+      updateRatingStars();
+    };
+  });
+  ratingSubmit.onclick = submitRating;
+  ratingSkip.onclick = closeChat;
   input.addEventListener('focus', () => {
     box.classList.add('kc-compose-focused');
     syncMobileViewport();

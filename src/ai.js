@@ -17,6 +17,7 @@ const {
   applyCustomerBranding
 } = require('./sourceRegistry');
 const { answerProductGuidanceFromWeb } = require('./webGuidance');
+const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
 
 async function callOpenAI(prompt, timeoutMs) {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -53,29 +54,46 @@ Yêu cầu định dạng bắt buộc:
     model,
     messages: [{ role: 'user', content: formattedPrompt }]
   };
-  requestBody[isOpenRouter ? 'max_tokens' : 'max_completion_tokens'] = maxOutputTokens;
+  if (isOpenRouter) {
+    requestBody.reasoning = {
+      effort: process.env.OPENAI_REASONING_EFFORT || 'minimal',
+      exclude: true
+    };
+  }
 
+  const emptyResponseRetries = Math.max(0, Number(process.env.OPENAI_EMPTY_RESPONSE_RETRIES || 1));
   try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers,
-      body: JSON.stringify(requestBody)
-    });
+    for (let attempt = 0; attempt <= emptyResponseRetries; attempt += 1) {
+      const attemptBody = { ...requestBody };
+      attemptBody[isOpenRouter ? 'max_tokens' : 'max_completion_tokens'] = attempt === 0
+        ? maxOutputTokens
+        : Math.max(maxOutputTokens * 2, 1200);
 
-    const raw = await res.text();
-    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${raw.slice(0, 1000)}`);
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers,
+        body: JSON.stringify(attemptBody)
+      });
 
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      throw new Error('OpenAI returned invalid JSON');
+      const raw = await res.text();
+      if (!res.ok) throw new Error(`OpenAI ${res.status}: ${raw.slice(0, 1000)}`);
+
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error('OpenAI returned invalid JSON');
+      }
+
+      const content = extractAssistantText(data);
+      if (content) return content;
+
+      const emptyError = createEmptyResponseError(data);
+      if (attempt >= emptyResponseRetries) throw emptyError;
+      console.warn(`OpenAI empty response; retrying once (${emptyError.responseDetails})`);
     }
-
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error('OpenAI returned empty response');
-    return String(content).trim();
+    throw new Error('OpenAI returned empty response after retry');
   } catch (err) {
     if (err?.name === 'AbortError') throw new Error(`OpenAI timeout after ${timeoutMs}ms`);
     throw err;

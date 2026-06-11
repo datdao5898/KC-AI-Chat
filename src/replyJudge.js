@@ -1,5 +1,6 @@
 const { detectMessageLanguage } = require('./ai');
 const { resolveCustomerBrand } = require('./sourceRegistry');
+const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
 
 function getApiConfig() {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -12,7 +13,7 @@ function getApiConfig() {
   return { apiKey, baseUrl, model, maxOutputTokens, timeoutMs };
 }
 
-async function callOpenAI(prompt, timeoutMs) {
+async function callOpenAI(prompt, timeoutMs, attempt = 1) {
   const { apiKey, baseUrl, model, maxOutputTokens } = getApiConfig();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -41,7 +42,15 @@ async function callOpenAI(prompt, timeoutMs) {
       { role: 'user', content: prompt }
     ]
   };
-  requestBody[isOpenRouter ? 'max_tokens' : 'max_completion_tokens'] = maxOutputTokens;
+  requestBody[isOpenRouter ? 'max_tokens' : 'max_completion_tokens'] = attempt === 1
+    ? maxOutputTokens
+    : Math.max(maxOutputTokens * 2, 1000);
+  if (isOpenRouter) {
+    requestBody.reasoning = {
+      effort: process.env.OPENAI_JUDGE_REASONING_EFFORT || 'minimal',
+      exclude: true
+    };
+  }
 
   try {
     const res = await fetch(`${baseUrl}/chat/completions`, {
@@ -61,9 +70,9 @@ async function callOpenAI(prompt, timeoutMs) {
       throw new Error('OpenAI returned invalid JSON');
     }
 
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error('OpenAI returned empty response');
-    return String(content).trim();
+    const content = extractAssistantText(data);
+    if (!content) throw createEmptyResponseError(data);
+    return content;
   } catch (err) {
     if (err?.name === 'AbortError') throw new Error(`OpenAI timeout after ${timeoutMs}ms`);
     throw err;
@@ -330,7 +339,7 @@ async function judgeAiReply(payload) {
       const retryPrompt = attempt === 1
         ? prompt
         : `${prompt}\n\nPrevious attempt failed to return parseable JSON. Return exactly one JSON object now.`;
-      const raw = await callOpenAI(retryPrompt, timeoutMs);
+      const raw = await callOpenAI(retryPrompt, timeoutMs, attempt);
       const parsed = safeJsonParse(raw);
       if (!parsed) {
         lastError = 'Judge returned invalid JSON';

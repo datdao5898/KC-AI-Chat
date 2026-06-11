@@ -65,6 +65,44 @@
     }[groupKey(group)] || group || KC.t('commonSource');
   }
 
+  function parseMessageRaw(message) {
+    if (message?.raw_json && typeof message.raw_json === 'object') return message.raw_json;
+    try {
+      return JSON.parse(message?.raw_json || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  function safeCustomerPageUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function latestCustomerPage(messages = []) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.direction !== 'in') continue;
+      const raw = parseMessageRaw(message);
+      const url = safeCustomerPageUrl(raw.siteUrl || raw.pageUrl || raw.url);
+      if (url) return url;
+    }
+    return '';
+  }
+
+  function customerPageLabel(value) {
+    try {
+      const url = new URL(value);
+      return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`;
+    } catch {
+      return value;
+    }
+  }
+
   function getConvSourceKey(conv) {
     return conv.source_key || `${groupKey(conv)}/${conv.source_name || conv.channel || 'unknown'}`;
   }
@@ -195,6 +233,12 @@
     return `<span class="compact-status ${cls}">${KC.esc(text)}</span>`;
   }
 
+  function ratingStars(rating) {
+    const value = Math.max(0, Math.min(5, Number(rating) || 0));
+    if (!value) return '';
+    return `<span class="customer-rating" title="${KC.esc(`${value}/5`)}">${'★'.repeat(value)}${'☆'.repeat(5 - value)}</span>`;
+  }
+
   function convItem(conv) {
     const active = data.selected?.conversation?.id === conv.id;
     const showSource = !data.activeSource.startsWith('source:');
@@ -209,6 +253,7 @@
           ${compactStatus(conv.auto_reply ? 'Auto ON' : 'Auto OFF', conv.auto_reply ? 'on' : 'off')}
           ${conv.needs_human ? compactStatus(KC.t('needsStaff'), 'need') : ''}
           ${Number(conv.reply_review_count || 0) > 0 ? compactStatus(`${KC.t('needsImprovement')} ${conv.reply_review_count}`, 'warn') : ''}
+          ${ratingStars(conv.customer_rating)}
         </div>
       </button>
     `;
@@ -248,10 +293,7 @@
   }
 
   function messageItem(message) {
-    const raw = (() => {
-      if (message.raw_json && typeof message.raw_json === 'object') return message.raw_json;
-      try { return JSON.parse(message.raw_json || '{}'); } catch { return {}; }
-    })();
+    const raw = parseMessageRaw(message);
     const media = raw?._media || {};
     const attachmentUrls = Array.isArray(media.imageUrls)
       ? media.imageUrls
@@ -286,16 +328,23 @@
     `;
   }
 
-  function contactRows(conv) {
+  function contactRows(conv, customerPageUrl = '') {
     const rows = [
       [KC.t('phone'), conv.phone],
       [KC.t('email'), conv.email],
       ['ID', conv.external_id],
       [KC.t('source'), conv.source_name || conv.source_key],
-      [KC.t('status'), conv.status || 'open']
+      [KC.t('customerPage'), customerPageUrl],
+      [KC.t('status'), conv.status || 'open'],
+      [KC.t('customerRating'), conv.customer_rating ? `${'★'.repeat(Number(conv.customer_rating))}${'☆'.repeat(5 - Number(conv.customer_rating))} ${conv.customer_rating}/5` : ''],
+      [KC.t('ratingFeedback'), conv.customer_rating_feedback]
     ].filter(([, value]) => String(value || '').trim());
     return rows.length
-      ? rows.map(([label, value]) => `<div class="detail-row"><span>${KC.esc(label)}</span><b>${KC.esc(value)}</b></div>`).join('')
+      ? rows.map(([label, value]) => `<div class="detail-row"><span>${KC.esc(label)}</span>${
+          label === KC.t('customerPage')
+            ? `<a class="detail-link" href="${KC.esc(value)}" target="_blank" rel="noopener noreferrer">${KC.esc(value)}</a>`
+            : `<b>${KC.esc(value)}</b>`
+        }</div>`).join('')
       : `<div class="muted">${KC.esc(KC.t('noData'))}</div>`;
   }
 
@@ -322,7 +371,7 @@
     `).join('');
   }
 
-  function renderDetailsDrawer(conv, alerts) {
+  function renderDetailsDrawer(conv, alerts, customerPageUrl = '') {
     if (!data.detailsOpen) return '';
     return `
       <aside class="customer-drawer">
@@ -335,7 +384,7 @@
         <div class="drawer-scroll">
           <section class="drawer-section">
             <h4>${KC.esc(KC.t('customerInfo'))}</h4>
-            <div class="detail-stack">${contactRows(conv)}</div>
+            <div class="detail-stack">${contactRows(conv, customerPageUrl)}</div>
             <p class="muted">${KC.esc(conv.profile_summary || KC.t('noCustomerSummary'))}</p>
           </section>
           <section class="drawer-section">
@@ -375,12 +424,19 @@
     const conv = selected.conversation;
     const alerts = selected.alerts || [];
     const isWebsiteChat = groupKey(conv) === 'website';
+    const customerPageUrl = isWebsiteChat ? latestCustomerPage(selected.messages || []) : '';
     return `
       <section class="inbox-detail">
         <header class="conversation-header">
           <div class="conversation-identity">
             <h3>${KC.esc(convName(conv))}</h3>
             <div>${KC.esc(conv.source_name || sourceGroupLabel(groupKey(conv)))} · ${KC.esc(conv.phone || conv.external_id || '')}</div>
+            ${customerPageUrl ? `
+              <a class="customer-page-link" href="${KC.esc(customerPageUrl)}" target="_blank" rel="noopener noreferrer" title="${KC.esc(KC.t('openCustomerPage'))}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7"></path><path d="M10 14 21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>
+                <span>${KC.esc(customerPageLabel(customerPageUrl))}</span>
+              </a>
+            ` : ''}
           </div>
           <div class="conversation-actions">
             <button class="btn ${conv.auto_reply ? 'danger' : ''}" id="toggleAutoBtn" type="button">${conv.auto_reply ? KC.esc(KC.t('toggleAutoOff')) : KC.esc(KC.t('toggleAutoOn'))}</button>
@@ -425,7 +481,7 @@
             </div>
           </div>
         ` : ''}
-        ${renderDetailsDrawer(conv, alerts)}
+        ${renderDetailsDrawer(conv, alerts, customerPageUrl)}
       </section>
     `;
   }

@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
 const { buildSourceContext, lookupEnvMap } = require('./sourceRegistry');
+const { normalizeRating, normalizeRatingFeedback } = require('./conversationRating');
 
 function postgresConfig() {
   if (process.env.DATABASE_URL) {
@@ -138,6 +139,9 @@ async function initDb() {
       handoff_status TEXT DEFAULT '',
       handoff_at TIMESTAMPTZ,
       handled_at TIMESTAMPTZ,
+      customer_rating INTEGER,
+      customer_rating_feedback TEXT DEFAULT '',
+      customer_rated_at TIMESTAMPTZ,
       deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -233,6 +237,11 @@ async function initDb() {
       ON staff_alerts(conversation_id, status, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ai_reply_reviews_source_status_created
       ON ai_reply_reviews(source_key, status, created_at DESC);
+  `);
+  await db.query(`
+    ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rating INTEGER;
+    ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rating_feedback TEXT DEFAULT '';
+    ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rated_at TIMESTAMPTZ;
   `);
   await backfillConversationSources();
   await refreshConfiguredSourceNames();
@@ -588,6 +597,50 @@ async function listWebsiteConversationMessages(visitorId, since = '', limit = 20
   return { conversation, messages: rows };
 }
 
+async function rateWebsiteConversation(visitorId, conversationIdValue, ratingValue, feedbackValue = '') {
+  const externalId = String(visitorId || '').trim();
+  const conversationId = String(conversationIdValue || '').trim();
+  const rating = normalizeRating(ratingValue);
+  if (!externalId) {
+    const error = new Error('visitor_id_required');
+    error.code = 'visitor_id_required';
+    throw error;
+  }
+  if (!rating) {
+    const error = new Error('invalid_rating');
+    error.code = 'invalid_rating';
+    throw error;
+  }
+
+  const feedback = normalizeRatingFeedback(feedbackValue);
+  const { rows } = await db.query(`
+    WITH target AS (
+      SELECT c.id
+      FROM conversations c
+      JOIN customers cu ON cu.id=c.customer_id
+      WHERE c.channel='haravan_website'
+        AND cu.channel='haravan_website'
+        AND cu.external_id=$3
+        AND c.deleted_at IS NULL
+        AND c.status='open'
+        AND ($4='' OR c.id=$4)
+      ORDER BY c.updated_at DESC, c.id DESC
+      LIMIT 1
+    )
+    UPDATE conversations c
+    SET customer_rating=$1,
+        customer_rating_feedback=$2,
+        customer_rated_at=CURRENT_TIMESTAMP,
+        status='closed',
+        updated_at=CURRENT_TIMESTAMP
+    FROM target
+    WHERE c.id=target.id
+    RETURNING c.*
+  `, [rating, feedback, externalId, conversationId]);
+
+  return decorateConversation(rows[0]);
+}
+
 async function addStaffReply(conversationId, text, attachments = []) {
   const cleanText = String(text || '').trim();
   const cleanAttachments = (Array.isArray(attachments) ? attachments : []).slice(0, 3);
@@ -773,5 +826,5 @@ module.exports = {
   db, initDb, getOrCreateCustomer, getOrCreateConversation, saveMessage, markProcessed, getRecentMessages,
   listConversations, getConversation, updateConversationSummary, updateCustomerLearning, flagHandoff, resolveHandoff,
   updateAlertDelivery, listStaffAlerts, softDeleteMessage, softDeleteConversation, hardDeleteConversation, getWebsiteConversationByVisitor,
-  listWebsiteConversationMessages, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews
+  listWebsiteConversationMessages, rateWebsiteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews
 };

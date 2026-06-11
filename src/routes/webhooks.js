@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { rateLimit } = require('express-rate-limit');
-const { markProcessed, listWebsiteConversationMessages } = require('../db');
+const { markProcessed, listWebsiteConversationMessages, rateWebsiteConversation } = require('../db');
 const { processIncoming } = require('../messagePipeline');
 const { sendFacebookMessage, getFacebookUserProfile, verifySignature, requireSignedWebhook } = require('../channels/facebook');
 const { sendZaloMessage } = require('../channels/zalo');
@@ -171,6 +171,31 @@ router.get('/website-chat/messages', async (req, res) => {
   if (!visitorId) return res.status(400).json({ error: 'visitor_id_required' });
   const result = await listWebsiteConversationMessages(visitorId, req.query.since || '', req.query.limit || 20);
   res.json({ ok: true, ...result });
+});
+
+router.post('/website-chat/rating', websiteChatLimiter, async (req, res) => {
+  try {
+    const conversation = await rateWebsiteConversation(
+      req.body?.visitorId,
+      req.body?.conversationId,
+      req.body?.rating,
+      req.body?.feedback
+    );
+    if (!conversation) return res.status(404).json({ error: 'conversation_not_found' });
+    return res.json({
+      ok: true,
+      conversationId: conversation.id,
+      rating: conversation.customer_rating,
+      feedback: conversation.customer_rating_feedback || '',
+      ratedAt: conversation.customer_rated_at
+    });
+  } catch (error) {
+    if (['visitor_id_required', 'invalid_rating'].includes(error.code)) {
+      return res.status(400).json({ error: error.code });
+    }
+    console.error('Website chat rating error:', error);
+    return res.status(500).json({ error: 'rating_failed' });
+  }
 });
 
 module.exports = router;

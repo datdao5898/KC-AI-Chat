@@ -1,3 +1,5 @@
+const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
+
 const MAX_IMAGES = 3;
 
 function isAllowedFacebookMediaUrl(value) {
@@ -174,7 +176,8 @@ async function analyzeProductImages({ imageUrls = [], imageInputs = [], customer
     const raw = await response.text();
     if (!response.ok) throw new Error(`Vision provider ${response.status}: ${raw.slice(0, 800)}`);
     const result = JSON.parse(raw);
-    const contentText = result?.choices?.[0]?.message?.content;
+    const contentText = extractAssistantText(result);
+    if (!contentText) throw createEmptyResponseError(result, 'Vision provider');
     const parsed = safeJsonParse(contentText);
     if (!parsed) throw new Error('Vision provider returned invalid JSON');
     return normalizeVisionResult(parsed, model, urls.length);

@@ -1,4 +1,5 @@
 const { compactHost } = require('./sourceRegistry');
+const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
 
 function asBool(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -243,9 +244,11 @@ async function answerProductGuidanceFromWeb({
     }
 
     const message = data?.choices?.[0]?.message;
-    const content = sanitizeCustomerReply(message?.content);
+    const assistantText = extractAssistantText(data);
+    if (!assistantText) throw createEmptyResponseError(data, 'OpenRouter web search');
+    const content = sanitizeCustomerReply(assistantText);
     const webSources = extractCitations(message, config.allowedDomains);
-    if (!content) throw new Error('OpenRouter web search returned empty response');
+    if (!content) throw new Error('OpenRouter web search returned unusable response');
     if (!webSources.length) throw new Error('OpenRouter web search returned no allowed official citations');
 
     const contentUrls = extractUrls(content);
