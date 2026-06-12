@@ -134,6 +134,46 @@ function normalizeCustomerReply(reply) {
     .trim();
 }
 
+function contactAcknowledgement(language = 'vi') {
+  if (language === 'en') {
+    return 'I already have the phone number you provided and will use it for staff follow-up when needed.';
+  }
+  if (language === 'zh') {
+    return '\u6211\u5df2\u8bb0\u5f55\u60a8\u63d0\u4f9b\u7684\u7535\u8bdd\u53f7\u7801\uff0c\u5982\u9700\u4eba\u5de5\u8ddf\u8fdb\uff0c\u5de5\u4f5c\u4eba\u5458\u4f1a\u4f7f\u7528\u8be5\u53f7\u7801\u8054\u7cfb\u60a8\u3002';
+  }
+  return 'D\u1ea1 em \u0111\u00e3 c\u00f3 s\u1ed1 \u0111i\u1ec7n tho\u1ea1i anh/ch\u1ecb cung c\u1ea5p v\u00e0 s\u1ebd d\u00f9ng s\u1ed1 n\u00e0y \u0111\u1ec3 nh\u00e2n vi\u00ean h\u1ed7 tr\u1ee3 khi c\u1ea7n \u1ea1.';
+}
+
+function asksForPhoneAgain(text) {
+  const raw = String(text || '');
+  const normalized = normalizeForMatch(raw);
+  const mentionsPhone = /\b(so dien thoai|sdt|phone number|contact number|telephone number)\b/i.test(normalized)
+    || /[\u7535\u8bdd\u96fb\u8a71][\u53f7\u865f]?[\u7801\u78bc]?/u.test(raw);
+  if (!mentionsPhone) return false;
+  return /\b(cho .* xin|de lai|vui long|cung cap|chia se|gui .* so|may i have|please share|please leave|please provide|share your|leave your|provide your)\b/i.test(normalized)
+    || /(?:\u8bf7|\u8acb)(?:\u7559\u4e0b|\u63d0\u4f9b|\u53d1\u9001|\u767c\u9001)/u.test(raw);
+}
+
+function avoidRepeatedContactRequest(reply, customer = {}, customerText = '') {
+  if (!String(customer?.phone || '').trim()) return String(reply || '');
+
+  const language = detectMessageLanguage(customerText || reply);
+  const parts = String(reply || '').split(/(\n+|(?<=[.!?\u3002\uff01\uff1f])\s+)/u);
+  let replaced = false;
+  const cleaned = parts.map(part => {
+    if (!asksForPhoneAgain(part)) return part;
+    if (replaced) return '';
+    replaced = true;
+    return contactAcknowledgement(language);
+  }).join('');
+
+  return cleaned
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -347,6 +387,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     customerBrand,
     ragProducts
   );
+  reply = avoidRepeatedContactRequest(reply, freshCustomer, originalText || processingText);
   const judge = await judgeAiReply({
     channel,
     userText: processingText,
@@ -391,6 +432,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     );
   }
   reply = applyCustomerBranding(reply, customerBrand, ragProducts);
+  reply = avoidRepeatedContactRequest(reply, freshCustomer, originalText || processingText);
   const humanDelayMs = estimateHumanReplyDelayMs(reply, Date.now() - startedAt);
   if (humanDelayMs > 0) await sleep(humanDelayMs);
 
@@ -524,5 +566,6 @@ module.exports = {
   normalizeCustomerReply,
   estimateHumanReplyDelayMs,
   improveNoDataReply,
+  avoidRepeatedContactRequest,
   trimHistoryToActiveSession
 };

@@ -858,6 +858,10 @@ async function generateReplyRaw({
   const scopeBrand = String(sourceConfig.brand || '').trim();
   const customerBrand = resolveCustomerBrand({ sourceKey, sourceName, sourceGroup });
   const scopedProducts = loadProducts({ sourceKey });
+  const customerPhone = String(customer?.phone || '').trim();
+  const existingContactInstruction = customerPhone
+    ? `H\u1ed3 s\u01a1 kh\u00e1ch \u0111\u00e3 c\u00f3 s\u1ed1 \u0111i\u1ec7n tho\u1ea1i ${customerPhone}. Tuy\u1ec7t \u0111\u1ed1i kh\u00f4ng h\u1ecfi ho\u1eb7c xin l\u1ea1i s\u1ed1 \u0111i\u1ec7n tho\u1ea1i. Khi c\u1ea7n nh\u00e2n vi\u00ean theo d\u00f5i, h\u00e3y n\u00f3i s\u1ebd d\u00f9ng th\u00f4ng tin li\u00ean h\u1ec7 kh\u00e1ch \u0111\u00e3 cung c\u1ea5p.`
+    : 'H\u1ed3 s\u01a1 kh\u00e1ch ch\u01b0a c\u00f3 s\u1ed1 \u0111i\u1ec7n tho\u1ea1i. Ch\u1ec9 xin th\u00f4ng tin li\u00ean h\u1ec7 khi th\u1ef1c s\u1ef1 c\u1ea7n nh\u00e2n vi\u00ean theo d\u00f5i.';
   const contactInfoReply = buildContactInfoReply(userText, messageLanguage);
   if (contactInfoReply) {
     return {
@@ -980,6 +984,7 @@ async function generateReplyRaw({
 Địa chỉ cửa hàng KingCom: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam
 
 ${sourceContext ? `Nguồn dữ liệu hiện tại:\n${sourceContext}\n` : ''}
+${existingContactInstruction}
 
 Ý định: ${intent}
 ${intent === 'human' ? 'Khách yêu cầu gặp nhân viên.' : 'Khách đang chào hỏi.'}
@@ -1156,6 +1161,7 @@ Kênh: ${channel}
 Ý định dự đoán: ${intent}
 Thông tin khách đã học: ${customer?.profile_summary || ''}
 Sản phẩm khách từng quan tâm: ${customer?.interested_products || '[]'}
+Thông tin liên hệ: ${existingContactInstruction}
 
 Lịch sử gần đây:
 ${historyText}
@@ -1184,8 +1190,9 @@ Quy tắc:
 - Khi tư vấn hoặc liệt kê sản phẩm, bắt buộc đính kèm link sản phẩm trực tiếp từ trường Link/url trong dữ liệu tham khảo để khách bấm xem.
 - Nếu có nhiều sản phẩm phù hợp, liệt kê tối đa 3-5 sản phẩm, mỗi sản phẩm gồm: tên, giá, link xem sản phẩm.
 - Nếu khách hỏi địa chỉ cửa hàng, cho địa chỉ: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam.
-- Nếu không chắc, xin số điện thoại hoặc đề nghị nhân viên tư vấn.
-- Nếu khách muốn mua/chốt/gặp người thật, hỏi số điện thoại và chuyển nhân viên.
+- Nếu không chắc, đề nghị nhân viên tư vấn hoặc kiểm tra thêm.
+- Nếu khách muốn mua/chốt/gặp người thật, chuyển nhân viên hỗ trợ.
+- Quy tắc thông tin liên hệ: ${existingContactInstruction}
 - Không bịa link, tồn kho, bảo hành cụ thể hoặc khuyến mãi nếu dữ liệu không có.`;
 
   try {

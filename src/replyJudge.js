@@ -272,6 +272,9 @@ function buildJudgePrompt({
     `6. Check broad catalog questions separately. If the customer asks what ${expectedBrand} sells in general, the reply should describe product groups, not pretend one random product answers the question.`,
     '7. Check tone and format. No laughing at customers, no markdown bold, no emoji, no "AI/bot/system" wording to customers.',
     `7a. The reply must speak as ${expectedBrand}. Reject or correct it if it presents the seller as KingCom, NewLite, or another page name that is not ${expectedBrand}. Product names and URLs may retain their original wording.`,
+    customer?.phone
+      ? '7b. The customer profile already contains a phone number. Reject any draft that asks the customer to provide or leave a phone number again. The reply may say staff will use the phone number already provided.'
+      : '7b. The customer profile does not contain a phone number, so a polite optional request for contact information is allowed when staff follow-up is genuinely needed.',
     '8. If the draft is correct enough and only mildly imperfect, approve it. Do not reject just because it asks staff to confirm stock.',
     '',
     'Correction rules:',
