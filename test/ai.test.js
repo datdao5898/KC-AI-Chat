@@ -50,3 +50,22 @@ test('generateReply uses configured Facebook brand identity', async () => {
   assert.match(result.reply, /Viltrox/);
   assert.doesNotMatch(result.reply, /\bKingCom\b/);
 });
+
+test('generateReply answers NewLite store address from source FAQ', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'địa chỉ cửa hàng ở đâu vậy ạ',
+    history: [],
+    customer: {},
+    intent: 'store_info',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_source_store_info');
+  assert.match(result.reply, /NewLite/);
+  assert.match(result.reply, /65 Nguyen Minh Hoang/);
+  assert.match(result.reply, /96-96B Nguyen Huy Tuong/);
+  assert.doesNotMatch(result.reply, /phường Bảy Hiền/i);
+});

@@ -8,6 +8,7 @@ const {
   extractExactPrice,
   findProductsByExactPrice,
   loadProducts,
+  loadTextFile,
   parsePriceNumber,
   normalize
 } = require('./rag');
@@ -599,6 +600,32 @@ function buildPolicyRuleReply(userText, lang, scopeBrand = '') {
   return null;
 }
 
+function sourceContactLines(sourceKey = '') {
+  const faq = loadTextFile('faq.md', { sourceKey });
+  const lines = String(faq || '').split(/\r?\n/).map(line => line.trim());
+  return lines
+    .filter(line => /^-\s*(?:HCM|Ha Noi|Hà Nội)\s*:/i.test(line))
+    .map(line => line.replace(/^-\s*/, ''))
+    .slice(0, 3);
+}
+
+function buildStoreInfoReply({ sourceKey = '', customerBrand = 'KingCom', lang = 'vi' } = {}) {
+  const locations = sourceContactLines(sourceKey);
+  if (!locations.length) {
+    if (lang === 'en') return `I do not have a verified store address for ${customerBrand} in the current source data. I have forwarded this to staff for checking.`;
+    if (lang === 'zh') return `当前资料中没有可核实的 ${customerBrand} 门店地址，我已转交工作人员进一步确认。`;
+    return `Dạ hiện dữ liệu của ${customerBrand} chưa có địa chỉ cửa hàng đã được xác thực. Em đã chuyển nhân viên kiểm tra thêm ạ.`;
+  }
+
+  if (lang === 'en') {
+    return `${customerBrand} store addresses:\n${locations.map(line => `- ${line}`).join('\n')}`;
+  }
+  if (lang === 'zh') {
+    return `${customerBrand} 门店地址：\n${locations.map(line => `- ${line}`).join('\n')}`;
+  }
+  return `Dạ địa chỉ cửa hàng ${customerBrand}:\n${locations.map(line => `- ${line}`).join('\n')}`;
+}
+
 function buildProductGuidanceFallbackReply(products, lang = 'vi') {
   const name = productDisplayName(products?.[0], '');
   if (lang === 'en') {
@@ -904,20 +931,20 @@ async function generateReplyRaw({
     };
   }
 
-  const localizedRuleReply = buildLocalizedRuleReply(intent, userText, messageLanguage, scopeBrand);
-  if (localizedRuleReply) {
+  if (intent === 'store_info') {
     return {
-      reply: localizedRuleReply,
+      reply: buildStoreInfoReply({ sourceKey, customerBrand, lang: messageLanguage }),
       aiUsed: 0,
       aiError: false,
-      aiSource: 'rule',
+      aiSource: 'rule_source_store_info',
       ragProducts: []
     };
   }
 
-  if (intent === 'store_info') {
+  const localizedRuleReply = buildLocalizedRuleReply(intent, userText, messageLanguage, scopeBrand);
+  if (localizedRuleReply) {
     return {
-      reply: 'Dạ địa chỉ cửa hàng KingCom là 65 Nguyễn Minh Hoàng, phường Bảy Hiền, TP. Hồ Chí Minh ạ. Anh/chị cần em hỗ trợ thêm sản phẩm nào không?',
+      reply: localizedRuleReply,
       aiUsed: 0,
       aiError: false,
       aiSource: 'rule',

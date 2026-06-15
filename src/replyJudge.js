@@ -1,6 +1,7 @@
 const { detectMessageLanguage } = require('./ai');
 const { resolveCustomerBrand } = require('./sourceRegistry');
 const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
+const { loadTextFile } = require('./rag');
 
 function getApiConfig() {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -206,6 +207,10 @@ function buildJudgePrompt({
   const historyText = summarizeHistory(history);
   const productsText = summarizeProducts(ragProducts);
   const webSourcesText = summarizeWebSources(webSources);
+  const trustedSourceKnowledge = [
+    loadTextFile('faq.md', { sourceKey }),
+    loadTextFile('policies.md', { sourceKey })
+  ].filter(Boolean).join('\n\n').slice(0, 7000);
   const validationText = validation?.ok === false
     ? `Previous rule validator rejected the draft reply: ${validation.reason || 'unknown reason'}`
     : 'Previous rule validator approved the draft reply.';
@@ -255,6 +260,9 @@ function buildJudgePrompt({
     'Official web sources used for product guidance:',
     webSourcesText || '(none)',
     '',
+    'Trusted FAQ and policy knowledge for this source:',
+    trustedSourceKnowledge || '(none)',
+    '',
     'Draft reply to judge:',
     String(reply || '').trim(),
     '',
@@ -267,7 +275,7 @@ function buildJudgePrompt({
     '2. Check whether the draft reply answers that inferred need directly. Reject if it answers a different question or ignores the latest message.',
     '3. Check product relevance. Product name/category/brand/model in the reply must match the customer need and the retrieved catalog. Do not let a generic word match change the category, e.g. "computer mouse" must not become "microphone for computer".',
     '4. Check source scope. If a fanpage/source is scoped to one brand, the reply must not recommend another brand unless recent context clearly asks to switch.',
-    '5. Check support. Product identity, price, SKU, seller link, warranty, VAT, delivery, stock, or policy claims must be supported by retrieved catalog, recent conversation, or source data shown here. Product usage guidance may also be supported by the official web sources shown here.',
+    '5. Check support. Product identity, price, SKU, seller link, warranty, VAT, delivery, stock, store address, contact details, or policy claims must be supported by retrieved catalog, recent conversation, trusted FAQ/policy knowledge, or source data shown here. Product usage guidance may also be supported by the official web sources shown here.',
     '5a. Official web sources may support only usage, setup, pairing, connection, configuration, and troubleshooting. They must not be used as evidence for store price, stock, promotions, VAT, delivery, or seller policy.',
     `6. Check broad catalog questions separately. If the customer asks what ${expectedBrand} sells in general, the reply should describe product groups, not pretend one random product answers the question.`,
     '7. Check tone and format. No laughing at customers, no markdown bold, no emoji, no "AI/bot/system" wording to customers.',
