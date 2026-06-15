@@ -1,7 +1,7 @@
 const { getOrCreateCustomer, getOrCreateConversation, saveMessage, getRecentMessages, updateCustomerLearning, updateConversationSummary, flagHandoff } = require('./db');
 const { classifyIntent } = require('./intent');
 const { generateReply, summarizeConversation, summarizeConversationFast, detectMessageLanguage, extractContactInfo } = require('./ai');
-const { notifyStaff, notifyWebsiteMessage } = require('./staffAlert');
+const { notifyStaff } = require('./staffAlert');
 const { logAiResponse } = require('./aiTrace');
 const {
   buildSourceContext,
@@ -311,17 +311,6 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceName: source.sourceName
   });
   await updateCustomerLearning(customer.id, conversation.id, intent, processingText);
-
-  if (channel === 'haravan_website') {
-    notifyWebsiteMessage({
-      externalUserId,
-      text: storedText,
-      conversationId: conversation.id,
-      sourceName: source.sourceName,
-      sourceKey: source.sourceKey,
-      customer
-    }).catch(e => console.error('notifyWebsiteMessage error:', e.message));
-  }
 
   const recentMessages = await getRecentMessages(conversation.id, 12);
   const history = enrichHistoryWithMediaContext(trimHistoryToActiveSession(recentMessages));
