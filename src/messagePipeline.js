@@ -51,7 +51,7 @@ function detectHandoff({ text, intent, aiError, ragProducts }) {
   if (isPolicyFollowUpText(text, intent)) {
     return { needed: true, reason: 'Khách cần xác nhận VAT/bảo hành/chính sách' };
   }
-  if (['buy', 'price', 'product_search', 'order'].includes(intent) && (!ragProducts || ragProducts.length === 0) && !isGenericConsultationRequest(text, intent)) {
+  if (['buy', 'price', 'product_search', 'product_specs', 'order'].includes(intent) && (!ragProducts || ragProducts.length === 0) && !isGenericConsultationRequest(text, intent)) {
     return { needed: true, reason: 'Không có dữ liệu sản phẩm phù hợp trong RAG' };
   }
   return { needed: false };

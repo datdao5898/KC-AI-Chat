@@ -21,3 +21,13 @@ test('classifyIntent handles warranty and policy questions', () => {
 test('classifyIntent handles product search', () => {
   assert.equal(classifyIntent('looking for mobile tripod').intent, 'product_search');
 });
+
+test('classifyIntent handles product specification questions', () => {
+  assert.equal(
+    classifyIntent('g\u1eedi cho m\u00ecnh th\u00f4ng s\u1ed1 c\u1ee7a Cadothy AMAZE 5Pro').intent,
+    'product_specs'
+  );
+  assert.equal(classifyIntent('Cadothy AMAZE 5Pro c\u00f3 RAM bao nhi\u00eau').intent, 'product_specs');
+  assert.equal(classifyIntent('camera n\u00e0y c\u00f3 \u0111\u1ed9 ph\u00e2n gi\u1ea3i bao nhi\u00eau').intent, 'product_specs');
+  assert.equal(classifyIntent('Cadothy AMAZE 5Pro \u7684\u6280\u672f\u53c2\u6570').intent, 'product_specs');
+});

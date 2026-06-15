@@ -145,19 +145,23 @@ function tokenSimilarity(a, b) {
   return overlap / Math.max(left.length, right.length);
 }
 
-function summarizeProducts(ragProducts = []) {
+function summarizeProducts(ragProducts = [], includeDescriptions = false) {
   return (ragProducts || []).slice(0, 5).map((product, index) => {
     const name = product.name || product.title || product.sku || `Product ${index + 1}`;
     const price = product.price || product.gia || product.compare_at_price || '';
     const url = product.url || product.link || product.product_url || '';
     const sku = product.sku || '';
     const brand = product.brand || product.vendor || product.category || '';
+    const description = includeDescriptions
+      ? String(product.description || product.content || product.details || '').replace(/\s+/g, ' ').trim().slice(0, 3000)
+      : '';
     return [
       `${index + 1}. ${name}`,
       sku ? `SKU: ${sku}` : '',
       brand ? `Brand/category: ${brand}` : '',
       price ? `Price: ${price}` : '',
-      url ? `Link: ${url}` : ''
+      url ? `Link: ${url}` : '',
+      description ? `Catalog description/specifications: ${description}` : ''
     ].filter(Boolean).join(' | ');
   }).join('\n');
 }
@@ -205,7 +209,7 @@ function buildJudgePrompt({
   const expectedBrand = customerBrand || resolveCustomerBrand({ sourceKey, sourceName, sourceGroup });
   const languageLabel = language === 'en' ? 'English' : language === 'zh' ? 'Simplified Chinese' : 'Vietnamese';
   const historyText = summarizeHistory(history);
-  const productsText = summarizeProducts(ragProducts);
+  const productsText = summarizeProducts(ragProducts, /product_specs/i.test(aiSource));
   const webSourcesText = summarizeWebSources(webSources);
   const trustedSourceKnowledge = [
     loadTextFile('faq.md', { sourceKey }),

@@ -261,6 +261,15 @@ function extractExactPrice(query) {
   return prices[0] || null;
 }
 
+function canonicalProductUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    return `${url.hostname.toLowerCase()}${url.pathname.toLowerCase().replace(/\/+$/, '')}`;
+  } catch {
+    return '';
+  }
+}
+
 function findProductsByExactPrice(query, limit = 5, options = {}) {
   const price = extractExactPrice(query);
   if (!price) return [];
@@ -280,6 +289,9 @@ function searchProducts(query, topK = 8, options = {}) {
     : [];
   const scopeBrand = normalize(readSourceConfig(options.sourceKey || '').brand || '');
   const mentionedBrands = getKnownProductBrands().filter(brand => ` ${normQuery} `.includes(` ${brand} `));
+  const requestedProductUrls = (String(query || '').match(/https?:\/\/[^\s<>"')\]]+/gi) || [])
+    .map(canonicalProductUrl)
+    .filter(url => /\/products?\//i.test(url));
   if (scopeBrand && mentionedBrands.some(brand => brand !== scopeBrand)) return [];
   const maxPrice = extractMaxPrice(query);
   const codeWords = words.filter(w => {
@@ -312,12 +324,16 @@ function searchProducts(query, topK = 8, options = {}) {
     const nameAccent = normalizeAccent(p.name || p.title || '');
     const sku = normalize(p.sku || '');
     const vendor = normalize(p.vendor || p.brand || '');
+    const rawProductUrl = p.url || p.link || p.product_url || '';
+    const productUrl = normalize(rawProductUrl);
+    const canonicalUrl = canonicalProductUrl(rawProductUrl);
     const desc = normalize(`${p.description || ''} ${p.tags || ''}`);
     const descAccent = normalizeAccent(`${p.description || ''} ${p.tags || ''}`);
     const haystack = `${name} ${desc}`;
     const identityText = `${name} ${sku} ${vendor} ${normalize(p.url || p.link || p.product_url || '')}`;
     const productShape = { nameNorm: name, nameAccent, descNorm: desc };
 
+    if (requestedProductUrls.length && !requestedProductUrls.includes(canonicalUrl)) continue;
     if (identityWords.length && !identityWords.some(w => identityText.includes(w))) continue;
     if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
     if (wantsLight && !isTrueLightProduct(productShape)) continue;
@@ -341,11 +357,16 @@ function searchProducts(query, topK = 8, options = {}) {
 
     let score = 0;
     let strongMatches = 0;
+    if (requestedProductUrls.includes(canonicalUrl)) {
+      score += 100;
+      strongMatches += 1;
+    }
     for (const w of words) {
       if (sku === w || sku.includes(w)) { score += 8; strongMatches++; }
       if (vendor === w) { score += 7; strongMatches++; }
       else if (vendor.includes(w)) { score += 4; strongMatches++; }
       if (name.includes(w)) { score += 5; strongMatches++; }
+      if (productUrl.includes(w)) { score += 8; strongMatches++; }
       if (desc.includes(w)) score += 1;
     }
     for (const w of accentedWords) {
@@ -385,6 +406,11 @@ function loadTextFile(name, options = {}) {
 function buildContext(query, options = {}) {
   const shouldSearchProducts = options.topK !== 0;
   const products = shouldSearchProducts ? searchProducts(query, options.topK || 8, options) : [];
+  const includeDescriptions = options.includeDescriptions === true;
+  const requestedDescriptionMaxChars = Number(options.descriptionMaxChars || 3500);
+  const descriptionMaxChars = Number.isFinite(requestedDescriptionMaxChars)
+    ? Math.max(200, requestedDescriptionMaxChars)
+    : 3500;
   let ctx = '';
 
   if (!shouldSearchProducts) {
@@ -395,6 +421,13 @@ function buildContext(query, options = {}) {
       const price = p.price || p.compare_at_price || p.gia || '';
       const url = p.url || p.link || p.product_url || '';
       ctx += `${i + 1}. SKU: ${p.sku || 'N/A'} | Ten: ${p.name || p.title || 'N/A'} | Hang: ${p.vendor || p.brand || 'N/A'} | Gia: ${price || 'Lien he'} | Link: ${url || 'Chua co link'}\n`;
+      if (includeDescriptions) {
+        const description = String(p.description || p.content || p.details || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, descriptionMaxChars);
+        if (description) ctx += `Mo ta va thong so tu catalog: ${description}\n`;
+      }
     });
   } else {
     ctx += 'Khong tim thay san pham khop trong bo du lieu.\n';

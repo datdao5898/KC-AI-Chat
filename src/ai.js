@@ -500,6 +500,67 @@ function isProductGuidanceQuery(userText) {
     || /(使用|怎么用|如何使用|说明书|连接|设置|安装|配对)/.test(raw);
 }
 
+function isDirectProductSpecsQuery(userText) {
+  const raw = String(userText || '');
+  const normalized = normalize(userText);
+  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?)\b/i.test(normalized)
+    || /(\u53c2\u6570|\u89c4\u683c|\u6280\u672f\u53c2\u6570|\u914d\u7f6e|\u5c3a\u5bf8|\u91cd\u91cf|\u529f\u7387|\u5206\u8fa8\u7387|\u4f20\u611f\u5668|\u5149\u5708)/.test(raw);
+}
+
+function historyBeforeCurrentMessage(history = [], userText = '') {
+  const rows = [...(history || [])];
+  const last = rows[rows.length - 1];
+  if (
+    last?.sender_type === 'customer'
+    && normalize(last.text) === normalize(userText)
+  ) {
+    rows.pop();
+  }
+  return rows;
+}
+
+const PRODUCT_CONTEXT_WORDS = new Set([
+  'thong', 'so', 'ky', 'thuat', 'cau', 'hinh', 'chi', 'tiet',
+  'cach', 'su', 'dung', 'huong', 'dan', 'ket', 'noi', 'cai', 'dat',
+  'gui', 'truc', 'tiep', 'qua', 'day', 'cho', 'xem', 'nhe', 'nha', 'giup',
+  'san', 'pham', 'mau', 'may', 'nay', 'do', 'vua', 'noi',
+  'technical', 'specification', 'specifications', 'spec', 'specs',
+  'how', 'use', 'using', 'guide', 'instructions', 'setup', 'install',
+  'this', 'that', 'it', 'product', 'model'
+]);
+
+function productIdentityWords(text) {
+  return queryWords(text).filter(word => !PRODUCT_CONTEXT_WORDS.has(word));
+}
+
+function hasExplicitProductReference(text) {
+  const raw = String(text || '');
+  if (/https?:\/\/\S+\/products?\//i.test(raw)) return true;
+  return productIdentityWords(raw).length > 0;
+}
+
+function latestExplicitProductMessage(history = [], userText = '') {
+  return [...historyBeforeCurrentMessage(history, userText)]
+    .reverse()
+    .find(message => (
+      message.sender_type === 'customer'
+      && hasExplicitProductReference(message.text)
+    ));
+}
+
+function isProductSpecsFollowUp(userText, history = []) {
+  const normalized = normalize(userText);
+  const asksToShowHere = /\b(gui qua day|gui truc tiep|truc tiep qua day|cho xem|cho minh xem|noi chi tiet|gui chi tiet)\b/i.test(normalized);
+  if (!asksToShowHere) return false;
+  return historyBeforeCurrentMessage(history, userText)
+    .slice(-6)
+    .some(message => isDirectProductSpecsQuery(message.text));
+}
+
+function isProductSpecsRequest(userText, history = []) {
+  return isDirectProductSpecsQuery(userText) || isProductSpecsFollowUp(userText, history);
+}
+
 function isCommercialPolicyQuestion(userText, intent) {
   const raw = String(userText || '');
   const normalized = normalize(raw);
@@ -643,6 +704,26 @@ function buildProductGuidanceFallbackReply(products, lang = 'vi') {
     : 'Dạ anh/chị cho em xin tên sản phẩm hoặc model cụ thể để em hướng dẫn chính xác hơn ạ.';
 }
 
+function buildProductSpecsFallbackReply(products, lang = 'vi') {
+  const product = products?.[0];
+  const name = productDisplayName(product, '');
+  const description = String(product?.description || product?.content || product?.details || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1600);
+  const url = product?.url || product?.link || product?.product_url || '';
+
+  if (!name || !description) {
+    if (lang === 'en') return 'I could not find detailed specifications for this product in the current catalog. Please share the exact model so our staff can check it.';
+    if (lang === 'zh') return 'å½“å‰äº§å“ç›®å½•ä¸­æœªæ‰¾åˆ°è¯¥äº§å“çš„è¯¦ç»†è§„æ ¼ã€‚è¯·æä¾›å‡†ç¡®åž‹å·ï¼Œä»¥ä¾¿å·¥ä½œäººå‘˜è¿›ä¸€æ­¥ç¡®è®¤ã€‚';
+    return 'D\u1ea1 em ch\u01b0a t\u00ecm th\u1ea5y th\u00f4ng s\u1ed1 chi ti\u1ebft c\u1ee7a s\u1ea3n ph\u1ea9m n\u00e0y trong catalog. Anh/ch\u1ecb cho em xin \u0111\u00fang model \u0111\u1ec3 nh\u00e2n vi\u00ean ki\u1ec3m tra th\u00eam \u1ea1.';
+  }
+
+  if (lang === 'en') return `Catalog information for ${name}:\n\n${description}${url ? `\n\nProduct link: ${url}` : ''}`;
+  if (lang === 'zh') return `${name} çš„äº§å“ç›®å½•ä¿¡æ¯ï¼š\n\n${description}${url ? `\n\näº§å“é“¾æŽ¥ï¼š${url}` : ''}`;
+  return `D\u1ea1, th\u00f4ng tin trong catalog c\u1ee7a ${name}:\n\n${description}${url ? `\n\nLink s\u1ea3n ph\u1ea9m: ${url}` : ''}`;
+}
+
 function fallbackReply(intent, userText, products) {
   const lang = detectMessageLanguage(userText);
   const english = lang === 'en';
@@ -741,20 +822,30 @@ function expandMultilingualSearchTerms(text) {
 function buildSearchQuery(userText, history, customer) {
   const currentWords = queryWords(userText);
   const expandedTerms = expandMultilingualSearchTerms(userText);
-  const recentCustomer = (history || [])
+  const priorHistory = historyBeforeCurrentMessage(history, userText);
+  const recentCustomer = priorHistory
     .filter(m => m.sender_type === 'customer')
     .slice(-4)
     .map(m => m.text)
     .join(' ');
   const interests = customer?.interested_products || '';
-  if (isFollowUpLinkRequest(userText) || isProductGuidanceQuery(userText) || currentWords.length === 0) {
+  const asksSpecs = isProductSpecsRequest(userText, history);
+  const asksGuidance = isProductGuidanceQuery(userText);
+  if (asksSpecs || asksGuidance || isFollowUpLinkRequest(userText)) {
+    if (hasExplicitProductReference(userText)) {
+      return `${userText} ${expandedTerms}`.trim();
+    }
+    const referencedProduct = latestExplicitProductMessage(history, userText);
+    return `${userText} ${expandedTerms} ${referencedProduct?.text || ''}`.trim();
+  }
+  if (currentWords.length === 0) {
     return `${userText} ${expandedTerms} ${recentCustomer} ${interests}`.trim();
   }
   return `${userText} ${expandedTerms}`.trim();
 }
 
 function hasSpecificProductQuery(userText, intent) {
-  if (!['buy', 'price', 'product_search', 'order'].includes(intent)) return false;
+  if (!['buy', 'price', 'product_search', 'product_specs', 'order'].includes(intent)) return false;
   if (isFollowUpLinkRequest(userText)) return false;
   const words = queryWords(userText);
   if (!words.length) return false;
@@ -880,6 +971,7 @@ async function generateReplyRaw({
 }) {
   const messageLanguage = detectMessageLanguage(userText);
   const guidanceQuestion = isProductGuidanceQuery(userText);
+  const specsQuestion = isProductSpecsRequest(userText, history);
   const policyQuestion = isCommercialPolicyQuestion(userText, intent);
   const sourceConfig = readSourceConfig(sourceKey);
   const scopeBrand = String(sourceConfig.brand || '').trim();
@@ -1052,9 +1144,10 @@ ${intent === 'greeting'
   const searchQuery = buildSearchQuery(userText, history, customer);
   const { context, products } = buildContext(searchQuery, {
     sourceKey,
-    topK: policyQuestion ? 0 : (guidanceQuestion ? 1 : 8),
+    topK: policyQuestion ? 0 : ((guidanceQuestion || specsQuestion) ? 1 : 8),
+    includeDescriptions: specsQuestion,
     requireIdentityMatch: !isStartingPriceQuery(userText)
-      && (isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText))
+      && (isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText) || specsQuestion)
   });
   if (guidanceQuestion && products.length) {
     const webGuidance = await answerProductGuidanceFromWeb({
@@ -1168,6 +1261,8 @@ ${intent === 'greeting'
       : '',
     guidanceQuestion
       ? '- Khach dang hoi cach su dung san pham. Hay huong dan tung buoc ngan gon, chi tap trung vao model khop nhat. Co the dung kien thuc san pham pho thong de huong dan, nhung khong bia chi tiet ky thuat, nut bam, cong ket noi, phu kien kem theo hoac tinh nang neu khong chac chan. Neu can, hoi them thiet bi khach dang dung hoac de nghi nhan vien KingCom xac nhan.'
+      : specsQuestion
+        ? '- Khach dang hoi thong so ky thuat cua san pham. Hay tom tat ro cac thong so co trong muc "Mo ta va thong so tu catalog", chi tra loi dung model khop nhat. Khong noi rang khong co thong so neu catalog da cung cap mo ta/thong so.'
       : ''
   ].filter(Boolean).join('\n');
   const sourceContext = [
@@ -1234,10 +1329,14 @@ Quy tắc:
     if (hasDisallowedUrl) {
       console.warn('OpenAI response rejected: unapproved product URL');
       return {
-        reply: guidanceQuestion ? buildProductGuidanceFallbackReply(products, messageLanguage) : fallbackReply(intent, userText, products),
+        reply: guidanceQuestion
+          ? buildProductGuidanceFallbackReply(products, messageLanguage)
+          : specsQuestion
+            ? buildProductSpecsFallbackReply(products, messageLanguage)
+            : fallbackReply(intent, userText, products),
         aiUsed: 1,
         aiError: false,
-        aiSource: 'guardrail_fallback',
+        aiSource: specsQuestion ? 'guardrail_fallback_product_specs' : 'guardrail_fallback',
         searchQuery,
         ragProducts: products
       };
@@ -1246,18 +1345,22 @@ Quy tắc:
       reply: policyQuestion ? reply : ensureProductLinks(reply, products),
       aiUsed: 1,
       aiError: false,
-      aiSource: 'provider',
+      aiSource: specsQuestion ? 'provider_product_specs' : 'provider',
       searchQuery,
       ragProducts: policyQuestion ? [] : products
     };
   } catch (e) {
     console.error('OpenAI async error:', e.message);
     return {
-      reply: guidanceQuestion ? buildProductGuidanceFallbackReply(products, messageLanguage) : fallbackReply(intent, userText, products),
+      reply: guidanceQuestion
+        ? buildProductGuidanceFallbackReply(products, messageLanguage)
+        : specsQuestion
+          ? buildProductSpecsFallbackReply(products, messageLanguage)
+          : fallbackReply(intent, userText, products),
       aiUsed: 0,
       aiError: true,
       aiErrorMessage: e.message,
-      aiSource: 'fallback',
+      aiSource: specsQuestion ? 'fallback_product_specs' : 'fallback',
       searchQuery,
       ragProducts: policyQuestion ? [] : products
     };
@@ -1324,4 +1427,13 @@ function summarizeConversationFast({ messages, customer }) {
   return fallbackSummary(messages, customer);
 }
 
-module.exports = { generateReply, summarizeConversation, summarizeConversationFast, detectMessageLanguage, extractContactInfo };
+module.exports = {
+  generateReply,
+  summarizeConversation,
+  summarizeConversationFast,
+  detectMessageLanguage,
+  extractContactInfo,
+  isProductSpecsRequest,
+  buildSearchQuery,
+  buildProductSpecsFallbackReply
+};

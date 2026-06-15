@@ -21,6 +21,9 @@ function hasWord(msg, words) {
 function classifyIntent(text) {
   const raw = String(text || '');
   if (/[\u3400-\u9FFF\uF900-\uFAFF]/.test(raw)) {
+    if (/(\u53c2\u6570|\u89c4\u683c|\u6280\u672f\u53c2\u6570|\u914d\u7f6e|\u5c3a\u5bf8|\u91cd\u91cf|\u529f\u7387|\u5206\u8fa8\u7387|\u4f20\u611f\u5668|\u5149\u5708)/.test(raw)) {
+      return { intent: 'product_specs', confidence: 0.9 };
+    }
     if (/(人工|客服|联系|電話|电话|回电|真人|員工|员工)/.test(raw)) return { intent: 'human', confidence: 0.9 };
     if (/(地址|门店|店铺|在哪|哪里)/.test(raw)) return { intent: 'store_info', confidence: 0.9 };
     if (/(笔记本|电脑|ThinkPad|MacBook|laptop)/i.test(raw)) return { intent: 'unsupported', confidence: 0.85 };
@@ -32,6 +35,16 @@ function classifyIntent(text) {
 
   const msg = normalize(text);
   const hasPhoneNumber = /(?:\+?84|0)(?:[\s.-]?\d){8,10}\b/.test(raw);
+  if (hasPhrase(msg, [
+    'thong so', 'thong so ky thuat', 'cau hinh', 'chi tiet ky thuat',
+    'chi tiet san pham', 'kich thuoc', 'trong luong', 'cong suat',
+    'do phan giai', 'cam bien', 'khau do', 'tieu cu',
+    'dung luong pin', 'thoi luong pin', 'pin bao lau',
+    'technical specification', 'technical specifications', 'product specification',
+    'product specifications'
+  ]) || hasWord(msg, ['spec', 'specs', 'specification', 'specifications', 'ram'])) {
+    return { intent: 'product_specs', confidence: 0.9 };
+  }
   if (hasPhoneNumber && (
     hasPhrase(msg, ['goi toi so', 'goi vao so', 'goi so', 'goi lai so', 'lien he so', 'so dien thoai', 'sdt', 'hotline'])
     || msg.split(/\s+/).filter(Boolean).length <= 10
