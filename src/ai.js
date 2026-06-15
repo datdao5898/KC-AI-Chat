@@ -618,12 +618,12 @@ function buildStoreInfoReply({ sourceKey = '', customerBrand = 'KingCom', lang =
   }
 
   if (lang === 'en') {
-    return `${customerBrand} store addresses:\n${locations.map(line => `- ${line}`).join('\n')}`;
+    return `You can contact or visit the following locations:\n${locations.map(line => `- ${line}`).join('\n')}`;
   }
   if (lang === 'zh') {
-    return `${customerBrand} 门店地址：\n${locations.map(line => `- ${line}`).join('\n')}`;
+    return `您可以联系或前往以下地点：\n${locations.map(line => `- ${line}`).join('\n')}`;
   }
-  return `Dạ địa chỉ cửa hàng ${customerBrand}:\n${locations.map(line => `- ${line}`).join('\n')}`;
+  return `Dạ anh/chị có thể liên hệ hoặc đến các địa chỉ sau:\n${locations.map(line => `- ${line}`).join('\n')}`;
 }
 
 function buildProductGuidanceFallbackReply(products, lang = 'vi') {

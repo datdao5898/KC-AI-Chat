@@ -64,8 +64,9 @@ test('generateReply answers NewLite store address from source FAQ', async () => 
   });
 
   assert.equal(result.aiSource, 'rule_source_store_info');
-  assert.match(result.reply, /NewLite/);
+  assert.match(result.reply, /liên hệ hoặc đến các địa chỉ sau/i);
   assert.match(result.reply, /65 Nguyen Minh Hoang/);
   assert.match(result.reply, /96-96B Nguyen Huy Tuong/);
+  assert.doesNotMatch(result.reply, /địa chỉ cửa hàng NewLite/i);
   assert.doesNotMatch(result.reply, /phường Bảy Hiền/i);
 });

@@ -328,6 +328,47 @@ function normalizeJudgeResult(parsed, fallbackReply = '') {
   };
 }
 
+function normalizeEvidenceText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function approveTrustedSourceStoreInfo(payload = {}) {
+  if (payload.aiSource !== 'rule_source_store_info' || payload.intent !== 'store_info') return null;
+
+  const faq = loadTextFile('faq.md', { sourceKey: payload.sourceKey || '' });
+  const addressLines = String(faq || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => /^-\s*(?:HCM|Ha Noi|Hà Nội)\s*:/i.test(line))
+    .map(line => normalizeEvidenceText(line.replace(/^-\s*/, '')))
+    .filter(Boolean);
+  if (!addressLines.length) return null;
+
+  const normalizedReply = normalizeEvidenceText(payload.reply);
+  const supportedLines = addressLines.filter(line => normalizedReply.includes(line));
+  if (supportedLines.length !== addressLines.length) return null;
+
+  return {
+    approve: true,
+    inferredCustomerNeed: 'Customer asks for a store or support location',
+    riskType: 'ok',
+    reason: 'Store locations were generated directly from the FAQ for the active source.',
+    severity: 'low',
+    confidence: 1,
+    needsHandoff: false,
+    correctedReply: '',
+    correctedSimilarity: 0,
+    deterministic: true
+  };
+}
+
 async function judgeAiReply(payload) {
   const enabled = process.env.REPLY_JUDGE_ENABLED !== 'false';
   if (!enabled) {
@@ -340,6 +381,9 @@ async function judgeAiReply(payload) {
       correctedReply: ''
     };
   }
+
+  const trustedStoreInfo = approveTrustedSourceStoreInfo(payload);
+  if (trustedStoreInfo) return trustedStoreInfo;
 
   const timeoutMs = Number(process.env.OPENAI_JUDGE_TIMEOUT_MS || process.env.AI_TIMEOUT_MS || 45000);
   const attempts = Math.max(1, Number(process.env.OPENAI_JUDGE_RETRIES || 2));
@@ -390,4 +434,4 @@ async function judgeAiReply(payload) {
   };
 }
 
-module.exports = { judgeAiReply };
+module.exports = { judgeAiReply, approveTrustedSourceStoreInfo };
