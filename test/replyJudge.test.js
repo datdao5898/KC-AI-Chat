@@ -1,6 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { judgeAiReply, approveTrustedSourceStoreInfo } = require('../src/replyJudge');
+const {
+  judgeAiReply,
+  approveTrustedSourceStoreInfo,
+  buildJudgePrompt,
+  judgeUnavailableResult
+} = require('../src/replyJudge');
 
 test('trusted source store address is approved without model judgment', async () => {
   const result = await judgeAiReply({
@@ -28,4 +33,57 @@ test('store address outside source FAQ is not auto-approved', () => {
   });
 
   assert.equal(result, null);
+});
+
+test('judge prompt uses compact context and active product state', () => {
+  const longHistoryText = 'khach hoi rat dai '.repeat(200);
+  const longDescription = 'catalog description '.repeat(500);
+  const prompt = buildJudgePrompt({
+    channel: 'haravan_website',
+    userText: 'thong so cua no',
+    history: Array.from({ length: 12 }, (_, index) => ({
+      sender_type: index % 2 ? 'ai' : 'customer',
+      text: `${index}: ${longHistoryText}`
+    })),
+    reply: 'Da em gui thong so dung san pham.',
+    ragProducts: [{
+      name: 'May Tao Khoi Cam Tay Lensgo Smoke B',
+      sku: 'XLS1',
+      vendor: 'Lensgo',
+      price: '3390000',
+      url: 'https://newlite.vn/products/may-tao-khoi-cam-tay-lensgo-smoke-b',
+      description: longDescription
+    }],
+    intent: 'product_specs',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    customerBrand: 'NewLite',
+    aiSource: 'provider_product_specs',
+    searchQuery: 'thong so Lensgo Smoke B',
+    conversationContext: {
+      current_product_name: 'May Tao Khoi Cam Tay Lensgo Smoke B',
+      current_product_sku: 'XLS1',
+      context_confidence: 0.9
+    },
+    webSources: [{
+      title: 'Official manual',
+      url: 'https://example.com/manual',
+      content: 'manual content '.repeat(300)
+    }]
+  });
+
+  assert.match(prompt, /Conversation context state:/);
+  assert.match(prompt, /May Tao Khoi Cam Tay Lensgo Smoke B/);
+  assert.match(prompt, /\[truncated\]/);
+  assert.ok(prompt.length < 12000);
+});
+
+test('judge unavailable fallback does not force handoff', () => {
+  const result = judgeUnavailableResult('OpenAI returned empty response (finish_reason=length)');
+
+  assert.equal(result.approve, true);
+  assert.equal(result.needsHandoff, false);
+  assert.equal(result.confidence, 0.2);
+  assert.match(result.reason, /Judge unavailable/);
 });

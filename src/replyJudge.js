@@ -2,6 +2,7 @@ const { detectMessageLanguage } = require('./ai');
 const { resolveCustomerBrand } = require('./sourceRegistry');
 const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
 const { loadTextFile } = require('./rag');
+const { normalizeContext } = require('./conversationContext');
 
 function getApiConfig() {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -145,15 +146,21 @@ function tokenSimilarity(a, b) {
   return overlap / Math.max(left.length, right.length);
 }
 
+function compactText(text, maxChars = 800) {
+  const value = String(text || '').replace(/\s+/g, ' ').trim();
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(0, maxChars - 20)).trim()} ...[truncated]`;
+}
+
 function summarizeProducts(ragProducts = [], includeDescriptions = false) {
-  return (ragProducts || []).slice(0, 5).map((product, index) => {
+  return (ragProducts || []).slice(0, 3).map((product, index) => {
     const name = product.name || product.title || product.sku || `Product ${index + 1}`;
     const price = product.price || product.gia || product.compare_at_price || '';
     const url = product.url || product.link || product.product_url || '';
     const sku = product.sku || '';
     const brand = product.brand || product.vendor || product.category || '';
     const description = includeDescriptions
-      ? String(product.description || product.content || product.details || '').replace(/\s+/g, ' ').trim().slice(0, 3000)
+      ? compactText(product.description || product.content || product.details || '', 600)
       : '';
     return [
       `${index + 1}. ${name}`,
@@ -167,10 +174,10 @@ function summarizeProducts(ragProducts = [], includeDescriptions = false) {
 }
 
 function summarizeWebSources(webSources = []) {
-  return (webSources || []).slice(0, 5).map((source, index) => {
+  return (webSources || []).slice(0, 3).map((source, index) => {
     const url = String(source?.url || '').trim();
     const title = String(source?.title || '').trim();
-    const content = String(source?.content || '').trim().slice(0, 800);
+    const content = compactText(source?.content || '', 280);
     return [
       `${index + 1}. ${title || url || 'Official source'}`,
       url ? `URL: ${url}` : '',
@@ -180,12 +187,38 @@ function summarizeWebSources(webSources = []) {
 }
 
 function summarizeHistory(history = []) {
-  return (history || []).slice(-14).map(message => {
+  return (history || []).slice(-6).map(message => {
     const sender = message.sender_type || message.senderType || 'unknown';
-    const text = String(message.text || '').trim();
+    const text = compactText(message.text || '', 260);
     const createdAt = message.created_at || message.createdAt || '';
     return `${createdAt ? `[${createdAt}] ` : ''}${sender}: ${text}`;
   }).join('\n');
+}
+
+function summarizeConversationContext(context = {}) {
+  const ctx = normalizeContext(context);
+  if (!Object.keys(ctx).length) return '(none)';
+  return JSON.stringify({
+    current_product_id: ctx.current_product_id || ctx.id || '',
+    current_product_name: ctx.current_product_name || '',
+    current_brand: ctx.current_brand || '',
+    current_product_sku: ctx.current_product_sku || '',
+    current_product_url: ctx.current_product_url || '',
+    current_source_key: ctx.current_source_key || '',
+    current_customer_goal: ctx.current_customer_goal || '',
+    context_confidence: ctx.context_confidence || 0,
+    needs_clarification: !!ctx.needs_clarification,
+    clarification_reason: ctx.clarification_reason || ''
+  });
+}
+
+function summarizeTrustedKnowledge(sourceKey = '') {
+  const faq = compactText(loadTextFile('faq.md', { sourceKey }), 700);
+  const policies = compactText(loadTextFile('policies.md', { sourceKey }), 900);
+  return [
+    faq ? `FAQ: ${faq}` : '',
+    policies ? `Policies: ${policies}` : ''
+  ].filter(Boolean).join('\n');
 }
 
 function buildJudgePrompt({
@@ -203,7 +236,8 @@ function buildJudgePrompt({
   customer = {},
   aiSource = '',
   searchQuery = '',
-  webSources = []
+  webSources = [],
+  conversationContext = {}
 }) {
   const language = detectMessageLanguage(userText);
   const expectedBrand = customerBrand || resolveCustomerBrand({ sourceKey, sourceName, sourceGroup });
@@ -211,10 +245,8 @@ function buildJudgePrompt({
   const historyText = summarizeHistory(history);
   const productsText = summarizeProducts(ragProducts, /product_specs/i.test(aiSource));
   const webSourcesText = summarizeWebSources(webSources);
-  const trustedSourceKnowledge = [
-    loadTextFile('faq.md', { sourceKey }),
-    loadTextFile('policies.md', { sourceKey })
-  ].filter(Boolean).join('\n\n').slice(0, 7000);
+  const contextText = summarizeConversationContext(conversationContext);
+  const trustedSourceKnowledge = summarizeTrustedKnowledge(sourceKey);
   const validationText = validation?.ok === false
     ? `Previous rule validator rejected the draft reply: ${validation.reason || 'unknown reason'}`
     : 'Previous rule validator approved the draft reply.';
@@ -222,7 +254,7 @@ function buildJudgePrompt({
   return [
     `You are a strict quality judge for ${expectedBrand} customer support replies.`,
     'Your job is to decide whether the draft reply is contextually reasonable before it is sent to a real customer.',
-    'You must infer the customer context yourself from the latest message, recent conversation, and retrieved catalog data.',
+    'Use the compact evidence pack below. Do not assume facts outside it.',
     '',
     'Return JSON only. No markdown. No code fences. No extra text.',
     'Required JSON shape:',
@@ -246,6 +278,8 @@ function buildJudgePrompt({
     `Required customer-facing brand name: ${expectedBrand}`,
     `Reply source: ${aiSource || 'unknown'}`,
     `Search query used for retrieval: ${searchQuery || '(none)'}`,
+    'Conversation context state:',
+    contextText,
     `Customer profile: ${JSON.stringify({
       name: customer?.name || '',
       phone: customer?.phone || '',
@@ -255,16 +289,16 @@ function buildJudgePrompt({
     'Latest customer message:',
     String(userText || '').trim(),
     '',
-    'Recent conversation:',
+    'Recent conversation (compact):',
     historyText || '(empty)',
     '',
-    'Catalog products returned by retrieval:',
+    'Catalog products returned by retrieval (top matches only):',
     productsText || '(none)',
     '',
-    'Official web sources used for product guidance:',
+    'Official web sources used for product guidance (compact):',
     webSourcesText || '(none)',
     '',
-    'Trusted FAQ and policy knowledge for this source:',
+    'Trusted FAQ and policy knowledge for this source (compact):',
     trustedSourceKnowledge || '(none)',
     '',
     'Draft reply to judge:',
@@ -274,7 +308,7 @@ function buildJudgePrompt({
     validationText,
     '',
     'Audit checklist:',
-    '1. The latest customer message has priority. Use recent conversation only to resolve a genuine follow-up such as "that product", "the previous model", "link for it", "con mau do", or "san pham do".',
+    '1. The latest customer message has priority. Use recent conversation and Conversation context state only to resolve a genuine follow-up such as "that product", "the previous model", "link for it", "con mau do", or "san pham do".',
     '1a. If the latest message is self-contained, do not add a camera brand, mount, model, budget, or requirement that the customer did not mention. Never infer those details from an older image or an older topic.',
     '2. Check whether the draft reply answers that inferred need directly. Reject if it answers a different question or ignores the latest message.',
     '3. Check product relevance. Product name/category/brand/model in the reply must match the customer need and the retrieved catalog. Do not let a generic word match change the category, e.g. "computer mouse" must not become "microphone for computer".',
@@ -373,6 +407,29 @@ function approveTrustedSourceStoreInfo(payload = {}) {
   };
 }
 
+function isJudgeCapacityError(error) {
+  const message = String(error?.message || error || '');
+  return error?.code === 'EMPTY_LLM_RESPONSE'
+    || /returned empty response/i.test(message)
+    || /finish_reason=length/i.test(message)
+    || /native_finish_reason=length/i.test(message);
+}
+
+function judgeUnavailableResult(reason) {
+  return {
+    approve: true,
+    inferredCustomerNeed: '',
+    riskType: 'format_issue',
+    reason: `Judge unavailable, using draft reply after compact rule checks: ${reason}`,
+    severity: 'low',
+    confidence: 0.2,
+    needsHandoff: false,
+    correctedReply: '',
+    correctedSimilarity: 0,
+    error: reason
+  };
+}
+
 async function judgeAiReply(payload) {
   const enabled = process.env.REPLY_JUDGE_ENABLED !== 'false';
   if (!enabled) {
@@ -407,6 +464,9 @@ async function judgeAiReply(payload) {
       return normalizeJudgeResult(parsed, payload?.reply || '');
     } catch (error) {
       lastError = error.message || String(error);
+      if (isJudgeCapacityError(error)) {
+        return judgeUnavailableResult(lastError);
+      }
       if (attempt >= attempts) {
         return {
           approve: false,
@@ -438,4 +498,9 @@ async function judgeAiReply(payload) {
   };
 }
 
-module.exports = { judgeAiReply, approveTrustedSourceStoreInfo };
+module.exports = {
+  judgeAiReply,
+  approveTrustedSourceStoreInfo,
+  buildJudgePrompt,
+  judgeUnavailableResult
+};

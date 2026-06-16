@@ -1,4 +1,4 @@
-const { getOrCreateCustomer, getOrCreateConversation, saveMessage, getRecentMessages, updateCustomerLearning, updateConversationSummary, flagHandoff } = require('./db');
+const { getOrCreateCustomer, getOrCreateConversation, saveMessage, getRecentMessages, updateCustomerLearning, updateConversationSummary, flagHandoff, updateConversationContext } = require('./db');
 const { classifyIntent } = require('./intent');
 const { generateReply, summarizeConversation, summarizeConversationFast, detectMessageLanguage, extractContactInfo } = require('./ai');
 const { notifyStaff } = require('./staffAlert');
@@ -10,6 +10,7 @@ const {
 } = require('./sourceRegistry');
 const { judgeAiReply } = require('./replyJudge');
 const { analyzeProductImages } = require('./mediaVision');
+const { resolveConversationContext } = require('./conversationContext');
 
 function normalizeForMatch(text) {
   return String(text || '')
@@ -26,6 +27,11 @@ function isPolicyFollowUpText(text, intent) {
   const normalized = normalizeForMatch(text);
   return intent === 'warranty'
     || /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|bao hanh|doi tra|chinh sach|warranty|return policy|invoice)\b/i.test(normalized);
+}
+
+function isVatInvoiceFollowUpText(text) {
+  const normalized = normalizeForMatch(text);
+  return /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|invoice)\b/i.test(normalized);
 }
 
 function isGenericConsultationRequest(text, intent) {
@@ -48,6 +54,9 @@ function detectHandoff({ text, intent, aiError, ragProducts }) {
     return { needed: true, reason: 'Khách phản hồi AI tư vấn sai/lạc đề' };
   }
   if (aiError) return { needed: true, reason: 'AI lỗi hoặc hết quota, cần nhân viên kiểm tra' };
+  if (isVatInvoiceFollowUpText(text)) {
+    return { needed: false };
+  }
   if (isPolicyFollowUpText(text, intent)) {
     return { needed: true, reason: 'Khách cần xác nhận VAT/bảo hành/chính sách' };
   }
@@ -144,6 +153,32 @@ function contactAcknowledgement(language = 'vi') {
   return 'D\u1ea1 em \u0111\u00e3 c\u00f3 s\u1ed1 \u0111i\u1ec7n tho\u1ea1i anh/ch\u1ecb cung c\u1ea5p v\u00e0 s\u1ebd d\u00f9ng s\u1ed1 n\u00e0y \u0111\u1ec3 nh\u00e2n vi\u00ean h\u1ed7 tr\u1ee3 khi c\u1ea7n \u1ea1.';
 }
 
+function contactNumberAnswer(customer, language = 'vi') {
+  const phone = String(customer?.phone || '').trim();
+  if (!phone) return contactAcknowledgement(language);
+  if (language === 'en') return `The phone number you provided is ${phone}.`;
+  if (language === 'zh') return `\u60a8\u521a\u63d0\u4f9b\u7684\u7535\u8bdd\u53f7\u7801\u662f ${phone}\u3002`;
+  return `D\u1ea1, s\u1ed1 \u0111i\u1ec7n tho\u1ea1i anh/ch\u1ecb \u0111\u00e3 cung c\u1ea5p l\u00e0 ${phone} \u1ea1.`;
+}
+
+function isPhoneNumberQuestion(text) {
+  const normalized = normalizeForMatch(text);
+  return /\b(sdt|so dien thoai|so dt|phone number|contact number|telephone number)\b/i.test(normalized)
+    && /\b(la gi|la so may|so may|vua gui|vua cung cap|minh gui|minh vua|toi gui|toi vua|my|provided|gave|sent)\b/i.test(normalized);
+}
+
+function isContactSubmission(text) {
+  const contact = extractContactInfo(text);
+  return Boolean(contact.phone);
+}
+
+function stripUnneededPhoneAcknowledgement(reply, customerText = '') {
+  if (isPhoneNumberQuestion(customerText) || isContactSubmission(customerText)) return String(reply || '');
+  return String(reply || '')
+    .replace(/(?:^|\n+)\s*D\u1ea1\s+em\s+\u0111\u00e3\s+c\u00f3\s+s\u1ed1\s+\u0111i\u1ec7n\s+tho\u1ea1i\s+anh\/ch\u1ecb\s+cung\s+c\u1ea5p\s+v\u00e0\s+s\u1ebd\s+d\u00f9ng\s+s\u1ed1\s+n\u00e0y\s+\u0111\u1ec3\s+nh\u00e2n\s+vi\u00ean\s+h\u1ed7\s+tr\u1ee3\s+khi\s+c\u1ea7n\s+\u1ea1\.?/giu, '\n')
+    .replace(/(?:^|\n+)\s*I already have the phone number you provided and will use it for staff follow-up when needed\.?/giu, '\n');
+}
+
 function asksForPhoneAgain(text) {
   const raw = String(text || '');
   const normalized = normalizeForMatch(raw);
@@ -158,16 +193,17 @@ function avoidRepeatedContactRequest(reply, customer = {}, customerText = '') {
   if (!String(customer?.phone || '').trim()) return String(reply || '');
 
   const language = detectMessageLanguage(customerText || reply);
+  const shouldAnswerPhoneQuestion = isPhoneNumberQuestion(customerText);
   const parts = String(reply || '').split(/(\n+|(?<=[.!?\u3002\uff01\uff1f])\s+)/u);
   let replaced = false;
   const cleaned = parts.map(part => {
     if (!asksForPhoneAgain(part)) return part;
     if (replaced) return '';
     replaced = true;
-    return contactAcknowledgement(language);
+    return shouldAnswerPhoneQuestion ? contactNumberAnswer(customer, language) : '';
   }).join('');
 
-  return cleaned
+  return stripUnneededPhoneAcknowledgement(cleaned, customerText)
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -314,6 +350,16 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
 
   const recentMessages = await getRecentMessages(conversation.id, 12);
   const history = enrichHistoryWithMediaContext(trimHistoryToActiveSession(recentMessages));
+  const conversationContext = resolveConversationContext({
+    userText: processingText,
+    history,
+    existingContext: conversation.conversation_context,
+    intent,
+    sourceKey: source.sourceKey,
+    sourceName: source.sourceName,
+    sourceGroup: source.sourceGroup
+  });
+  await updateConversationContext(conversation.id, conversationContext);
   const autoReply = process.env.AUTO_REPLY !== 'false' && conversation.auto_reply !== 0;
   if (!autoReply) {
     logAiResponse({
@@ -352,7 +398,8 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
         intent,
         sourceKey: source.sourceKey,
         sourceName: source.sourceName,
-        sourceGroup: source.sourceGroup
+        sourceGroup: source.sourceGroup,
+        conversationContext
       });
   const {
     reply: rawReply,
@@ -392,7 +439,8 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     customer: freshCustomer,
     aiSource,
     searchQuery,
-    webSources
+    webSources,
+    conversationContext
   });
   if (!judge.approve) {
     if (judge.correctedReply) {
@@ -481,7 +529,8 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       aiError: !!aiError,
       humanDelayMs,
       webSources,
-      webSearchRequests
+      webSearchRequests,
+      conversationContext
     },
     intent,
     aiUsed,
@@ -524,6 +573,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceGroup: source.sourceGroup,
     sourceKey: source.sourceKey,
     sourceName: source.sourceName,
+    conversationContext,
     humanDelayMs,
     reply,
     validatorBlocked: validation.ok ? false : true,

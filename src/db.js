@@ -88,7 +88,11 @@ function buildConversationSource(row = {}, raw = null, customerAttrs = {}) {
 }
 
 function decorateConversation(row) {
-  return row ? { ...row, ...buildConversationSource(row) } : row;
+  return row ? {
+    ...row,
+    conversation_context: safeJsonParse(row.conversation_context, {}),
+    ...buildConversationSource(row)
+  } : row;
 }
 
 function decorateAlert(row) {
@@ -134,6 +138,7 @@ async function initDb() {
       source_group TEXT DEFAULT '',
       source_key TEXT DEFAULT '',
       source_name TEXT DEFAULT '',
+      conversation_context TEXT DEFAULT '{}',
       needs_human INTEGER DEFAULT 0,
       handoff_reason TEXT DEFAULT '',
       handoff_status TEXT DEFAULT '',
@@ -242,6 +247,7 @@ async function initDb() {
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rating INTEGER;
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rating_feedback TEXT DEFAULT '';
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rated_at TIMESTAMPTZ;
+    ALTER TABLE conversations ADD COLUMN IF NOT EXISTS conversation_context TEXT DEFAULT '{}';
   `);
   await backfillConversationSources();
   await refreshConfiguredSourceNames();
@@ -376,6 +382,22 @@ async function getOrCreateConversation(customerId, channel, sourceKey = '', sour
     RETURNING *
   `, [id, customerId, channel, sourceGroup || channelToSourceGroup(channel), sourceKey || '', sourceName || '']);
   return inserted.rows[0];
+}
+
+async function getConversationContext(conversationId) {
+  const { rows } = await db.query('SELECT conversation_context FROM conversations WHERE id=$1', [conversationId]);
+  return safeJsonParse(rows[0]?.conversation_context, {});
+}
+
+async function updateConversationContext(conversationId, context = {}) {
+  const safeContext = context && typeof context === 'object' ? context : {};
+  const { rows } = await db.query(`
+    UPDATE conversations
+    SET conversation_context=$1, updated_at=CURRENT_TIMESTAMP
+    WHERE id=$2
+    RETURNING conversation_context
+  `, [JSON.stringify(safeContext), conversationId]);
+  return safeJsonParse(rows[0]?.conversation_context, {});
 }
 
 async function saveMessage({
@@ -826,5 +848,6 @@ module.exports = {
   db, initDb, getOrCreateCustomer, getOrCreateConversation, saveMessage, markProcessed, getRecentMessages,
   listConversations, getConversation, updateConversationSummary, updateCustomerLearning, flagHandoff, resolveHandoff,
   updateAlertDelivery, listStaffAlerts, softDeleteMessage, softDeleteConversation, hardDeleteConversation, getWebsiteConversationByVisitor,
-  listWebsiteConversationMessages, rateWebsiteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews
+  listWebsiteConversationMessages, rateWebsiteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews,
+  getConversationContext, updateConversationContext
 };

@@ -9,6 +9,7 @@ const {
   findProductsByExactPrice,
   loadProducts,
   loadTextFile,
+  extractProductPageUrls,
   parsePriceNumber,
   normalize
 } = require('./rag');
@@ -18,7 +19,15 @@ const {
   applyCustomerBranding
 } = require('./sourceRegistry');
 const { answerProductGuidanceFromWeb } = require('./webGuidance');
+const { readProductPageContext } = require('./productPageReader');
 const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
+const {
+  normalizeContext,
+  resolveConversationContext,
+  contextSearchText,
+  buildClarificationReply,
+  isContextualProductFollowUp
+} = require('./conversationContext');
 
 async function callOpenAI(prompt, timeoutMs) {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -569,6 +578,22 @@ function isCommercialPolicyQuestion(userText, intent) {
     || /(保修|退换|发票|發票|增值税|政策)/.test(raw);
 }
 
+function isVatInvoiceQuestion(userText) {
+  const raw = String(userText || '');
+  const normalized = normalize(raw);
+  return /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|invoice)\b/i.test(normalized)
+    || /(å‘ç¥¨|ç™¼ç¥¨|å¢žå€¼ç¨Ž)/.test(raw);
+}
+
+function sourceHasFullVatPolicy(sourceKey = '') {
+  const policyText = [
+    loadTextFile('faq.md', { sourceKey }),
+    loadTextFile('policies.md', { sourceKey })
+  ].join('\n');
+  const normalized = normalize(policyText);
+  return /\b(full vat|bao gom vat|da bao gom vat|gom vat|vat included|included vat)\b/i.test(normalized);
+}
+
 function pickRandomProducts(products, limit = 3) {
   const pool = [...(products || [])];
   for (let index = pool.length - 1; index > 0; index--) {
@@ -643,9 +668,31 @@ function isCatalogScopeQuestion(userText) {
   return /\b(chi ban moi|chi co moi|moi mat hang|moi san pham|ban nhung mat hang gi|ban nhung mat hang nao|ban mat hang gi|ban mat hang nao|dang ban nhung mat hang|dang ban mat hang|bay ban)\b/i.test(normalized);
 }
 
-function buildPolicyRuleReply(userText, lang, scopeBrand = '') {
+function buildPolicyRuleReply(userText, lang, scopeBrand = '', sourceKey = '', customerBrand = 'KingCom') {
   const normalized = normalize(userText);
   const scope = normalize(scopeBrand);
+  const brand = String(customerBrand || 'KingCom').trim() || 'KingCom';
+
+  if (isVatInvoiceQuestion(userText)) {
+    if (sourceHasFullVatPolicy(sourceKey)) {
+      if (lang === 'en') {
+        return `Yes, listed product prices at ${brand} already include VAT. If you need a VAT invoice for your order, ${brand} can support it using the order/invoice information.`;
+      }
+      if (lang === 'zh') {
+        return `${brand} \u6807\u793a\u7684\u4ea7\u54c1\u4ef7\u683c\u5df2\u5305\u542b VAT\u3002\u5982\u679c\u60a8\u9700\u8981 VAT \u53d1\u7968\uff0c${brand} \u53ef\u4ee5\u6839\u636e\u8ba2\u5355\u4fe1\u606f\u534f\u52a9\u5f00\u5177\u3002`;
+      }
+      return `D\u1ea1, gi\u00e1 s\u1ea3n ph\u1ea9m ni\u00eam y\u1ebft t\u1ea1i ${brand} \u0111\u00e3 bao g\u1ed3m VAT r\u1ed3i \u1ea1. Anh/ch\u1ecb kh\u00f4ng c\u1ea7n tr\u1ea3 th\u00eam VAT khi mua h\u00e0ng.\n\nN\u1ebfu anh/ch\u1ecb c\u1ea7n xu\u1ea5t h\u00f3a \u0111\u01a1n VAT, ${brand} c\u00f3 h\u1ed7 tr\u1ee3 theo th\u00f4ng tin \u0111\u01a1n h\u00e0ng \u1ea1.`;
+    }
+
+    if (lang === 'en') {
+      return `I do not see a clear VAT confirmation in the current ${brand} policy data, so I will avoid guessing. ${brand} staff can verify the invoice/VAT details for the exact order.`;
+    }
+    if (lang === 'zh') {
+      return `\u76ee\u524d ${brand} \u7684\u653f\u7b56\u8d44\u6599\u91cc\u6ca1\u6709\u660e\u786e\u7684 VAT \u786e\u8ba4\uff0c\u6211\u4e0d\u4f1a\u81ea\u884c\u731c\u6d4b\u3002\u5de5\u4f5c\u4eba\u5458\u53ef\u4ee5\u6839\u636e\u5177\u4f53\u8ba2\u5355\u786e\u8ba4\u53d1\u7968/VAT \u4fe1\u606f\u3002`;
+    }
+    return `D\u1ea1, hi\u1ec7n em ch\u01b0a th\u1ea5y th\u00f4ng tin VAT \u0111\u01b0\u1ee3c ghi r\u00f5 trong d\u1eef li\u1ec7u ch\u00ednh s\u00e1ch c\u1ee7a ${brand}, n\u00ean em kh\u00f4ng t\u1ef1 x\u00e1c nh\u1eadn \u0111\u1ec3 tr\u00e1nh t\u01b0 v\u1ea5n sai. Nh\u00e2n vi\u00ean ${brand} c\u00f3 th\u1ec3 ki\u1ec3m tra th\u00f4ng tin h\u00f3a \u0111\u01a1n/VAT theo \u0111\u01a1n h\u00e0ng c\u1ee5 th\u1ec3 \u1ea1.`;
+  }
+
   if (!/\b(bao hanh|warranty)\b/i.test(normalized)) return null;
 
   if (scope === 'viltrox') {
@@ -819,7 +866,7 @@ function expandMultilingualSearchTerms(text) {
   return terms.join(' ');
 }
 
-function buildSearchQuery(userText, history, customer) {
+function buildSearchQuery(userText, history, customer, conversationContext = {}) {
   const currentWords = queryWords(userText);
   const expandedTerms = expandMultilingualSearchTerms(userText);
   const priorHistory = historyBeforeCurrentMessage(history, userText);
@@ -831,9 +878,14 @@ function buildSearchQuery(userText, history, customer) {
   const interests = customer?.interested_products || '';
   const asksSpecs = isProductSpecsRequest(userText, history);
   const asksGuidance = isProductGuidanceQuery(userText);
-  if (asksSpecs || asksGuidance || isFollowUpLinkRequest(userText)) {
+  const contextText = contextSearchText(conversationContext);
+  const asksContextFollowUp = isContextualProductFollowUp(userText);
+  if (asksSpecs || asksGuidance || isFollowUpLinkRequest(userText) || (asksContextFollowUp && contextText)) {
     if (hasExplicitProductReference(userText)) {
       return `${userText} ${expandedTerms}`.trim();
+    }
+    if (contextText) {
+      return `${userText} ${expandedTerms} ${contextText}`.trim();
     }
     const referencedProduct = latestExplicitProductMessage(history, userText);
     return `${userText} ${expandedTerms} ${referencedProduct?.text || ''}`.trim();
@@ -967,15 +1019,20 @@ async function generateReplyRaw({
   intent,
   sourceKey = '',
   sourceName = '',
-  sourceGroup = ''
+  sourceGroup = '',
+  conversationContext = {}
 }) {
   const messageLanguage = detectMessageLanguage(userText);
   const guidanceQuestion = isProductGuidanceQuery(userText);
   const specsQuestion = isProductSpecsRequest(userText, history);
   const policyQuestion = isCommercialPolicyQuestion(userText, intent);
+  const productUrlQuestion = extractProductPageUrls(userText).length > 0;
   const sourceConfig = readSourceConfig(sourceKey);
   const scopeBrand = String(sourceConfig.brand || '').trim();
   const customerBrand = resolveCustomerBrand({ sourceKey, sourceName, sourceGroup });
+  const resolvedConversationContext = Object.keys(normalizeContext(conversationContext)).length
+    ? normalizeContext(conversationContext)
+    : resolveConversationContext({ userText, history, existingContext: {}, intent, sourceKey, sourceName, sourceGroup });
   const scopedProducts = loadProducts({ sourceKey });
   const customerPhone = String(customer?.phone || '').trim();
   const existingContactInstruction = customerPhone
@@ -1012,7 +1069,7 @@ async function generateReplyRaw({
     };
   }
 
-  const policyRuleReply = buildPolicyRuleReply(userText, messageLanguage, scopeBrand);
+  const policyRuleReply = buildPolicyRuleReply(userText, messageLanguage, scopeBrand, sourceKey, customerBrand);
   if (policyRuleReply) {
     return {
       reply: policyRuleReply,
@@ -1051,6 +1108,21 @@ async function generateReplyRaw({
       aiError: false,
       aiSource: 'rule',
       ragProducts: []
+    };
+  }
+
+  if (
+    resolvedConversationContext.needs_clarification
+    && (guidanceQuestion || specsQuestion || isFollowUpLinkRequest(userText) || ['product_specs', 'price'].includes(intent))
+  ) {
+    return {
+      reply: buildClarificationReply(resolvedConversationContext, messageLanguage),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_context_clarification',
+      searchQuery: userText,
+      ragProducts: [],
+      conversationContext: resolvedConversationContext
     };
   }
 
@@ -1141,14 +1213,20 @@ ${intent === 'greeting'
     }
   }
 
-  const searchQuery = buildSearchQuery(userText, history, customer);
+  const searchQuery = buildSearchQuery(userText, history, customer, resolvedConversationContext);
   const { context, products } = buildContext(searchQuery, {
     sourceKey,
     topK: policyQuestion ? 0 : ((guidanceQuestion || specsQuestion) ? 1 : 8),
-    includeDescriptions: specsQuestion,
+    includeDescriptions: specsQuestion || productUrlQuestion,
     requireIdentityMatch: !isStartingPriceQuery(userText)
       && (isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText) || specsQuestion)
   });
+  const productPageContext = productUrlQuestion
+    ? await readProductPageContext(userText, { products })
+    : { ok: false, skipped: 'no_product_url' };
+  if (productPageContext.error) {
+    console.warn('Product page fetch skipped after error:', productPageContext.error);
+  }
   if (guidanceQuestion && products.length) {
     const webGuidance = await answerProductGuidanceFromWeb({
       userText,
@@ -1167,7 +1245,8 @@ ${intent === 'greeting'
         searchQuery,
         ragProducts: products.slice(0, 1),
         webSources: webGuidance.webSources,
-        webSearchRequests: webGuidance.webSearchRequests
+        webSearchRequests: webGuidance.webSearchRequests,
+        conversationContext: resolvedConversationContext
       };
     }
     if (webGuidance.error) {
@@ -1181,7 +1260,8 @@ ${intent === 'greeting'
       aiError: false,
       aiSource: 'rule_previous_advice_correction',
       searchQuery,
-      ragProducts: products
+      ragProducts: products,
+      conversationContext: resolvedConversationContext
     };
   }
   const budgetProductReply = (!guidanceQuestion && !policyQuestion && ['buy', 'price', 'product_search', 'order'].includes(intent))
@@ -1194,7 +1274,8 @@ ${intent === 'greeting'
       aiError: false,
       aiSource: 'direct_budget_lookup',
       searchQuery,
-      ragProducts: products.slice(0, 3)
+      ragProducts: products.slice(0, 3),
+      conversationContext: resolvedConversationContext
     };
   }
   const startingPriceReply = (!guidanceQuestion && !policyQuestion && ['buy', 'price', 'product_search', 'order'].includes(intent))
@@ -1207,7 +1288,8 @@ ${intent === 'greeting'
       aiError: false,
       aiSource: 'direct_starting_price_lookup',
       searchQuery,
-      ragProducts: products.slice(0, 3)
+      ragProducts: products.slice(0, 3),
+      conversationContext: resolvedConversationContext
     };
   }
   if (!products.length && hasSpecificProductQuery(userText, intent) && !guidanceQuestion && !policyQuestion) {
@@ -1217,7 +1299,8 @@ ${intent === 'greeting'
       aiError: false,
       aiSource: 'rule_no_catalog_match',
       searchQuery,
-      ragProducts: []
+      ragProducts: [],
+      conversationContext: resolvedConversationContext
     };
   }
   const availabilityReply = policyQuestion ? null : buildAvailabilityReply(userText, products);
@@ -1228,7 +1311,8 @@ ${intent === 'greeting'
       aiError: false,
       aiSource: 'direct_availability_lookup',
       searchQuery,
-      ragProducts: products.slice(0, 1)
+      ragProducts: products.slice(0, 1),
+      conversationContext: resolvedConversationContext
     };
   }
   if (scopeBrand && products.length && ['buy', 'price', 'product_search', 'order'].includes(intent) && !guidanceQuestion && !policyQuestion) {
@@ -1238,7 +1322,8 @@ ${intent === 'greeting'
       aiError: false,
       aiSource: 'rule_scoped_products',
       searchQuery,
-      ragProducts: products.slice(0, 3)
+      ragProducts: products.slice(0, 3),
+      conversationContext: resolvedConversationContext
     };
   }
   const historyText = (history || []).slice(-8).map(m => `${m.sender_type}: ${m.text}`).join('\n');
@@ -1247,8 +1332,12 @@ ${intent === 'greeting'
     : messageLanguage === 'zh'
       ? 'Khach dang dung tieng Trung Quoc. Tra loi bang tieng Trung Quoc gian the, ngan gon, tu nhien. Khong chuyen sang tieng Viet tru khi khach doi ngon ngu.'
       : 'Khach dang dung tieng Viet. Tra loi tieng Viet ngan gon, than thien, tu nhien.';
+  const productPageReference = productPageContext.ok
+    ? `Noi dung doc tu link san pham khach gui (${productPageContext.url}):\n${productPageContext.text}`
+    : '';
   const guardrailContext = [
     context,
+    productPageReference,
     '',
     'Bat buoc tuan thu:',
     languageInstruction,
@@ -1263,7 +1352,9 @@ ${intent === 'greeting'
       ? '- Khach dang hoi cach su dung san pham. Hay huong dan tung buoc ngan gon, chi tap trung vao model khop nhat. Co the dung kien thuc san pham pho thong de huong dan, nhung khong bia chi tiet ky thuat, nut bam, cong ket noi, phu kien kem theo hoac tinh nang neu khong chac chan. Neu can, hoi them thiet bi khach dang dung hoac de nghi nhan vien KingCom xac nhan.'
       : specsQuestion
         ? '- Khach dang hoi thong so ky thuat cua san pham. Hay tom tat ro cac thong so co trong muc "Mo ta va thong so tu catalog", chi tra loi dung model khop nhat. Khong noi rang khong co thong so neu catalog da cung cap mo ta/thong so.'
-      : ''
+        : productUrlQuestion
+          ? '- Khach gui link san pham. Phai doc va tu van theo san pham trong link/catalog vua khop; khong noi khong co du lieu neu da co san pham khop. Khong chuyen sang san pham khac.'
+          : ''
   ].filter(Boolean).join('\n');
   const sourceContext = [
     sourceGroup ? `Nguồn: ${sourceGroup}` : '',
@@ -1338,7 +1429,8 @@ Quy tắc:
         aiError: false,
         aiSource: specsQuestion ? 'guardrail_fallback_product_specs' : 'guardrail_fallback',
         searchQuery,
-        ragProducts: products
+        ragProducts: products,
+        conversationContext: resolvedConversationContext
       };
     }
     return {
@@ -1347,7 +1439,8 @@ Quy tắc:
       aiError: false,
       aiSource: specsQuestion ? 'provider_product_specs' : 'provider',
       searchQuery,
-      ragProducts: policyQuestion ? [] : products
+      ragProducts: policyQuestion ? [] : products,
+      conversationContext: resolvedConversationContext
     };
   } catch (e) {
     console.error('OpenAI async error:', e.message);
@@ -1362,7 +1455,8 @@ Quy tắc:
       aiErrorMessage: e.message,
       aiSource: specsQuestion ? 'fallback_product_specs' : 'fallback',
       searchQuery,
-      ragProducts: policyQuestion ? [] : products
+      ragProducts: policyQuestion ? [] : products,
+      conversationContext: resolvedConversationContext
     };
   }
 }

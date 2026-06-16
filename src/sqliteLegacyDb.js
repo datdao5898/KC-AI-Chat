@@ -54,6 +54,7 @@ function decorateConversation(row) {
   const source = buildConversationSource(row);
   return {
     ...row,
+    conversation_context: safeJsonParse(row.conversation_context, {}),
     ...source
   };
 }
@@ -190,6 +191,7 @@ function initDb() {
   ensureColumn('conversations', 'source_group', "TEXT DEFAULT ''");
   ensureColumn('conversations', 'source_key', "TEXT DEFAULT ''");
   ensureColumn('conversations', 'source_name', "TEXT DEFAULT ''");
+  ensureColumn('conversations', 'conversation_context', "TEXT DEFAULT '{}'");
   ensureColumn('messages', 'delivery_status', "TEXT DEFAULT ''");
   ensureColumn('messages', 'delivery_error', "TEXT DEFAULT ''");
   ensureColumn('messages', 'source_group', "TEXT DEFAULT ''");
@@ -324,6 +326,21 @@ function getOrCreateConversation(customerId, channel, sourceKey = '', sourceName
     sourceName || ''
   );
   return db.prepare('SELECT * FROM conversations WHERE id=?').get(id);
+}
+
+function getConversationContext(conversationId) {
+  const row = db.prepare('SELECT conversation_context FROM conversations WHERE id=?').get(conversationId);
+  return safeJsonParse(row?.conversation_context, {});
+}
+
+function updateConversationContext(conversationId, context = {}) {
+  const safeContext = context && typeof context === 'object' ? context : {};
+  db.prepare(`
+    UPDATE conversations
+    SET conversation_context=?, updated_at=CURRENT_TIMESTAMP
+    WHERE id=?
+  `).run(JSON.stringify(safeContext), conversationId);
+  return getConversationContext(conversationId);
 }
 
 function saveMessage({
@@ -731,5 +748,7 @@ module.exports = {
   softDeleteConversation,
   getWebsiteConversationByVisitor,
   listWebsiteConversationMessages,
-  addStaffReply
+  addStaffReply,
+  getConversationContext,
+  updateConversationContext
 };

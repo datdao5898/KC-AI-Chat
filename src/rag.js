@@ -27,6 +27,19 @@ const IDENTITY_STOPWORDS = new Set([
   'lens', 'ong', 'kinh', 'camera', 'filter', 'gimbal', 'tui', 'bag'
 ]);
 
+const ACCESSORY_WORDS = new Set([
+  'dung', 'dich', 'binh', 'chua', 'case', 'bag', 'tui', 'cap', 'nap',
+  'cable', 'adapter', 'mount', 'holder', 'clip', 'cover', 'protector',
+  'battery', 'pin', 'charger', 'sac', 'remote', 'filter'
+]);
+
+const QUERY_UTILITY_WORDS = new Set([
+  'thong', 'so', 'ky', 'thuat', 'chi', 'tiet', 'cau', 'hinh',
+  'huong', 'dan', 'cach', 'su', 'dung', 'ket', 'noi', 'setup',
+  'manual', 'guide', 'spec', 'specs', 'specification', 'specifications',
+  'link', 'mua', 'gia', 'bao', 'nhieu'
+]);
+
 function parseCsvText(text) {
   const rows = [];
   let row = [];
@@ -92,6 +105,45 @@ function queryWords(query) {
   return normalize(query)
     .split(/\s+/)
     .filter(w => w.length > 1 && !STOPWORDS.has(w));
+}
+
+function significantQueryWords(query) {
+  return queryWords(query)
+    .filter(w => w.length >= 3 || /[a-z]+\d|\d+[a-z]+/i.test(w))
+    .filter(w => !IDENTITY_STOPWORDS.has(w))
+    .filter(w => !QUERY_UTILITY_WORDS.has(w));
+}
+
+function wordSet(text) {
+  return new Set(normalize(text).split(/\s+/).filter(Boolean));
+}
+
+function orderedMatchScore(words, text) {
+  const textWords = normalize(text).split(/\s+/).filter(Boolean);
+  if (!words.length || !textWords.length) return 0;
+  let bestRun = 0;
+  for (let start = 0; start < textWords.length; start++) {
+    let run = 0;
+    let cursor = start;
+    for (const word of words) {
+      while (cursor < textWords.length && textWords[cursor] !== word) cursor++;
+      if (cursor >= textWords.length) break;
+      run++;
+      cursor++;
+    }
+    bestRun = Math.max(bestRun, run);
+  }
+  return bestRun;
+}
+
+function looksAccessoryProduct(nameNorm) {
+  const words = wordSet(nameNorm);
+  return [...ACCESSORY_WORDS].some(word => words.has(word));
+}
+
+function queryLooksForMainProduct(queryWordsList) {
+  if (!queryWordsList.length) return false;
+  return !queryWordsList.some(word => ACCESSORY_WORDS.has(word));
 }
 
 function accentQueryWords(query) {
@@ -270,6 +322,23 @@ function canonicalProductUrl(value) {
   }
 }
 
+function productSlugFromUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    if (!/\/products?\//i.test(url.pathname)) return '';
+    const parts = url.pathname.toLowerCase().replace(/\/+$/, '').split('/').filter(Boolean);
+    const productIndex = parts.findIndex(part => /^products?$/.test(part));
+    return productIndex >= 0 ? (parts[productIndex + 1] || '') : '';
+  } catch {
+    return '';
+  }
+}
+
+function extractProductPageUrls(text) {
+  return (String(text || '').match(/https?:\/\/[^\s<>"')\]]+/gi) || [])
+    .filter(url => /\/products?\//i.test(url));
+}
+
 function findProductsByExactPrice(query, limit = 5, options = {}) {
   const price = extractExactPrice(query);
   if (!price) return [];
@@ -281,6 +350,7 @@ function findProductsByExactPrice(query, limit = 5, options = {}) {
 function searchProducts(query, topK = 8, options = {}) {
   const products = loadProducts(options);
   const words = queryWords(query);
+  const significantWords = significantQueryWords(query);
   const accentedWords = accentQueryWords(query);
   const normQuery = normalize(query);
   const accentQuery = normalizeAccent(query);
@@ -289,9 +359,12 @@ function searchProducts(query, topK = 8, options = {}) {
     : [];
   const scopeBrand = normalize(readSourceConfig(options.sourceKey || '').brand || '');
   const mentionedBrands = getKnownProductBrands().filter(brand => ` ${normQuery} `.includes(` ${brand} `));
-  const requestedProductUrls = (String(query || '').match(/https?:\/\/[^\s<>"')\]]+/gi) || [])
+  const requestedProductUrls = extractProductPageUrls(query)
     .map(canonicalProductUrl)
-    .filter(url => /\/products?\//i.test(url));
+    .filter(Boolean);
+  const requestedProductSlugs = extractProductPageUrls(query)
+    .map(productSlugFromUrl)
+    .filter(Boolean);
   if (scopeBrand && mentionedBrands.some(brand => brand !== scopeBrand)) return [];
   const maxPrice = extractMaxPrice(query);
   const codeWords = words.filter(w => {
@@ -313,6 +386,7 @@ function searchProducts(query, topK = 8, options = {}) {
   const wantsPortraitLens = wantsLens && /\b(chan dung|portrait|xoa phong|bokeh)\b/i.test(normQuery);
   const wantsLandscapeLens = wantsLens && /\b(phong canh|landscape|goc rong|wide angle|sieu rong|kien truc|thien van)\b/i.test(normQuery);
   const wantsMobileOrActionLens = wantsPhone || /\b(osmo|dji pocket|action camera)\b/i.test(normQuery);
+  const wantsMainProduct = queryLooksForMainProduct(significantWords);
   if (!words.length) return [];
 
   const scored = [];
@@ -327,14 +401,22 @@ function searchProducts(query, topK = 8, options = {}) {
     const rawProductUrl = p.url || p.link || p.product_url || '';
     const productUrl = normalize(rawProductUrl);
     const canonicalUrl = canonicalProductUrl(rawProductUrl);
+    const productSlug = productSlugFromUrl(rawProductUrl);
+    const urlMatched = requestedProductUrls.includes(canonicalUrl)
+      || (productSlug && requestedProductSlugs.includes(productSlug));
     const desc = normalize(`${p.description || ''} ${p.tags || ''}`);
     const descAccent = normalizeAccent(`${p.description || ''} ${p.tags || ''}`);
     const haystack = `${name} ${desc}`;
     const identityText = `${name} ${sku} ${vendor} ${normalize(p.url || p.link || p.product_url || '')}`;
     const productShape = { nameNorm: name, nameAccent, descNorm: desc };
+    const nameWords = wordSet(name);
+    const significantNameMatches = significantWords.filter(w => nameWords.has(w));
+    const orderedNameMatches = orderedMatchScore(significantWords, name);
+    const accessoryProduct = looksAccessoryProduct(name);
 
-    if (requestedProductUrls.length && !requestedProductUrls.includes(canonicalUrl)) continue;
-    if (identityWords.length && !identityWords.some(w => identityText.includes(w))) continue;
+    if (scopeBrand && vendor && vendor !== scopeBrand && !vendor.includes(scopeBrand) && !scopeBrand.includes(vendor)) continue;
+    if (requestedProductUrls.length && !urlMatched) continue;
+    if (identityWords.length && !urlMatched && !identityWords.some(w => identityText.includes(w))) continue;
     if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
     if (wantsLight && !isTrueLightProduct(productShape)) continue;
     if (wantsLens && !isTrueLensProduct(productShape)) continue;
@@ -353,11 +435,11 @@ function searchProducts(query, topK = 8, options = {}) {
       if (!audioMic || connectorOnly) continue;
     }
 
-    if (codeWords.length && !codeWords.some(w => sku.includes(w) || name.includes(w))) continue;
+    if (!urlMatched && codeWords.length && !codeWords.some(w => sku.includes(w) || name.includes(w))) continue;
 
     let score = 0;
     let strongMatches = 0;
-    if (requestedProductUrls.includes(canonicalUrl)) {
+    if (urlMatched) {
       score += 100;
       strongMatches += 1;
     }
@@ -368,6 +450,20 @@ function searchProducts(query, topK = 8, options = {}) {
       if (name.includes(w)) { score += 5; strongMatches++; }
       if (productUrl.includes(w)) { score += 8; strongMatches++; }
       if (desc.includes(w)) score += 1;
+    }
+    if (significantWords.length) {
+      score += significantNameMatches.length * 5;
+      if (orderedNameMatches >= Math.min(significantWords.length, 3)) {
+        score += orderedNameMatches * 4;
+        strongMatches += 1;
+      }
+      if (significantNameMatches.length === significantWords.length) {
+        score += 20;
+        strongMatches += 1;
+      }
+      if (wantsMainProduct && accessoryProduct && significantNameMatches.length < significantWords.length) {
+        score -= 18;
+      }
     }
     for (const w of accentedWords) {
       if (normalize(w) === w) continue;
@@ -448,6 +544,8 @@ module.exports = {
   searchProducts,
   loadProducts,
   loadTextFile,
+  extractProductPageUrls,
+  productSlugFromUrl,
   queryWords,
   normalize,
   extractMaxPrice,

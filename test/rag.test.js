@@ -56,3 +56,59 @@ test('product URL retrieves the exact catalog product', () => {
 
   assert.equal(products[0]?.sku, 'XLS1');
 });
+
+test('product URL matches by slug across KingCom and NewLite domains', () => {
+  const products = searchProducts(
+    'https://newlite.vn/products/boya-by-m100ua-mic-thu-am-danh-cho-may-tinh-win-mac',
+    1,
+    { sourceKey: 'website/kingcom', requireIdentityMatch: true }
+  );
+
+  assert.equal(products[0]?.sku, 'FB334');
+  assert.match(products[0]?.url || '', /store\.kingcom\.com\.vn/);
+});
+
+test('full product name outranks accessory products with overlapping words', () => {
+  const products = searchProducts(
+    'May Tao Khoi Cam Tay Lensgo Smoke B thong so',
+    3,
+    { sourceKey: 'website/newlite', requireIdentityMatch: true }
+  );
+
+  assert.equal(products[0]?.sku, 'XLS1');
+  assert.match(products[0]?.name || '', /Lensgo Smoke B/i);
+  assert.doesNotMatch(normalize(products[0]?.name || ''), /\b(dung dich|binh chua)\b/i);
+});
+
+test('same query stays isolated by website source products', () => {
+  const kingcomProducts = searchProducts(
+    'boya mini',
+    1,
+    { sourceKey: 'website/kingcom', requireIdentityMatch: true }
+  );
+  const newliteProducts = searchProducts(
+    'boya mini',
+    1,
+    { sourceKey: 'website/newlite', requireIdentityMatch: true }
+  );
+
+  assert.equal(kingcomProducts[0]?.sku, 'FB153');
+  assert.equal(newliteProducts[0]?.sku, 'FB127');
+  assert.notEqual(kingcomProducts[0]?.url, newliteProducts[0]?.url);
+});
+
+test('strict brand fanpages do not return products from another brand', () => {
+  const syncoPageProducts = searchProducts(
+    'ulanzi tripod',
+    3,
+    { sourceKey: 'facebook/1184640711390003', requireIdentityMatch: true }
+  );
+  const viltroxPageProducts = searchProducts(
+    'synco mic',
+    3,
+    { sourceKey: 'facebook/260016447958834', requireIdentityMatch: true }
+  );
+
+  assert.deepEqual(syncoPageProducts, []);
+  assert.deepEqual(viltroxPageProducts, []);
+});
