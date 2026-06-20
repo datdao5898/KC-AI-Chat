@@ -18,7 +18,7 @@ const {
   resolveCustomerBrand,
   applyCustomerBranding
 } = require('./sourceRegistry');
-const { answerProductGuidanceFromWeb } = require('./webGuidance');
+const { answerProductGuidanceFromWeb, answerProductSpecsFromWeb } = require('./webGuidance');
 const { readProductPageContext } = require('./productPageReader');
 const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
 const {
@@ -62,6 +62,7 @@ Yêu cầu định dạng bắt buộc:
 
   const requestBody = {
     model,
+    temperature: 0.3,
     messages: [{ role: 'user', content: formattedPrompt }]
   };
   if (isOpenRouter) {
@@ -158,9 +159,11 @@ function isEnglishMessage(text) {
 function isAvailabilityQuestion(text) {
   const raw = String(text || '');
   const norm = normalize(raw);
+  // Nếu câu hỏi có nhắc tới phụ kiện, tính năng, hoặc hỏi chi tiết, tuyệt đối không được coi là câu hỏi "còn hàng không" đơn giản
+  if (/(kem|remote|phu kien|pin|day cap|tinh nang|chuc nang|mau|size|bao hanh)/i.test(norm)) return false;
   return /\b(?:do|does)\s+(?:you|u|kingcom|shop|store)?\s*(?:have|carry|sell)\b/i.test(raw)
     || /\b(?:available|in stock|stock status)\b/i.test(raw)
-    || /(co hang|con hang|san pham nay co khong|ben em co|shop co|co ban|dang ban)/i.test(norm);
+    || /(co hang|con hang|san pham nay co khong|ben em co ban|ben em con hang|shop co ban|shop con hang|dang ban|con khong)/i.test(norm);
 }
 
 function isStartingPriceQuery(text) {
@@ -512,8 +515,147 @@ function isProductGuidanceQuery(userText) {
 function isDirectProductSpecsQuery(userText) {
   const raw = String(userText || '');
   const normalized = normalize(userText);
-  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?)\b/i.test(normalized)
+  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|cao bao nhieu|chieu cao|dai bao nhieu|rong bao nhieu|nang bao nhieu|luc hut|tai trong|tuong thich|dung duoc voi|dung duoc cho|ho tro iphone|ho tro android|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?|height|weight|dimensions|compatible with|compatibility)\b/i.test(normalized)
     || /(\u53c2\u6570|\u89c4\u683c|\u6280\u672f\u53c2\u6570|\u914d\u7f6e|\u5c3a\u5bf8|\u91cd\u91cf|\u529f\u7387|\u5206\u8fa8\u7387|\u4f20\u611f\u5668|\u5149\u5708)/.test(raw);
+}
+
+function catalogHasClearSpecs(product = {}) {
+  const text = [
+    product.description,
+    product.content,
+    product.details,
+    product.specs,
+    product.specification,
+    product.attributes,
+    product.short_description
+  ].filter(Boolean).join(' ');
+  const normalized = normalize(text);
+  if (!normalized) return false;
+
+  const specSignals = [
+    /\b\d+(?:[.,]\d+)?\s?(?:cm|mm|m|kg|g|mah|w|kw|hz|khz|fps|mp|inch|in|ohm|db|lux)\b/i,
+    /\b(?:kich thuoc|trong luong|dung luong pin|thoi luong pin|do phan giai|sensor|aperture|focal|compatibility|wireless|bluetooth|usb-c|pin|cong suat|tan so|so kenh|so luong|battery life|dimensions|weight)\b/i,
+    /\b\d+\s*x\s*\d+\b/i
+  ];
+
+  const score = specSignals.reduce((count, regex) => count + (regex.test(normalized) ? 1 : 0), 0);
+  return (normalized.length >= 120 && score >= 1) || score >= 2;
+}
+
+function productSpecText(product = {}) {
+  return [
+    product.description,
+    product.content,
+    product.details,
+    product.specs,
+    product.specification,
+    product.attributes,
+    product.short_description
+  ].filter(Boolean).join(' ');
+}
+
+function normalizeSpecText(text = '') {
+  return normalize(text)
+    .replace(/\b(\d+)\s+(\d+)(?=(?:m|cm|mm|kg|g|n|w|mah|mp|fps|hz|khz|db|lux)\b)/gi, '$1.$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function captureSpecValue(text, startPattern, stopPatterns = []) {
+  const stop = stopPatterns.length ? `(?=\\b(?:${stopPatterns.join('|')})\\b|$)` : '$';
+  const match = text.match(new RegExp(`\\b${startPattern}\\b\\s+(.{1,140}?)\\s*${stop}`, 'i'));
+  return match ? match[1].replace(/\s+/g, ' ').trim() : '';
+}
+
+function addSpecFact(facts, label, value) {
+  const clean = String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\b(\d+)\s+(\d+)(?=(?:m|cm|mm|kg|g|n|w|mah|mp|fps|hz|khz|db|lux)\b)/gi, '$1.$2')
+    .trim()
+    .replace(/[.;,]+$/g, '');
+  if (!clean) return;
+  const key = `${label}:${clean}`.toLowerCase();
+  if (facts.some(fact => fact.key === key)) return;
+  facts.push({ key, label, value: clean });
+}
+
+function extractCatalogSpecFacts(product = {}, userText = '') {
+  const specText = normalizeSpecText(productSpecText(product));
+  if (!specText) return [];
+
+  const query = normalize(userText);
+  const wants = {
+    height: /\b(cao bao nhieu|chieu cao|height)\b/i.test(query),
+    dimensions: /\b(kich thuoc|dai bao nhieu|rong bao nhieu|dimensions)\b/i.test(query),
+    weight: /\b(trong luong|nang bao nhieu|weight)\b/i.test(query),
+    battery: /\b(pin|dung luong pin|thoi luong pin|battery)\b/i.test(query),
+    magnetic: /\b(luc hut|magsafe|nam cham|magnetic)\b/i.test(query),
+    payload: /\b(tai trong|load|payload)\b/i.test(query),
+    remote: /\b(remote|bluetooth|ket noi|connect)\b/i.test(query),
+    compatibility: /\b(tuong thich|dung duoc voi|dung duoc cho|ho tro iphone|ho tro android|iphone|android|compatibility|compatible)\b/i.test(query),
+    power: /\b(cong suat|watt|power)\b/i.test(query),
+    resolution: /\b(do phan giai|resolution|mp)\b/i.test(query)
+  };
+  const generic = /\b(thong so|cau hinh|chi tiet|specs?|specifications?)\b/i.test(query)
+    || !Object.values(wants).some(Boolean);
+  const facts = [];
+  const all = generic;
+
+  if (all || wants.height || wants.dimensions) {
+    addSpecFact(facts, 'Chi\u1ec1u cao t\u1ed1i \u0111a', captureSpecValue(specText, 'chieu cao toi da', ['chieu cao gap gon', 'trong luong', 'luc hut', 'tai trong', 'ket noi', 'tuong thich', 'mua ngay']));
+    addSpecFact(facts, 'Chi\u1ec1u cao g\u1ea5p g\u1ecdn', captureSpecValue(specText, 'chieu cao gap gon', ['trong luong', 'luc hut', 'tai trong', 'ket noi', 'tuong thich', 'mua ngay']));
+  }
+  if (all || wants.weight) {
+    addSpecFact(facts, 'Tr\u1ecdng l\u01b0\u1ee3ng', captureSpecValue(specText, 'trong luong', ['luc hut', 'tai trong', 'ket noi', 'tuong thich', 'mua ngay']));
+  }
+  if (all || wants.magnetic) {
+    addSpecFact(facts, 'L\u1ef1c h\u00fat MagSafe', captureSpecValue(specText, 'luc hut tu tinh', ['tai trong', 'ket noi', 'tuong thich', 'mua ngay']) || captureSpecValue(specText, 'luc hut magsafe', ['tai trong', 'ket noi', 'tuong thich', 'mua ngay']));
+  }
+  if (all || wants.payload) {
+    addSpecFact(facts, 'T\u1ea3i tr\u1ecdng', captureSpecValue(specText, 'tai trong toi da', ['ket noi', 'tuong thich', 'mua ngay']));
+  }
+  if (all || wants.remote) {
+    addSpecFact(facts, 'K\u1ebft n\u1ed1i', captureSpecValue(specText, 'ket noi', ['tuong thich', 'mua ngay']));
+  }
+  if (all || wants.compatibility) {
+    addSpecFact(facts, 'T\u01b0\u01a1ng th\u00edch', captureSpecValue(specText, 'tuong thich', ['mua ngay']));
+  }
+  if (all || wants.battery) {
+    addSpecFact(facts, 'Pin', captureSpecValue(specText, 'dung luong pin', ['thoi luong pin', 'cong suat', 'ket noi', 'tuong thich', 'mua ngay']) || captureSpecValue(specText, 'thoi luong pin', ['cong suat', 'ket noi', 'tuong thich', 'mua ngay']));
+  }
+  if (all || wants.power) {
+    addSpecFact(facts, 'C\u00f4ng su\u1ea5t', captureSpecValue(specText, 'cong suat', ['do phan giai', 'ket noi', 'tuong thich', 'mua ngay']));
+  }
+  if (all || wants.resolution) {
+    addSpecFact(facts, '\u0110\u1ed9 ph\u00e2n gi\u1ea3i', captureSpecValue(specText, 'do phan giai', ['cam bien', 'ket noi', 'tuong thich', 'mua ngay']));
+  }
+
+  if (!facts.length && catalogHasClearSpecs(product)) {
+    addSpecFact(facts, 'M\u00f4 t\u1ea3 catalog', productSpecText(product).replace(/\s+/g, ' ').trim().slice(0, 500));
+  }
+
+  return facts.map(({ label, value }) => ({ label, value })).slice(0, all ? 8 : 4);
+}
+
+function buildProductSpecsEvidenceReply(products, userText, lang = 'vi') {
+  const product = products?.[0];
+  const name = productDisplayName(product, '');
+  if (!product || !name) return null;
+  const facts = extractCatalogSpecFacts(product, userText);
+  if (!facts.length) return null;
+
+  const url = product.url || product.link || product.product_url || '';
+  if (lang === 'en') {
+    const rows = facts.map(fact => `- ${fact.label}: ${fact.value}`).join('\n');
+    return `I found these details in the catalog for ${name}:\n\n${rows}${url ? `\n\nProduct link: ${url}` : ''}`;
+  }
+  if (lang === 'zh') {
+    const rows = facts.map(fact => `- ${fact.label}: ${fact.value}`).join('\n');
+    return `${name} \u7684\u76ee\u5f55\u4fe1\u606f\uff1a\n\n${rows}${url ? `\n\n\u4ea7\u54c1\u94fe\u63a5: ${url}` : ''}`;
+  }
+
+  const rows = facts.map(fact => `- ${fact.label}: ${fact.value}`).join('\n');
+  return `D\u1ea1, trong catalog c\u1ee7a ${name} c\u00f3 c\u00e1c th\u00f4ng tin sau:\n\n${rows}${url ? `\n\nLink s\u1ea3n ph\u1ea9m: ${url}` : ''}`;
 }
 
 function historyBeforeCurrentMessage(history = [], userText = '') {
@@ -532,7 +674,7 @@ const PRODUCT_CONTEXT_WORDS = new Set([
   'thong', 'so', 'ky', 'thuat', 'cau', 'hinh', 'chi', 'tiet',
   'cach', 'su', 'dung', 'huong', 'dan', 'ket', 'noi', 'cai', 'dat',
   'gui', 'truc', 'tiep', 'qua', 'day', 'cho', 'xem', 'nhe', 'nha', 'giup',
-  'san', 'pham', 'mau', 'may', 'nay', 'do', 'vua', 'noi',
+  'san', 'pham', 'mau', 'may', 'nay', 'do', 'vua', 'noi', 'cua', 'gi',
   'technical', 'specification', 'specifications', 'spec', 'specs',
   'how', 'use', 'using', 'guide', 'instructions', 'setup', 'install',
   'this', 'that', 'it', 'product', 'model'
@@ -906,6 +1048,7 @@ function hasSpecificProductQuery(userText, intent) {
 
 function productQueryLabel(userText) {
   const words = queryWords(userText)
+    .filter(w => !PRODUCT_CONTEXT_WORDS.has(w))
     .filter(w => w.length >= 2)
     .slice(0, 4);
   return words.join(' ')
@@ -1217,7 +1360,8 @@ ${intent === 'greeting'
   const { context, products } = buildContext(searchQuery, {
     sourceKey,
     topK: policyQuestion ? 0 : ((guidanceQuestion || specsQuestion) ? 1 : 8),
-    includeDescriptions: specsQuestion || productUrlQuestion,
+    includeDescriptions: true, // Luôn bật mô tả để AI không bị "mù" tính năng/phụ kiện
+    descriptionMaxChars: specsQuestion ? 3500 : 800, // Cắt ngắn nếu không phải câu hỏi cấu hình sâu
     requireIdentityMatch: !isStartingPriceQuery(userText)
       && (isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText) || specsQuestion)
   });
@@ -1251,6 +1395,46 @@ ${intent === 'greeting'
     }
     if (webGuidance.error) {
       console.warn('Product guidance web search skipped after error:', webGuidance.error);
+    }
+  }
+  const catalogSpecsReply = specsQuestion && products.length
+    ? buildProductSpecsEvidenceReply(products, userText, messageLanguage)
+    : null;
+  if (catalogSpecsReply) {
+    return {
+      reply: catalogSpecsReply,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'direct_catalog_product_specs',
+      searchQuery,
+      ragProducts: products.slice(0, 1),
+      conversationContext: resolvedConversationContext
+    };
+  }
+  if (specsQuestion && products.length && !catalogHasClearSpecs(products[0])) {
+    const webSpecs = await answerProductSpecsFromWeb({
+      userText,
+      history,
+      products,
+      sourceConfig,
+      customerBrand,
+      language: messageLanguage
+    });
+    if (webSpecs.ok) {
+      return {
+        reply: webSpecs.reply,
+        aiUsed: 1,
+        aiError: false,
+        aiSource: 'provider_web_product_specs',
+        searchQuery,
+        ragProducts: products.slice(0, 1),
+        webSources: webSpecs.webSources,
+        webSearchRequests: webSpecs.webSearchRequests,
+        conversationContext: resolvedConversationContext
+      };
+    }
+    if (webSpecs.error) {
+      console.warn('Product specs web search skipped after error:', webSpecs.error);
     }
   }
   if (isPreviousAdviceComplaint(userText) && !guidanceQuestion && !policyQuestion) {
@@ -1326,7 +1510,7 @@ ${intent === 'greeting'
       conversationContext: resolvedConversationContext
     };
   }
-  const historyText = (history || []).slice(-8).map(m => `${m.sender_type}: ${m.text}`).join('\n');
+  const historyText = (history || []).slice(-8).map(m => `[${m.sender_type === 'customer' ? 'Khách hàng' : 'KingCom'}]: ${m.text}`).join('\n');
   const languageInstruction = messageLanguage === 'en'
     ? 'Khach dang dung tieng Anh. Tra loi bang tieng Anh tu nhien, ngan gon. Khong chuyen sang tieng Viet tru khi khach doi ngon ngu.'
     : messageLanguage === 'zh'
@@ -1351,7 +1535,7 @@ ${intent === 'greeting'
     guidanceQuestion
       ? '- Khach dang hoi cach su dung san pham. Hay huong dan tung buoc ngan gon, chi tap trung vao model khop nhat. Co the dung kien thuc san pham pho thong de huong dan, nhung khong bia chi tiet ky thuat, nut bam, cong ket noi, phu kien kem theo hoac tinh nang neu khong chac chan. Neu can, hoi them thiet bi khach dang dung hoac de nghi nhan vien KingCom xac nhan.'
       : specsQuestion
-        ? '- Khach dang hoi thong so ky thuat cua san pham. Hay tom tat ro cac thong so co trong muc "Mo ta va thong so tu catalog", chi tra loi dung model khop nhat. Khong noi rang khong co thong so neu catalog da cung cap mo ta/thong so.'
+        ? '- Khach dang hoi thong so ky thuat cua san pham. Hay uu tien tra loi theo catalog, nhung neu catalog khong ghi ro thi co the dua tren thong tin web/nguon chinh hang duoc cho phep de bo sung thong so. Khong bia, khong doi sang mau khac, va neu khong xac minh duoc thi noi chua xac nhan duoc.'
         : productUrlQuestion
           ? '- Khach gui link san pham. Phai doc va tu van theo san pham trong link/catalog vua khop; khong noi khong co du lieu neu da co san pham khop. Khong chuyen sang san pham khac.'
           : ''
@@ -1387,26 +1571,19 @@ ${guardrailContext}
 Khách hỏi: ${userText}
 
 Quy tắc:
-- Không tự xưng là AI, bot, trợ lý ảo, chatbot, hệ thống tự động.
-- Không nói kiểu "tôi là trợ lý ảo". Hãy xưng "em" hoặc "${customerBrand}", gọi khách là "anh/chị" khi phù hợp.
-- Chỉ dùng tên thương hiệu "${customerBrand}" khi nói với khách. Không tự nhận là thương hiệu khác.
-- Với website chat, nếu khách yêu cầu gặp nhân viên, không được nói "giao diện tự động" hoặc "không thể trao đổi trực tiếp". Hãy nói đã chuyển nhân viên và khách có thể tiếp tục nhắn tại khung chat này.
-- KingCom KHÔNG phải cửa hàng mỹ phẩm. Tuyệt đối không nói KingCom bán mỹ phẩm/làm đẹp.
-- Khi giới thiệu KingCom, chỉ nói là cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung.
-- Luôn tôn trọng khách. Không cười khách, không mở đầu bằng "ha ha", "haha", "hihi", "hehe", "lol", không nói kiểu trêu chọc như "nhầm lẫn gì đây".
-- Nếu khách hỏi sản phẩm KingCom không bán, trả lời lịch sự: "Dạ hiện KingCom chưa kinh doanh sản phẩm này..." rồi gợi ý nhóm sản phẩm phù hợp hoặc xin thông tin để nhân viên kiểm tra.
-- Nếu không chắc thông tin, nói "em kiểm tra thêm" hoặc "em chuyển nhân viên phụ trách kiểm tra", không nói "AI không biết/không có dữ liệu".
-- Nếu khách hỏi ngắn kiểu "gửi link", "kèm link", "link mua", hãy hiểu là họ đang hỏi tiếp về sản phẩm đã nhắc gần nhất trong lịch sử, không được đổi sang sản phẩm khác.
-- Nếu khách hỏi VAT/hóa đơn/bảo hành/đổi trả/chính sách, chỉ trả lời chính sách theo dữ liệu tham khảo; không liệt kê sản phẩm mới và không tự gắn link sản phẩm.
-- Chỉ dùng dữ liệu tham khảo nếu nói giá/sản phẩm.
-- Nếu có phạm vi fanpage, chỉ tư vấn sản phẩm thuộc phạm vi đó. Không giới thiệu sản phẩm từ thương hiệu khác.
-- Khi tư vấn hoặc liệt kê sản phẩm, bắt buộc đính kèm link sản phẩm trực tiếp từ trường Link/url trong dữ liệu tham khảo để khách bấm xem.
-- Nếu có nhiều sản phẩm phù hợp, liệt kê tối đa 3-5 sản phẩm, mỗi sản phẩm gồm: tên, giá, link xem sản phẩm.
-- Nếu khách hỏi địa chỉ cửa hàng, cho địa chỉ: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam.
-- Nếu không chắc, đề nghị nhân viên tư vấn hoặc kiểm tra thêm.
-- Nếu khách muốn mua/chốt/gặp người thật, chuyển nhân viên hỗ trợ.
-- Quy tắc thông tin liên hệ: ${existingContactInstruction}
-- Không bịa link, tồn kho, bảo hành cụ thể hoặc khuyến mãi nếu dữ liệu không có.`;
+- Bạn là nhân viên thật, hãy xưng "em" hoặc tên thương hiệu "${customerBrand}", gọi khách là "anh/chị". Tuyệt đối không xưng là AI, bot hay trợ lý ảo.
+- Nếu khách yêu cầu gặp nhân viên thật trên website, hãy trả lời là bạn đã chuyển thông tin cho bộ phận chuyên trách và họ sẽ hỗ trợ trực tiếp tại đây.
+- KingCom chuyên bán phụ kiện nhiếp ảnh, quay phim và sáng tạo nội dung. Hãy từ chối lịch sự nếu khách hỏi về mỹ phẩm hoặc ngành hàng không liên quan.
+- Luôn giữ thái độ chuyên nghiệp, tôn trọng và lịch sự với khách hàng trong mọi tình huống.
+- BẮT BUỘC chỉ tư vấn dựa trên "Dữ liệu tham khảo". Nếu dữ liệu không có thông tin (giá, tồn kho, bảo hành, model), hãy chủ động xin lỗi, báo "chưa có thông tin" và đề nghị chuyển nhân viên KingCom kiểm tra.
+- TUYỆT ĐỐI KHÔNG tự tạo ra (bịa) tên sản phẩm, giá bán, link mua hàng hay chương trình khuyến mãi. Mọi link sản phẩm phải lấy chính xác từ trường Link/url trong "Dữ liệu tham khảo".
+- Khi được hỏi ngắn gọn "gửi link", hãy ngầm hiểu là khách muốn link của sản phẩm vừa nhắc đến gần nhất trong lịch sử hội thoại.
+- Với các câu hỏi về VAT, hóa đơn, bảo hành, chính sách: Chỉ dựa vào phần FAQ/Policies trong dữ liệu tham khảo để trả lời, không đính kèm sản phẩm mới.
+- Nếu danh sách sản phẩm có nhiều lựa chọn phù hợp, hãy liệt kê tối đa 3-5 mẫu, bao gồm: tên sản phẩm, giá và link trực tiếp.
+- Nếu có phạm vi fanpage, chỉ giới thiệu các sản phẩm thuộc phạm vi đó.
+- Nếu khách muốn mua, chốt đơn hoặc gặp người thật, hãy ghi nhận thông tin và chuyển ngay cho nhân viên hỗ trợ.
+- Địa chỉ cửa hàng luôn là: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam.
+- Quy tắc liên hệ: ${existingContactInstruction}`;
 
   try {
     const finalLanguageRule = messageLanguage === 'en'
@@ -1528,6 +1705,9 @@ module.exports = {
   detectMessageLanguage,
   extractContactInfo,
   isProductSpecsRequest,
+  catalogHasClearSpecs,
+  extractCatalogSpecFacts,
+  buildProductSpecsEvidenceReply,
   buildSearchQuery,
   buildProductSpecsFallbackReply
 };

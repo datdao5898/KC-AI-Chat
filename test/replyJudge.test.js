@@ -87,3 +87,26 @@ test('judge unavailable fallback does not force handoff', () => {
   assert.equal(result.confidence, 0.2);
   assert.match(result.reason, /Judge unavailable/);
 });
+
+test('judge unavailable fallback blocks obvious product drift on follow-up questions', () => {
+  const result = judgeUnavailableResult('OpenAI returned empty response (finish_reason=length)', {
+    userText: 'có kèm remote không',
+    intent: 'general',
+    reply: 'NewLite tìm thấy sản phẩm phù hợp: Kingjoy LC-26+LC-15 Ngàm kẹp điện thoại + Remote (SKU: FK139), giá 49.000đ.',
+    conversationContext: {
+      current_product_name: 'Ulanzi MT-78 Tripod Black',
+      current_brand: 'Ulanzi',
+      current_source_key: 'website/newlite'
+    },
+    ragProducts: [{
+      name: 'Kingjoy LC-26+LC-15 Ngàm kẹp điện thoại + Remote',
+      brand: 'Kingjoy',
+      sku: 'FK139'
+    }]
+  });
+
+  assert.equal(result.approve, false);
+  assert.equal(result.needsHandoff, true);
+  assert.equal(result.riskType, 'wrong_product');
+  assert.match(result.correctedReply, /chuyển thông tin cho nhân viên/i);
+});

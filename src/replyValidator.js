@@ -117,7 +117,8 @@ function buildSafeReply({ categories, maxPrice, reason }) {
 }
 
 function validateAiReply({ userText, history = [], reply, ragProducts = [] }) {
-  const categories = inferRequestedCategories(userText, history);
+  // Relaxed regex validation: defer context checking entirely to the AI Judge
+  return { ok: true };
   const maxPrice = extractMaxPrice(userText) || extractMaxPrice((history || []).map(m => m.text).slice(-4).join(' '));
   if (!categories.length && !maxPrice) return { ok: true };
   if (!replyMentionsProduct(reply)) return { ok: true };

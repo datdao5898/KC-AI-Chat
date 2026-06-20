@@ -2,7 +2,7 @@ const { detectMessageLanguage } = require('./ai');
 const { resolveCustomerBrand } = require('./sourceRegistry');
 const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
 const { loadTextFile } = require('./rag');
-const { normalizeContext } = require('./conversationContext');
+const { normalizeContext, isContextualProductFollowUp } = require('./conversationContext');
 
 function getApiConfig() {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
@@ -10,7 +10,7 @@ function getApiConfig() {
 
   const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = process.env.OPENAI_JUDGE_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini';
-  const maxOutputTokens = Number(process.env.OPENAI_JUDGE_MAX_OUTPUT_TOKENS || 520);
+  const maxOutputTokens = Number(process.env.OPENAI_JUDGE_MAX_OUTPUT_TOKENS || 256);
   const timeoutMs = Number(process.env.OPENAI_JUDGE_TIMEOUT_MS || process.env.AI_TIMEOUT_MS || 45000);
   return { apiKey, baseUrl, model, maxOutputTokens, timeoutMs };
 }
@@ -36,13 +36,15 @@ async function callOpenAI(prompt, timeoutMs, attempt = 1) {
 
   const requestBody = {
     model,
+    temperature: 0,
     messages: [
       {
         role: 'system',
         content: 'You are Conversation Auditor, a strict final quality gate for customer support replies. Return only valid JSON.'
       },
       { role: 'user', content: prompt }
-    ]
+    ],
+    response_format: { type: 'json_object' }
   };
   requestBody[isOpenRouter ? 'max_tokens' : 'max_completion_tokens'] = attempt === 1
     ? maxOutputTokens
@@ -187,7 +189,7 @@ function summarizeWebSources(webSources = []) {
 }
 
 function summarizeHistory(history = []) {
-  return (history || []).slice(-6).map(message => {
+  return (history || []).slice(-4).map(message => {
     const sender = message.sender_type || message.senderType || 'unknown';
     const text = compactText(message.text || '', 260);
     const createdAt = message.created_at || message.createdAt || '';
@@ -221,6 +223,114 @@ function summarizeTrustedKnowledge(sourceKey = '') {
   ].filter(Boolean).join('\n');
 }
 
+function buildSafeUnavailableReply(payload = {}) {
+  const lang = detectMessageLanguage(payload.userText || payload.reply || '');
+  const brand = String(payload.customerBrand || resolveCustomerBrand(payload) || 'KingCom').trim() || 'KingCom';
+
+  if (lang === 'en') {
+    return `I am checking this again to avoid giving incorrect advice. I have forwarded it to ${brand} staff for a more accurate check.`;
+  }
+  if (lang === 'zh') {
+    return `我会重新核对，避免提供错误建议。目前我已将这条信息转交给 ${brand} 员工进一步确认。`;
+  }
+  return `Dạ em kiểm tra lại để tránh tư vấn sai. Hiện em chưa thể xác nhận chắc chắn trong dữ liệu hiện tại, nên em đã chuyển thông tin cho nhân viên ${brand} kiểm tra chính xác hơn ạ.`;
+}
+
+function normalizeJudgeText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function productLabel(product = {}) {
+  return String(product?.name || product?.title || product?.sku || '')
+    .trim();
+}
+
+function productBrand(product = {}) {
+  return String(product?.brand || product?.vendor || '')
+    .trim();
+}
+
+function buildLocalJudgeFallback(payload = {}) {
+  const userText = String(payload.userText || '');
+  const reply = String(payload.reply || '');
+  const intent = String(payload.intent || '');
+  const ctx = normalizeContext(payload.conversationContext);
+  const currentProduct = normalizeJudgeText(ctx.current_product_name || '');
+  const currentBrand = normalizeJudgeText(ctx.current_brand || '');
+  const replyNorm = normalizeJudgeText(reply);
+  const normalizedUser = normalizeJudgeText(userText);
+  const shortQuestion = normalizedUser.split(' ').filter(Boolean).length <= 7;
+  const userFollowUp = isContextualProductFollowUp(userText)
+    || ['product_search', 'price', 'product_specs', 'order'].includes(intent);
+  const contextSensitiveQuestion = userFollowUp || (currentProduct && shortQuestion);
+  const customerPhone = String(payload?.customer?.phone || '').trim();
+  const asksForPhoneAgain = customerPhone
+    && /(phone number|s[ốo]\s*điện thoại|so dien thoai|để lại số điện thoại|leave your phone|leave your number|sdt)/i.test(reply);
+
+  if (asksForPhoneAgain) {
+    return {
+      approve: false,
+      inferredCustomerNeed: '',
+      riskType: 'format_issue',
+      reason: 'Judge unavailable and local checks found a repeated phone request for an already-known customer phone number.',
+      severity: 'medium',
+      confidence: 0.35,
+      needsHandoff: true,
+      correctedReply: buildSafeUnavailableReply(payload),
+      correctedSimilarity: 0
+    };
+  }
+
+  if (contextSensitiveQuestion && currentProduct) {
+    const ragProducts = Array.isArray(payload.ragProducts) ? payload.ragProducts : [];
+    const hasProductList = /\n\s*(?:\d+\.|-)\s|\blink\s*:/i.test(reply);
+    const mentionsCurrentProduct = currentProduct && replyNorm.includes(currentProduct);
+    const mentionsCurrentBrand = currentBrand && replyNorm.includes(currentBrand);
+
+    const mentionsOtherRagProduct = ragProducts.some(product => {
+      const label = normalizeJudgeText(productLabel(product));
+      const brand = normalizeJudgeText(productBrand(product));
+      const isDifferentProduct = label && label !== currentProduct && replyNorm.includes(label);
+      const isDifferentBrand = brand && currentBrand && brand !== currentBrand && replyNorm.includes(brand);
+      return isDifferentProduct || isDifferentBrand;
+    });
+
+    if ((hasProductList && !mentionsCurrentProduct && !mentionsCurrentBrand) || mentionsOtherRagProduct) {
+      return {
+        approve: false,
+        inferredCustomerNeed: '',
+        riskType: 'wrong_product',
+        reason: 'Judge unavailable and local checks found a reply that drifted away from the current product context.',
+        severity: 'high',
+        confidence: 0.75,
+        needsHandoff: true,
+        correctedReply: buildSafeUnavailableReply(payload),
+        correctedSimilarity: 0
+      };
+    }
+  }
+
+  return {
+    approve: true,
+    inferredCustomerNeed: '',
+    riskType: 'format_issue',
+    reason: `Judge unavailable, using draft reply after compact local checks: ${payload?.reason || ''}`.trim(),
+    severity: 'low',
+    confidence: 0.2,
+    needsHandoff: false,
+    correctedReply: '',
+    correctedSimilarity: 0,
+    error: payload?.reason || ''
+  };
+}
+
 function buildJudgePrompt({
   userText,
   history = [],
@@ -246,7 +356,9 @@ function buildJudgePrompt({
   const productsText = summarizeProducts(ragProducts, /product_specs/i.test(aiSource));
   const webSourcesText = summarizeWebSources(webSources);
   const contextText = summarizeConversationContext(conversationContext);
-  const trustedSourceKnowledge = summarizeTrustedKnowledge(sourceKey);
+  const needsTrustedKnowledge = /store_info|warranty|policy|invoice/i.test(String(intent || ''))
+    || /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|bao hanh|doi tra|chinh sach|invoice)\b/i.test(String(userText || ''));
+  const trustedSourceKnowledge = needsTrustedKnowledge ? summarizeTrustedKnowledge(sourceKey) : '';
   const validationText = validation?.ok === false
     ? `Previous rule validator rejected the draft reply: ${validation.reason || 'unknown reason'}`
     : 'Previous rule validator approved the draft reply.';
@@ -310,8 +422,8 @@ function buildJudgePrompt({
     'Audit checklist:',
     '1. The latest customer message has priority. Use recent conversation and Conversation context state only to resolve a genuine follow-up such as "that product", "the previous model", "link for it", "con mau do", or "san pham do".',
     '1a. If the latest message is self-contained, do not add a camera brand, mount, model, budget, or requirement that the customer did not mention. Never infer those details from an older image or an older topic.',
-    '2. Check whether the draft reply answers that inferred need directly. Reject if it answers a different question or ignores the latest message.',
-    '3. Check product relevance. Product name/category/brand/model in the reply must match the customer need and the retrieved catalog. Do not let a generic word match change the category, e.g. "computer mouse" must not become "microphone for computer".',
+    '2. Check whether the draft reply answers that inferred need directly OR politely defers the question to staff. A polite apology and offer to check with staff is an ACCEPTABLE and DIRECT answer. Do NOT reject it.',
+    '3. Check product relevance. Product name/category/brand/model/price/link in the reply MUST EXACTLY MATCH the retrieved catalog or official web sources. Reject IMMEDIATELY if the AI invents a product, link, or price that is not in the evidence. Do not let a generic word match change the category.',
     '4. Check source scope. If a fanpage/source is scoped to one brand, the reply must not recommend another brand unless recent context clearly asks to switch.',
     '5. Check support. Product identity, price, SKU, seller link, warranty, VAT, delivery, stock, store address, contact details, or policy claims must be supported by retrieved catalog, recent conversation, trusted FAQ/policy knowledge, or source data shown here. Product usage guidance may also be supported by the official web sources shown here.',
     '5a. Official web sources may support only usage, setup, pairing, connection, configuration, and troubleshooting. They must not be used as evidence for store price, stock, promotions, VAT, delivery, or seller policy.',
@@ -321,7 +433,7 @@ function buildJudgePrompt({
     customer?.phone
       ? '7b. The customer profile already contains a phone number. Reject any draft that asks the customer to provide or leave a phone number again. The reply may say staff will use the phone number already provided.'
       : '7b. The customer profile does not contain a phone number, so a polite optional request for contact information is allowed when staff follow-up is genuinely needed.',
-    '8. If the draft is correct enough and only mildly imperfect, approve it. Do not reject just because it asks staff to confirm stock.',
+    '8. If the draft is polite and safe (e.g. asking staff to confirm, apologizing for lack of info), APPROVE it. Do not reject just because it lacks specific product info if it safely deferred to staff.',
     '',
     'Correction rules:',
     '- If wrong but fixable using only supplied context, provide correctedReply in the customer language.',
@@ -415,19 +527,8 @@ function isJudgeCapacityError(error) {
     || /native_finish_reason=length/i.test(message);
 }
 
-function judgeUnavailableResult(reason) {
-  return {
-    approve: true,
-    inferredCustomerNeed: '',
-    riskType: 'format_issue',
-    reason: `Judge unavailable, using draft reply after compact rule checks: ${reason}`,
-    severity: 'low',
-    confidence: 0.2,
-    needsHandoff: false,
-    correctedReply: '',
-    correctedSimilarity: 0,
-    error: reason
-  };
+function judgeUnavailableResult(reason, payload = {}) {
+  return buildLocalJudgeFallback({ ...payload, reason });
 }
 
 async function judgeAiReply(payload) {
@@ -465,37 +566,15 @@ async function judgeAiReply(payload) {
     } catch (error) {
       lastError = error.message || String(error);
       if (isJudgeCapacityError(error)) {
-        return judgeUnavailableResult(lastError);
+        return judgeUnavailableResult(lastError, payload);
       }
       if (attempt >= attempts) {
-        return {
-          approve: false,
-          inferredCustomerNeed: '',
-          riskType: 'unsafe_to_answer',
-          reason: `Judge error: ${lastError}`,
-          severity: 'medium',
-          confidence: 0,
-          needsHandoff: true,
-          correctedReply: '',
-          correctedSimilarity: 0,
-          error: lastError
-        };
+        return buildLocalJudgeFallback({ ...payload, reason: `Judge error: ${lastError}` });
       }
     }
   }
 
-  return {
-    approve: false,
-    inferredCustomerNeed: '',
-    riskType: 'unsafe_to_answer',
-    reason: lastError || 'Judge returned invalid JSON',
-    severity: 'medium',
-    confidence: 0.1,
-    needsHandoff: true,
-    correctedReply: '',
-    correctedSimilarity: 0,
-    error: lastError || 'Judge returned invalid JSON'
-  };
+  return buildLocalJudgeFallback({ ...payload, reason: lastError || 'Judge returned invalid JSON' });
 }
 
 module.exports = {

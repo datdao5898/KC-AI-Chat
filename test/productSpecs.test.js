@@ -3,7 +3,11 @@ const assert = require('node:assert/strict');
 const {
   isProductSpecsRequest,
   buildSearchQuery,
-  buildProductSpecsFallbackReply
+  buildProductSpecsFallbackReply,
+  catalogHasClearSpecs,
+  extractCatalogSpecFacts,
+  buildProductSpecsEvidenceReply,
+  generateReply
 } = require('../src/ai');
 const { searchProducts } = require('../src/rag');
 
@@ -77,4 +81,63 @@ test('a contextual follow-up uses only the latest explicitly named product', () 
 
   assert.match(query, /Lensgo Smoke B/i);
   assert.doesNotMatch(query, /Cadothy/i);
+});
+
+test('catalogHasClearSpecs detects whether the catalog already states specs clearly', () => {
+  assert.equal(catalogHasClearSpecs({
+    description: 'Compact creator accessory with clean marketing copy only.'
+  }), false);
+
+  assert.equal(catalogHasClearSpecs({
+    description: 'Sensor 24MP, weight 280g, battery 1200mAh, dimensions 120 x 80 x 55 mm, USB-C charging.'
+  }), true);
+});
+
+test('catalog evidence extracts the requested Ulanzi MT85 height from KingCom catalog', () => {
+  const product = searchProducts(
+    'Ulanzi MT85 cao bao nhieu m',
+    1,
+    { sourceKey: 'website/kingcom', requireIdentityMatch: true }
+  )[0];
+  const facts = extractCatalogSpecFacts(product, 'Ulanzi MT85 cao bao nhi\u00eau m');
+  const reply = buildProductSpecsEvidenceReply([product], 'Ulanzi MT85 cao bao nhi\u00eau m', 'vi');
+
+  assert.equal(product?.sku, 'FUCB8A');
+  assert.ok(facts.some(fact => /Chi/i.test(fact.label) && /1\.5m|150cm/i.test(fact.value)));
+  assert.match(reply, /1\.5m|150cm/);
+  assert.match(reply, /ulanzi-mt85-automatic-pop-up-phone-tripod-magsafe/);
+});
+
+test('generateReply answers Ulanzi MT85 height directly from catalog evidence', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'Ulanzi MT85 cao bao nhi\u00eau m',
+    history: [],
+    customer: {},
+    intent: 'product_specs',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'direct_catalog_product_specs');
+  assert.match(result.reply, /1\.5m|150cm/);
+  assert.equal(result.ragProducts[0]?.sku, 'FUCB8A');
+});
+
+test('NewLite missing Ulanzi MT85 keeps source isolation and clean product label', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'Th\u00f4ng s\u1ed1 c\u1ee7a Ulanzi MT85 l\u00e0 g\u00ec?',
+    history: [],
+    customer: {},
+    intent: 'product_specs',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_no_catalog_match');
+  assert.match(result.reply, /Ulanzi MT85/i);
+  assert.doesNotMatch(result.reply, /so cua/i);
 });

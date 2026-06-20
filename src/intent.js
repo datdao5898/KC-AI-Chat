@@ -40,9 +40,12 @@ function classifyIntent(text) {
     'chi tiet san pham', 'kich thuoc', 'trong luong', 'cong suat',
     'do phan giai', 'cam bien', 'khau do', 'tieu cu',
     'dung luong pin', 'thoi luong pin', 'pin bao lau',
+    'cao bao nhieu', 'chieu cao', 'dai bao nhieu', 'rong bao nhieu',
+    'nang bao nhieu', 'luc hut', 'tai trong', 'tuong thich',
+    'dung duoc voi', 'dung duoc cho', 'ho tro iphone', 'ho tro android',
     'technical specification', 'technical specifications', 'product specification',
-    'product specifications'
-  ]) || hasWord(msg, ['spec', 'specs', 'specification', 'specifications', 'ram'])) {
+    'product specifications', 'compatible with', 'compatibility'
+  ]) || hasWord(msg, ['spec', 'specs', 'specification', 'specifications', 'ram', 'height', 'weight', 'dimensions'])) {
     return { intent: 'product_specs', confidence: 0.9 };
   }
   if (hasPhoneNumber && (

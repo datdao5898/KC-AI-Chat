@@ -19,10 +19,11 @@ function normalizeAllowedDomains(values) {
   }).filter(Boolean))];
 }
 
-function isAllowedSourceUrl(value, allowedDomains = []) {
+function isAllowedSourceUrl(value, allowedDomains = [], allowAnyHttps = false) {
   try {
     const url = new URL(String(value || ''));
     if (url.protocol !== 'https:') return false;
+    if (allowAnyHttps && !normalizeAllowedDomains(allowedDomains).length) return true;
     const host = url.hostname.toLowerCase().replace(/^www\./, '');
     return normalizeAllowedDomains(allowedDomains).some(domain => (
       host === domain || host.endsWith(`.${domain}`)
@@ -36,14 +37,14 @@ function extractUrls(text) {
   return String(text || '').match(/https?:\/\/[^\s<>()\]]+/gi) || [];
 }
 
-function extractCitations(message, allowedDomains) {
+function extractCitations(message, allowedDomains, allowAnyHttps = false) {
   const annotations = Array.isArray(message?.annotations) ? message.annotations : [];
   const citations = [];
 
   for (const annotation of annotations) {
     const citation = annotation?.url_citation || annotation;
     const url = String(citation?.url || '').trim();
-    if (!isAllowedSourceUrl(url, allowedDomains)) continue;
+    if (!isAllowedSourceUrl(url, allowedDomains, allowAnyHttps)) continue;
     citations.push({
       url,
       title: String(citation?.title || '').trim(),
@@ -149,7 +150,55 @@ function languageInstruction(language) {
   return 'Reply in natural Vietnamese.';
 }
 
-async function answerProductGuidanceFromWeb({
+function buildWebSearchPrompt({
+  mode = 'guidance',
+  allowBroadSearch = false,
+  userText,
+  history = [],
+  products = [],
+  customerBrand = 'KingCom',
+  language = 'vi'
+}) {
+  const recentHistory = (history || []).slice(-6).map(message => (
+    `${message.sender_type || message.senderType || 'unknown'}: ${message.text || ''}`
+  )).join('\n');
+  const modeRules = mode === 'specs'
+    ? [
+      'The customer is asking for technical specifications, dimensions, weight, battery life, compatibility, or feature details of an exact product found in the store catalog.',
+      allowBroadSearch
+        ? 'You may use the web search tool broadly if no official domain allowlist is configured, but prefer official manufacturer or official product sources whenever available.'
+        : 'You must use the web search tool and rely only on the allowed official manufacturer domains.',
+      'Summarize only confirmed specifications for the exact catalog product. If the official sources do not clearly establish a detail, say that it could not be confirmed and ask one focused clarification question.',
+      'Do not infer price, stock, promotions, delivery, seller warranty, VAT, or store policy from web results. If the customer also asks for price, use only the exact catalog price shown below.',
+      'Do not recommend another product. Do not invent dimensions, power ratings, connectors, compatibility, performance claims, or any other specification that is not explicitly supported.',
+      'Do not call yourself an AI, bot, or automated system. Do not use emoji or markdown bold.'
+    ]
+    : [
+      'The customer is asking how to use, install, pair, connect, configure, or troubleshoot an exact product found in the store catalog.',
+      'You must use the web search tool and rely only on the allowed official manufacturer domains.',
+      'Give concise, practical steps for the exact catalog product. If the official sources do not establish the answer, say that the exact step could not be confirmed and ask one focused clarification question.',
+      'Do not infer price, stock, promotions, delivery, seller warranty, VAT, or store policy from web results. If the customer also asks for price, use only the exact catalog price shown below.',
+      'Do not recommend another product. Do not invent buttons, ports, menu names, accessories, firmware behavior, or compatibility.',
+      'Do not call yourself an AI, bot, or automated system. Do not use emoji or markdown bold.'
+    ];
+
+  return [
+    `You are a customer support specialist speaking as ${customerBrand}.`,
+    ...modeRules,
+    languageInstruction(language),
+    '',
+    'Catalog product:',
+    productSummary(products[0]),
+    '',
+    recentHistory ? `Recent conversation:\n${recentHistory}\n` : '',
+    `Customer question: ${userText}`,
+    '',
+    'End with one to three plain official source URLs used for the guidance.'
+  ].filter(Boolean).join('\n');
+}
+
+async function runProductWebSearch({
+  mode = 'guidance',
   userText,
   history = [],
   products = [],
@@ -160,7 +209,8 @@ async function answerProductGuidanceFromWeb({
 }) {
   const config = getWebGuidanceConfig(sourceConfig, products[0]);
   if (!config.enabled) return { ok: false, skipped: 'disabled', webSources: [] };
-  if (!config.allowedDomains.length) return { ok: false, skipped: 'no_allowed_domains', webSources: [] };
+  const allowBroadSearch = mode === 'specs';
+  if (!config.allowedDomains.length && !allowBroadSearch) return { ok: false, skipped: 'no_allowed_domains', webSources: [] };
   if (!products.length) return { ok: false, skipped: 'no_catalog_product', webSources: [] };
 
   const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -174,27 +224,15 @@ async function answerProductGuidanceFromWeb({
     || process.env.OPENAI_MODEL
     || 'openai/gpt-5.4-mini';
   const maxOutputTokens = Number(process.env.PRODUCT_GUIDANCE_WEB_SEARCH_MAX_OUTPUT_TOKENS || 800);
-  const recentHistory = (history || []).slice(-6).map(message => (
-    `${message.sender_type || message.senderType || 'unknown'}: ${message.text || ''}`
-  )).join('\n');
-  const prompt = [
-    `You are a customer support specialist speaking as ${customerBrand}.`,
-    'The customer is asking how to use, install, pair, connect, configure, or troubleshoot an exact product found in the store catalog.',
-    'You must use the web search tool and rely only on the allowed official manufacturer domains.',
-    'Give concise, practical steps for the exact catalog product. If the official sources do not establish the answer, say that the exact step could not be confirmed and ask one focused clarification question.',
-    'Do not infer price, stock, promotions, delivery, seller warranty, VAT, or store policy from web results. If the customer also asks for price, use only the exact catalog price shown below.',
-    'Do not recommend another product. Do not invent buttons, ports, menu names, accessories, firmware behavior, or compatibility.',
-    'Do not call yourself an AI, bot, or automated system. Do not use emoji or markdown bold.',
-    languageInstruction(language),
-    '',
-    'Catalog product:',
-    productSummary(products[0]),
-    '',
-    recentHistory ? `Recent conversation:\n${recentHistory}\n` : '',
-    `Customer question: ${userText}`,
-    '',
-    'End with one to three plain official source URLs used for the guidance.'
-  ].filter(Boolean).join('\n');
+  const prompt = buildWebSearchPrompt({
+    mode,
+    allowBroadSearch,
+    userText,
+    history,
+    products,
+    customerBrand,
+    language
+  });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -221,7 +259,7 @@ async function answerProductGuidanceFromWeb({
         max_results: config.maxResults,
         max_total_results: config.maxResults,
         search_context_size: 'low',
-        allowed_domains: config.allowedDomains
+        ...(config.allowedDomains.length ? { allowed_domains: config.allowedDomains } : {})
       }
     }]
   };
@@ -247,12 +285,17 @@ async function answerProductGuidanceFromWeb({
     const assistantText = extractAssistantText(data);
     if (!assistantText) throw createEmptyResponseError(data, 'OpenRouter web search');
     const content = sanitizeCustomerReply(assistantText);
-    const webSources = extractCitations(message, config.allowedDomains);
+    const webSources = extractCitations(message, config.allowedDomains, allowBroadSearch);
     if (!content) throw new Error('OpenRouter web search returned unusable response');
-    if (!webSources.length) throw new Error('OpenRouter web search returned no allowed official citations');
+    if (!webSources.length) {
+      if (allowBroadSearch) {
+        throw new Error('OpenRouter web search returned no usable citations');
+      }
+      throw new Error('OpenRouter web search returned no allowed official citations');
+    }
 
     const contentUrls = extractUrls(content);
-    const disallowedUrl = contentUrls.find(url => !isAllowedSourceUrl(url, config.allowedDomains));
+    const disallowedUrl = contentUrls.find(url => !isAllowedSourceUrl(url, config.allowedDomains, allowBroadSearch));
     if (disallowedUrl) throw new Error('OpenRouter web search returned a URL outside the source allowlist');
 
     return {
@@ -271,10 +314,19 @@ async function answerProductGuidanceFromWeb({
   }
 }
 
+async function answerProductGuidanceFromWeb(options) {
+  return runProductWebSearch({ ...options, mode: 'guidance' });
+}
+
+async function answerProductSpecsFromWeb(options) {
+  return runProductWebSearch({ ...options, mode: 'specs' });
+}
+
 module.exports = {
   normalizeAllowedDomains,
   isAllowedSourceUrl,
   extractCitations,
   getWebGuidanceConfig,
-  answerProductGuidanceFromWeb
+  answerProductGuidanceFromWeb,
+  answerProductSpecsFromWeb
 };

@@ -50,6 +50,9 @@ function detectHandoff({ text, intent, aiError, ragProducts }) {
   if (/(không phản hồi|khong phan hoi|chưa phản hồi|chua phan hoi|không ai trả lời|khong ai tra loi|gọi lại|goi lai|liên hệ lại|lien he lai|khiếu nại|khieu nai|bảo hành lỗi|bao hanh loi)/i.test(t)) {
     return { needed: true, reason: 'Khách cần follow-up/khiếu nại' };
   }
+  if (/(còn hàng|có hàng|tồn kho|còn không|con hang|co hang|ton kho|con khong|co ban khong)/i.test(normalized) || /\b(?:available|in stock)\b/i.test(t)) {
+    return { needed: true, reason: 'Khách hỏi thông tin tồn kho/còn hàng' };
+  }
   if (/\b(hoi|hỏi).{0,30}(tu van|tư vấn|gioi thieu|giới thiệu)|\b(tu van|tư vấn).{0,30}(sai|nham|nhầm|lac de|lạc đề)|\b(dang hoi|đang hỏi).{0,50}(tu van|tư vấn)/i.test(normalized)) {
     return { needed: true, reason: 'Khách phản hồi AI tư vấn sai/lạc đề' };
   }
