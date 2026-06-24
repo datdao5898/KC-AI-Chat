@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const PAGE_SIZE = 30;
   const channelIcons = {
     all: '<rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 8h10M7 12h6M7 16h8"></path>',
@@ -18,12 +18,10 @@
     search: '',
     visibleCount: PAGE_SIZE,
     detailsOpen: false,
-    testOpen: false,
     summaryDraft: null,
     staffDraft: '',
     staffImage: null,
     staffImagePreviewUrl: '',
-    testDraft: 'tôi muốn mua sản phẩm chưa có dữ liệu xyzabc',
     messageScrollTop: 0,
     messageStickBottom: true,
     listScrollTop: 0
@@ -219,12 +217,6 @@
             `).join('')}
           </div>
         ` : ''}
-        <div class="channel-tools">
-          <button class="tool-button" id="openTestBtn" type="button">
-            ${icon(channelIcons.website)}
-            <span>${KC.esc(KC.t('testWebsiteTool'))}</span>
-          </button>
-        </div>
       </aside>
     `;
   }
@@ -236,7 +228,7 @@
   function ratingStars(rating) {
     const value = Math.max(0, Math.min(5, Number(rating) || 0));
     if (!value) return '';
-    return `<span class="customer-rating" title="${KC.esc(`${value}/5`)}">${'★'.repeat(value)}${'☆'.repeat(5 - value)}</span>`;
+    return `<span class="customer-rating" title="${KC.esc(`${value}/5`)}">${'â˜…'.repeat(value)}${'â˜†'.repeat(5 - value)}</span>`;
   }
 
   function convItem(conv) {
@@ -309,14 +301,14 @@
     const vision = media.vision || {};
     const imageHtml = imageUrls.length ? `
       <div class="message-images">
-        ${imageUrls.map(url => `<a href="${KC.esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${KC.esc(url)}" alt="Hình ảnh trong hội thoại" loading="lazy"></a>`).join('')}
+        ${imageUrls.map(url => `<a href="${KC.esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${KC.esc(url)}" alt="HÃ¬nh áº£nh trong há»™i thoáº¡i" loading="lazy"></a>`).join('')}
       </div>
       ${vision.recognized && vision.searchText ? `<div class="message-image-caption">${KC.esc(vision.searchText)}</div>` : ''}
     ` : '';
     return `
       <div class="msg ${message.direction === 'out' ? 'out' : 'in'}">
         <div class="msg-meta">
-          <span>${KC.esc(message.sender_type || '')} · ${KC.esc(KC.shortDate(message.created_at))}</span>
+          <span>${KC.esc(message.sender_type || '')} Â· ${KC.esc(KC.shortDate(message.created_at))}</span>
           <span class="row">
             ${message.direction === 'out' && String(message.sender_type || '').toLowerCase() === 'ai' ? `<button class="mini" data-review-msg="${KC.esc(message.id)}" type="button">${KC.esc(KC.t('markWrong'))}</button>` : ''}
             <button class="mini" data-delete-msg="${KC.esc(message.id)}" type="button">${KC.esc(KC.t('delete'))}</button>
@@ -336,7 +328,7 @@
       [KC.t('source'), conv.source_name || conv.source_key],
       [KC.t('customerPage'), customerPageUrl],
       [KC.t('status'), conv.status || 'open'],
-      [KC.t('customerRating'), conv.customer_rating ? `${'★'.repeat(Number(conv.customer_rating))}${'☆'.repeat(5 - Number(conv.customer_rating))} ${conv.customer_rating}/5` : ''],
+      [KC.t('customerRating'), conv.customer_rating ? `${'â˜…'.repeat(Number(conv.customer_rating))}${'â˜†'.repeat(5 - Number(conv.customer_rating))} ${conv.customer_rating}/5` : ''],
       [KC.t('ratingFeedback'), conv.customer_rating_feedback]
     ].filter(([, value]) => String(value || '').trim());
     return rows.length
@@ -423,14 +415,13 @@
     }
     const conv = selected.conversation;
     const alerts = selected.alerts || [];
-    const isWebsiteChat = groupKey(conv) === 'website';
-    const customerPageUrl = isWebsiteChat ? latestCustomerPage(selected.messages || []) : '';
+    const customerPageUrl = latestCustomerPage(selected.messages || []);
     return `
       <section class="inbox-detail">
         <header class="conversation-header">
           <div class="conversation-identity">
             <h3>${KC.esc(convName(conv))}</h3>
-            <div>${KC.esc(conv.source_name || sourceGroupLabel(groupKey(conv)))} · ${KC.esc(conv.phone || conv.external_id || '')}</div>
+            <div>${KC.esc(conv.source_name || sourceGroupLabel(groupKey(conv)))} Â· ${KC.esc(conv.phone || conv.external_id || '')}</div>
             ${customerPageUrl ? `
               <a class="customer-page-link" href="${KC.esc(customerPageUrl)}" target="_blank" rel="noopener noreferrer" title="${KC.esc(KC.t('openCustomerPage'))}">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7"></path><path d="M10 14 21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>
@@ -446,7 +437,7 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
             </button>
             <details class="action-menu">
-              <summary title="${KC.esc(KC.t('moreActions'))}" aria-label="${KC.esc(KC.t('moreActions'))}">•••</summary>
+              <summary title="${KC.esc(KC.t('moreActions'))}" aria-label="${KC.esc(KC.t('moreActions'))}">â€¢â€¢â€¢</summary>
               <div>
                 <button data-open-details type="button">${KC.esc(KC.t('summarize'))}</button>
                 <button class="danger-text" data-delete-conversation type="button">${KC.esc(KC.t('deleteConversation'))}</button>
@@ -457,52 +448,8 @@
         <div class="conversation-messages" id="messageScroll">
           ${(selected.messages || []).map(messageItem).join('')}
         </div>
-        ${isWebsiteChat ? `
-          <div class="website-composer">
-            ${data.staffImage ? `
-              <div class="staff-image-preview">
-                <img src="${KC.esc(data.staffImagePreviewUrl)}" alt="${KC.esc(KC.t('attachImage'))}">
-                <div>
-                  <strong>${KC.esc(data.staffImage.name || KC.t('attachImage'))}</strong>
-                  <span>${KC.esc(KC.t('imageRequirements'))}</span>
-                </div>
-                <button class="icon-button" id="removeStaffImageBtn" type="button" title="${KC.esc(KC.t('removeImage'))}" aria-label="${KC.esc(KC.t('removeImage'))}">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
-                </button>
-              </div>
-            ` : ''}
-            <div class="website-composer-row">
-              <button class="composer-attach" id="staffImageBtn" type="button" title="${KC.esc(KC.t('attachImage'))}" aria-label="${KC.esc(KC.t('attachImage'))}">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.3-8.3"></path></svg>
-              </button>
-              <textarea id="staffReplyText" placeholder="${KC.esc(KC.t('replyPlaceholder'))}">${KC.esc(data.staffDraft)}</textarea>
-              <button class="btn" id="staffReplyBtn" type="button">${KC.esc(KC.t('sendCustomer'))}</button>
-              <input id="staffImageInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
-            </div>
-          </div>
-        ` : ''}
         ${renderDetailsDrawer(conv, alerts, customerPageUrl)}
       </section>
-    `;
-  }
-
-  function renderTestModal() {
-    if (!data.testOpen) return '';
-    return `
-      <div class="modal-backdrop" id="testModal">
-        <div class="test-modal" role="dialog" aria-modal="true">
-          <div class="drawer-head">
-            <h3>${KC.esc(KC.t('testTitle'))}</h3>
-            <button class="icon-button" id="closeTestBtn" type="button" title="${KC.esc(KC.t('close'))}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
-            </button>
-          </div>
-          <textarea id="testMsg" placeholder="${KC.esc(KC.t('testPlaceholder'))}">${KC.esc(data.testDraft)}</textarea>
-          <div class="row" style="justify-content:flex-end">
-            <button class="btn" id="sendTestBtn" type="button">${KC.esc(KC.t('sendTest'))}</button>
-          </div>
-        </div>
-      </div>
     `;
   }
 
@@ -513,7 +460,6 @@
         ${renderConversationPanel()}
         ${selectedPanel()}
       </div>
-      ${renderTestModal()}
     `;
   }
 
@@ -535,8 +481,6 @@
     if (summary) data.summaryDraft = summary.value;
     const staff = KC.$('#staffReplyText');
     if (staff) data.staffDraft = staff.value;
-    const test = KC.$('#testMsg');
-    if (test) data.testDraft = test.value;
   }
 
   function restoreUiState() {
@@ -694,25 +638,6 @@
     if (rerenderPage) rerender();
   }
 
-  async function sendTest() {
-    const text = KC.$('#testMsg')?.value.trim();
-    if (!text) return;
-    await KC.api('/webhooks/website-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        visitorId: 'local-test-' + Date.now(),
-        name: KC.t('testCustomer'),
-        message: text
-      })
-    });
-    data.testOpen = false;
-    data.testDraft = 'tôi muốn mua sản phẩm chưa có dữ liệu xyzabc';
-    await load(false);
-    rerender(false);
-    KC.toast(KC.t('sentTest'));
-  }
-
   async function deleteConversation() {
     if (!confirm(KC.t('deleteConvConfirm'))) return;
     await KC.api(KC.API + '/conversations/' + encodeURIComponent(data.selected.conversation.id), { method: 'DELETE' });
@@ -811,20 +736,6 @@
     KC.$$('[data-delete-conversation]').forEach(button => {
       button.onclick = deleteConversation;
     });
-    if (KC.$('#openTestBtn')) KC.$('#openTestBtn').onclick = () => {
-      data.testOpen = true;
-      rerender();
-    };
-    if (KC.$('#closeTestBtn')) KC.$('#closeTestBtn').onclick = () => {
-      data.testOpen = false;
-      rerender();
-    };
-    if (KC.$('#testModal')) KC.$('#testModal').onclick = event => {
-      if (event.target.id === 'testModal') {
-        data.testOpen = false;
-        rerender();
-      }
-    };
     if (KC.$('#toggleAutoBtn')) KC.$('#toggleAutoBtn').onclick = toggleAuto;
     if (KC.$('#handoffBtn')) KC.$('#handoffBtn').onclick = handoff;
     if (KC.$('#resolveBtn')) KC.$('#resolveBtn').onclick = resolveHandoff;
@@ -834,7 +745,6 @@
     if (KC.$('#staffImageBtn')) KC.$('#staffImageBtn').onclick = () => KC.$('#staffImageInput')?.click();
     if (KC.$('#staffImageInput')) KC.$('#staffImageInput').onchange = event => setStaffImage(event.target.files?.[0]);
     if (KC.$('#removeStaffImageBtn')) KC.$('#removeStaffImageBtn').onclick = () => clearStaffImage(true);
-    if (KC.$('#sendTestBtn')) KC.$('#sendTestBtn').onclick = sendTest;
     if (KC.$('#deleteConvBtn')) KC.$('#deleteConvBtn').onclick = deleteConversation;
     if (KC.$('#summaryText')) KC.$('#summaryText').oninput = event => { data.summaryDraft = event.target.value; };
     if (KC.$('#staffReplyText')) {
@@ -847,7 +757,6 @@
         setStaffImage(image.getAsFile());
       };
     }
-    if (KC.$('#testMsg')) KC.$('#testMsg').oninput = event => { data.testDraft = event.target.value; };
     requestAnimationFrame(restoreUiState);
   }
 

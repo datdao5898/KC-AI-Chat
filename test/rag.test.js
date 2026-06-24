@@ -1,6 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalize, queryWords, parsePriceNumber, searchProducts, buildContext } = require('../src/rag');
+const {
+  normalize,
+  queryWords,
+  parsePriceNumber,
+  searchProducts,
+  buildContext,
+  matchesRequiredCategory
+} = require('../src/rag');
 
 test('normalize strips accents and punctuation', () => {
   assert.equal(normalize('Đèn LED Ulanzi!'), 'den led ulanzi');
@@ -28,6 +35,14 @@ test('landscape lens search excludes phone lenses and lens accessories', () => {
   assert.ok(products.every(product => parsePriceNumber(product.price) < 9000000));
   assert.ok(products.every(product => !/\b(smartphone|dien thoai|khan|adapter|gia do|support)\b/i.test(normalize(product.name))));
   assert.ok(products.some(product => /\b(viltrox|ong kinh)\b/i.test(normalize(product.name))));
+});
+
+test('headphone search excludes microphones and voice amplifiers', () => {
+  const products = searchProducts('tai nghe', 8, { sourceKey: 'website/newlite' });
+
+  assert.ok(products.length > 0);
+  assert.ok(products.every(product => /\b(tai nghe|headphone|headset)\b/i.test(normalize(product.name || ''))));
+  assert.ok(products.every(product => !/\b(may tro giang|micro thu am)\b/i.test(normalize(product.name || ''))));
 });
 
 test('product specification context includes the matched catalog description', () => {
@@ -111,4 +126,21 @@ test('strict brand fanpages do not return products from another brand', () => {
 
   assert.deepEqual(syncoPageProducts, []);
   assert.deepEqual(viltroxPageProducts, []);
+});
+
+test('required gimbal category excludes frames and gimbal accessories', () => {
+  assert.equal(matchesRequiredCategory({ name: 'Ulanzi MA05 Khung chong rung cho dien thoai' }, 'gimbal'), false);
+  assert.equal(matchesRequiredCategory({ name: 'Ulanzi R083 Tay cam danh cho DJI Ronin SC2 Gimbal' }, 'gimbal'), false);
+  assert.equal(matchesRequiredCategory({ name: 'Zhiyun Weebill 3E Gimbal chong rung' }, 'gimbal'), true);
+
+  const products = searchProducts(
+    'gimbal chong rung stabilizer',
+    8,
+    { sourceKey: 'website/newlite', requiredCategory: 'gimbal' }
+  );
+
+  assert.ok(products.length > 0);
+  assert.ok(products.every(product => matchesRequiredCategory(product, 'gimbal')));
+  assert.ok(products.some(product => /weebill 3e/i.test(product.name || '')));
+  assert.ok(products.every(product => !/\b(khung|danh cho .* gimbal)\b/i.test(normalize(product.name || ''))));
 });

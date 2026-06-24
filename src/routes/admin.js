@@ -6,6 +6,7 @@ const { listConversations, getConversation, updateConversationSummary, db, flagH
 const { searchProducts, loadProducts } = require('../rag');
 const { summarizeConversation, summarizeConversationFast } = require('../ai');
 const { notifyStaff } = require('../staffAlert');
+const { getJudgeMetrics } = require('../aiTrace');
 const { SOURCES_DIR, readSourceConfig, lookupEnvMap } = require('../sourceRegistry');
 const {
   maxImageBytes,
@@ -369,7 +370,12 @@ router.post('/conversations/:id/reviews', async (req, res) => {
 });
 
 router.get('/stats', async (req, res) => {
-  const stats = { ...(await getStats()), products: loadProducts().length };
+  const judge = getJudgeMetrics(Number(process.env.JUDGE_METRICS_SAMPLE_SIZE || 1000));
+  const stats = {
+    ...(await getStats()),
+    products: loadProducts().length,
+    judge
+  };
   res.json(stats);
 });
 

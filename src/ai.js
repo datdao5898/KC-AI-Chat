@@ -20,39 +20,19 @@ const {
 } = require('./sourceRegistry');
 const { answerProductGuidanceFromWeb, answerProductSpecsFromWeb } = require('./webGuidance');
 const { readProductPageContext } = require('./productPageReader');
-const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
+const { chatCompletion } = require('./llmClient');
 const {
   normalizeContext,
   resolveConversationContext,
   contextSearchText,
   buildClarificationReply,
-  isContextualProductFollowUp
+  isContextualProductFollowUp,
+  isAlternativeProductRequest
 } = require('./conversationContext');
 
 async function callOpenAI(prompt, timeoutMs) {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
-  if (!apiKey) throw new Error('OPENAI_API_KEY/OPENROUTER_API_KEY not configured');
-
-  const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
   const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 700);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  const isOpenRouter = /openrouter\.ai/i.test(baseUrl);
-  const appReferer = process.env.OPENROUTER_HTTP_REFERER || process.env.PUBLIC_BASE_URL || '';
-  const appTitle = process.env.OPENROUTER_TITLE || 'KingCom AI Agent';
-
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`
-  };
-  if (isOpenRouter && appReferer) headers['HTTP-Referer'] = String(appReferer);
-  if (isOpenRouter && appTitle) {
-    headers['X-Title'] = String(appTitle);
-    headers['X-OpenRouter-Title'] = String(appTitle);
-  }
-
   const formattedPrompt = `${prompt}
 
 Yêu cầu định dạng bắt buộc:
@@ -60,57 +40,20 @@ Yêu cầu định dạng bắt buộc:
 - Không dùng ký tự ** để in đậm.
 - Không dùng emoji hoặc icon trang trí.`;
 
-  const requestBody = {
+  // Reply uses a little creativity for natural customer-service wording.
+  const configuredMaxAttempts = Number(process.env.OPENAI_MAX_ATTEMPTS || 0);
+  const legacyRetries = Math.max(0, Number(process.env.OPENAI_EMPTY_RESPONSE_RETRIES || 1));
+  const maxAttempts = configuredMaxAttempts > 0 ? configuredMaxAttempts : legacyRetries + 1;
+  return chatCompletion({
     model,
     temperature: 0.3,
+    timeoutMs,
+    maxOutputTokens,
+    maxAttempts,
+    retryMaxOutputTokens: Math.max(maxOutputTokens * 2, 1200),
+    reasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'minimal',
     messages: [{ role: 'user', content: formattedPrompt }]
-  };
-  if (isOpenRouter) {
-    requestBody.reasoning = {
-      effort: process.env.OPENAI_REASONING_EFFORT || 'minimal',
-      exclude: true
-    };
-  }
-
-  const emptyResponseRetries = Math.max(0, Number(process.env.OPENAI_EMPTY_RESPONSE_RETRIES || 1));
-  try {
-    for (let attempt = 0; attempt <= emptyResponseRetries; attempt += 1) {
-      const attemptBody = { ...requestBody };
-      attemptBody[isOpenRouter ? 'max_tokens' : 'max_completion_tokens'] = attempt === 0
-        ? maxOutputTokens
-        : Math.max(maxOutputTokens * 2, 1200);
-
-      const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        signal: controller.signal,
-        headers,
-        body: JSON.stringify(attemptBody)
-      });
-
-      const raw = await res.text();
-      if (!res.ok) throw new Error(`OpenAI ${res.status}: ${raw.slice(0, 1000)}`);
-
-      let data;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        throw new Error('OpenAI returned invalid JSON');
-      }
-
-      const content = extractAssistantText(data);
-      if (content) return content;
-
-      const emptyError = createEmptyResponseError(data);
-      if (attempt >= emptyResponseRetries) throw emptyError;
-      console.warn(`OpenAI empty response; retrying once (${emptyError.responseDetails})`);
-    }
-    throw new Error('OpenAI returned empty response after retry');
-  } catch (err) {
-    if (err?.name === 'AbortError') throw new Error(`OpenAI timeout after ${timeoutMs}ms`);
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
+  });
 }
 
 function formatPrice(price) {
@@ -125,7 +68,7 @@ function formatPrice(price) {
   return n ? `${n.toLocaleString('vi-VN')}đ` : (price || 'liên hệ');
 }
 
-function detectMessageLanguage(text) {
+function detectMessageLanguageFromText(text) {
   const raw = String(text || '').trim();
   if (!raw) return 'vi';
 
@@ -150,6 +93,25 @@ function detectMessageLanguage(text) {
   if (asciiLetters >= 2 && englishHits >= 1) return 'en';
 
   return 'vi';
+}
+
+function detectMessageLanguage(text, history = []) {
+  const raw = String(text || '').trim();
+  const detected = detectMessageLanguageFromText(raw);
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  const hasStrongSignal = /[\u3400-\u9FFF\uF900-\uFAFF]/.test(raw)
+    || /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(raw)
+    || /\b(hello|please|looking|price|how much|warranty|invoice)\b/i.test(raw);
+  if (tokens.length > 2 || hasStrongSignal || !Array.isArray(history) || !history.length) return detected;
+
+  const previousCustomerMessage = [...history].reverse().find(message => {
+    if (message?.sender_type !== 'customer') return false;
+    const prior = String(message.text || '').trim();
+    return prior && prior !== raw;
+  });
+  return previousCustomerMessage
+    ? detectMessageLanguageFromText(previousCustomerMessage.text)
+    : detected;
 }
 
 function isEnglishMessage(text) {
@@ -515,7 +477,7 @@ function isProductGuidanceQuery(userText) {
 function isDirectProductSpecsQuery(userText) {
   const raw = String(userText || '');
   const normalized = normalize(userText);
-  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|cao bao nhieu|chieu cao|dai bao nhieu|rong bao nhieu|nang bao nhieu|luc hut|tai trong|tuong thich|dung duoc voi|dung duoc cho|ho tro iphone|ho tro android|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?|height|weight|dimensions|compatible with|compatibility)\b/i.test(normalized)
+  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|cao bao nhieu|chieu cao|dai bao nhieu|rong bao nhieu|nang bao nhieu|luc hut|tai trong|tuong thich|dung duoc voi|dung duoc cho|ho tro iphone|ho tro android|co remote|kem remote|remote khong|phu kien kem theo|kem theo gi|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?|height|weight|dimensions|compatible with|compatibility|include remote|come with remote|included accessories)\b/i.test(normalized)
     || /(\u53c2\u6570|\u89c4\u683c|\u6280\u672f\u53c2\u6570|\u914d\u7f6e|\u5c3a\u5bf8|\u91cd\u91cf|\u529f\u7387|\u5206\u8fa8\u7387|\u4f20\u611f\u5668|\u5149\u5708)/.test(raw);
 }
 
@@ -677,7 +639,7 @@ const PRODUCT_CONTEXT_WORDS = new Set([
   'san', 'pham', 'mau', 'may', 'nay', 'do', 'vua', 'noi', 'cua', 'gi',
   'technical', 'specification', 'specifications', 'spec', 'specs',
   'how', 'use', 'using', 'guide', 'instructions', 'setup', 'install',
-  'this', 'that', 'it', 'product', 'model'
+  'this', 'that', 'it', 'product', 'model', 'remote', 'kem', 'theo', 'phu', 'kien'
 ]);
 
 function productIdentityWords(text) {
@@ -1022,20 +984,178 @@ function buildSearchQuery(userText, history, customer, conversationContext = {})
   const asksGuidance = isProductGuidanceQuery(userText);
   const contextText = contextSearchText(conversationContext);
   const asksContextFollowUp = isContextualProductFollowUp(userText);
+  if (isAlternativeProductRequest(userText)) {
+    return buildAlternativeSearchQuery(userText, conversationContext);
+  }
+  if (conversationContext?.new_category_request && conversationContext?.requested_category) {
+    return `${categorySearchTerms(conversationContext.requested_category)} ${userText} ${expandedTerms}`.trim();
+  }
   if (asksSpecs || asksGuidance || isFollowUpLinkRequest(userText) || (asksContextFollowUp && contextText)) {
     if (hasExplicitProductReference(userText)) {
       return `${userText} ${expandedTerms}`.trim();
     }
     if (contextText) {
-      return `${userText} ${expandedTerms} ${contextText}`.trim();
+      return `${contextText} ${userText} ${expandedTerms}`.trim();
     }
     const referencedProduct = latestExplicitProductMessage(history, userText);
-    return `${userText} ${expandedTerms} ${referencedProduct?.text || ''}`.trim();
+    return `${referencedProduct?.text || ''} ${userText} ${expandedTerms}`.trim();
   }
   if (currentWords.length === 0) {
     return `${userText} ${expandedTerms} ${recentCustomer} ${interests}`.trim();
   }
   return `${userText} ${expandedTerms}`.trim();
+}
+
+const ALTERNATIVE_SEARCH_STOPWORDS = new Set([
+  'anh', 'chi', 'em', 'minh', 'toi', 'shop', 'ben', 'co', 'khong', 'a',
+  'khoong', 'ko', 'hong',
+  'can', 'muon', 'tim', 'hieu', 'tu', 'van', 'giup', 'cho', 'hoi', 've',
+  'san', 'pham', 'sp', 'mau', 'model', 'loai', 'lua', 'chon', 'phuong', 'an',
+  'con', 'nao', 'khac', 'nua', 'cai', 'tuong', 'another', 'other', 'option',
+  'something', 'anything', 'else', 'similar'
+]);
+
+function productCategorySearchTerms(productName = '') {
+  const normalized = normalize(productName);
+  const categories = [
+    ['tai nghe', /\b(tai nghe|headphone|headset)\b/i],
+    ['webcam', /\bwebcam\b/i],
+    ['micro', /\b(micro|mic|microphone|thu am)\b/i],
+    ['tripod', /\b(tripod|chan may|chan den)\b/i],
+    ['gimbal', /\b(gimbal|stabilizer)\b/i],
+    ['den', /\b(den|light|led)\b/i],
+    ['lens', /\b(lens|ong kinh)\b/i],
+    ['filter', /\b(filter|kinh loc)\b/i],
+    ['man hinh', /\b(man hinh|monitor)\b/i],
+    ['balo tui', /\b(balo|backpack|tui)\b/i]
+  ];
+  return categories.find(([, pattern]) => pattern.test(normalized))?.[0] || '';
+}
+
+function categorySearchTerms(category = '') {
+  const terms = {
+    gimbal: 'gimbal chong rung stabilizer',
+    tripod: 'tripod chan may',
+    headphones: 'tai nghe headphone headset',
+    webcam: 'webcam',
+    microphone: 'micro microphone thu am',
+    light: 'den led light',
+    lens: 'lens ong kinh',
+    filter: 'filter kinh loc',
+    monitor: 'man hinh monitor',
+    bag: 'balo tui may anh'
+  };
+  return terms[normalize(category)] || '';
+}
+
+function buildAlternativeSearchQuery(userText, conversationContext = {}) {
+  const usefulWords = queryWords(userText)
+    .filter(word => !ALTERNATIVE_SEARCH_STOPWORDS.has(word))
+    .slice(0, 6);
+  const previousName = conversationContext?.previous_product_name || conversationContext?.current_product_name || '';
+  const category = categorySearchTerms(conversationContext?.requested_category)
+    || productCategorySearchTerms(previousName);
+  return [usefulWords.join(' '), category].filter(Boolean).join(' ').trim() || category;
+}
+
+function isSameProduct(product = {}, context = {}) {
+  const previousSku = normalize(context.previous_product_sku || context.current_product_sku || '');
+  const previousUrl = String(context.previous_product_url || context.current_product_url || '').trim().replace(/\/+$/, '');
+  const previousName = normalize(context.previous_product_name || context.current_product_name || '');
+  const productSku = normalize(product.sku || '');
+  const productUrl = String(product.url || product.link || product.product_url || '').trim().replace(/\/+$/, '');
+  const productName = normalize(product.name || product.title || '');
+  return Boolean(
+    (previousSku && productSku === previousSku)
+    || (previousUrl && productUrl === previousUrl)
+    || (previousName && productName === previousName)
+  );
+}
+
+function buildAlternativeProductsReply(products, lang, customerBrand = 'KingCom') {
+  const rows = (products || []).slice(0, 3).map((product, index) => {
+    const name = productDisplayName(product, `Sản phẩm ${index + 1}`);
+    const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
+    const url = product.url || product.link || product.product_url || '';
+    if (lang === 'en') return `${index + 1}. ${name}\nPrice: ${price}${url ? `\nLink: ${url}` : ''}`;
+    if (lang === 'zh') return `${index + 1}. ${name}\n价格: ${price}${url ? `\n链接: ${url}` : ''}`;
+    return `${index + 1}. ${name}\nGiá: ${price}${url ? `\nLink: ${url}` : ''}`;
+  }).join('\n\n');
+  if (lang === 'en') return `Here are some other matching options from ${customerBrand}:\n\n${rows}\n\nWhich model would you like to compare in more detail?`;
+  if (lang === 'zh') return `${customerBrand} 还有以下相符的选择：\n\n${rows}\n\n您想进一步比较哪一款？`;
+  return `Dạ, ${customerBrand} còn các lựa chọn phù hợp khác như sau:\n\n${rows}\n\nAnh/chị muốn em so sánh kỹ mẫu nào ạ?`;
+}
+
+function buildCategoryProductsReply(products, category, lang, customerBrand = 'KingCom') {
+  const labels = {
+    gimbal: 'thiết bị chống rung',
+    tripod: 'chân máy',
+    headphones: 'tai nghe',
+    webcam: 'webcam',
+    microphone: 'micro',
+    light: 'đèn quay chụp',
+    lens: 'ống kính',
+    filter: 'kính lọc',
+    monitor: 'màn hình',
+    bag: 'balo hoặc túi máy ảnh'
+  };
+  const label = labels[category] || 'sản phẩm';
+  const rows = (products || []).slice(0, 3).map((product, index) => {
+    const name = productDisplayName(product, `Sản phẩm ${index + 1}`);
+    const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
+    const url = product.url || product.link || product.product_url || '';
+    if (lang === 'en') return `${index + 1}. ${name}\nPrice: ${price}${url ? `\nLink: ${url}` : ''}`;
+    if (lang === 'zh') return `${index + 1}. ${name}\n价格: ${price}${url ? `\n链接: ${url}` : ''}`;
+    return `${index + 1}. ${name}\nGiá: ${price}${url ? `\nLink: ${url}` : ''}`;
+  }).join('\n\n');
+  if (lang === 'en') return `${customerBrand} found these suitable options:\n\n${rows}\n\nWhich model would you like to explore further?`;
+  if (lang === 'zh') return `${customerBrand} 找到以下合适的产品：\n\n${rows}\n\n您想进一步了解哪一款？`;
+  return `Dạ, với nhu cầu về ${label}, ${customerBrand} có các mẫu phù hợp sau:\n\n${rows}\n\nAnh/chị muốn em tư vấn kỹ mẫu nào ạ?`;
+}
+
+const BROAD_SEARCH_STOPWORDS = new Set([
+  'anh', 'chi', 'em', 'minh', 'toi', 'shop', 'ben', 'ban', 'co', 'khong',
+  'can', 'muon', 'tim', 'hieu', 've', 'tu', 'van', 'giup', 'cho', 'hoi',
+  'san', 'pham', 'mua', 'gia', 'bao', 'nhieu', 'nao', 'nay', 'do', 'a'
+]);
+
+function buildBroaderSearchQuery(userText, conversationContext = {}, scopeBrand = '') {
+  const contextText = contextSearchText(conversationContext);
+  const usefulWords = queryWords(userText)
+    .filter(word => !BROAD_SEARCH_STOPWORDS.has(word))
+    .slice(0, 8);
+  return [contextText, scopeBrand, usefulWords.join(' ')]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
+function isBroadConsultationRequest(userText, intent) {
+  if (!['general', 'product_search'].includes(intent)) return false;
+  const normalized = normalize(userText);
+  const words = queryWords(userText);
+  const asksForHelp = /\b(tu van|goi y|gioi thieu|cho hoi|can mua|muon mua|tim hieu|san pham|do quay phim|do quay chup|phu kien)\b/i.test(normalized);
+  const genericConsultationWords = new Set([
+    'tu', 'van', 'goi', 'y', 'gioi', 'thieu', 'hoi', 've', 'can', 'mua', 'muon',
+    'tim', 'hieu', 'san', 'pham', 'do', 'quay', 'phim', 'chup', 'phu', 'kien',
+    'lens', 'micro', 'mic', 'den', 'tripod', 'gimbal', 'filter', 'camera'
+  ]);
+  const hasSpecificIdentity = words.some(word => (
+    /[a-z]+\d|\d+[a-z]+/i.test(word)
+    || ['ulanzi', 'synco', 'viltrox', 'maono', 'boya', 'fifine', 'nanlite', 'zhiyun'].includes(word)
+    || !genericConsultationWords.has(word)
+  ));
+  return asksForHelp && !hasSpecificIdentity && words.length <= 10;
+}
+
+function buildBroadConsultationReply(lang, customerBrand = 'KingCom') {
+  if (lang === 'en') {
+    return `Certainly. What will you use the product for, which product type are you considering, and what is your approximate budget? ${customerBrand} will then suggest suitable options.`;
+  }
+  if (lang === 'zh') {
+    return `可以的。请告诉我您的使用需求、想了解的产品类型和大致预算，${customerBrand} 会为您推荐更合适的产品。`;
+  }
+  return `Dạ được ạ. Anh/chị cho em biết nhu cầu sử dụng, nhóm sản phẩm đang quan tâm và khoảng ngân sách dự kiến; ${customerBrand} sẽ gợi ý mẫu phù hợp hơn ạ.`;
 }
 
 function hasSpecificProductQuery(userText, intent) {
@@ -1165,7 +1285,7 @@ async function generateReplyRaw({
   sourceGroup = '',
   conversationContext = {}
 }) {
-  const messageLanguage = detectMessageLanguage(userText);
+  const messageLanguage = detectMessageLanguage(userText, history);
   const guidanceQuestion = isProductGuidanceQuery(userText);
   const specsQuestion = isProductSpecsRequest(userText, history);
   const policyQuestion = isCommercialPolicyQuestion(userText, intent);
@@ -1330,6 +1450,10 @@ Quy tắc giọng nói:
 - KingCom KHÔNG phải cửa hàng mỹ phẩm. Tuyệt đối không nói KingCom bán mỹ phẩm/làm đẹp.
 - Khi giới thiệu KingCom, chỉ nói là cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung.
 - Nếu không chắc thông tin, nói "em kiểm tra thêm" hoặc "em chuyển nhân viên phụ trách kiểm tra", không nói "AI không biết".
+- Không cười, trêu, chê hoặc nói khách "nhầm lẫn gì đây"; nếu câu hỏi ngoài phạm vi, hãy giải thích lịch sự và gợi ý nhóm sản phẩm phù hợp.
+- Không nói mình là "giao diện tự động" hoặc "không thể trao đổi trực tiếp".
+- Không tự thêm mẫu trống như "Số điện thoại: ____".
+- Chỉ nhắc lại số điện thoại khi khách vừa cung cấp hoặc hỏi lại số đã cung cấp; không chèn xác nhận số điện thoại vào câu trả lời không liên quan.
 
 ${intent === 'greeting'
           ? 'Chào lại khách ngắn gọn, hỏi khách cần hỗ trợ gì. KHÔNG liệt kê sản phẩm, KHÔNG gợi ý sản phẩm cụ thể.'
@@ -1356,15 +1480,58 @@ ${intent === 'greeting'
     }
   }
 
-  const searchQuery = buildSearchQuery(userText, history, customer, resolvedConversationContext);
-  const { context, products } = buildContext(searchQuery, {
+  if (isBroadConsultationRequest(userText, intent) && !guidanceQuestion && !policyQuestion) {
+    return {
+      reply: buildBroadConsultationReply(messageLanguage, customerBrand),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_context_clarification',
+      searchQuery: userText,
+      ragProducts: [],
+      conversationContext: resolvedConversationContext
+    };
+  }
+
+  let searchQuery = buildSearchQuery(userText, history, customer, resolvedConversationContext);
+  const retrievalOptions = {
     sourceKey,
     topK: policyQuestion ? 0 : ((guidanceQuestion || specsQuestion) ? 1 : 8),
-    includeDescriptions: true, // Luôn bật mô tả để AI không bị "mù" tính năng/phụ kiện
-    descriptionMaxChars: specsQuestion ? 3500 : 800, // Cắt ngắn nếu không phải câu hỏi cấu hình sâu
+    includeDescriptions: true,
+    descriptionMaxChars: specsQuestion ? 3500 : 800,
+    requiredCategory: (
+      resolvedConversationContext.new_category_request
+      || resolvedConversationContext.alternative_product_request
+    ) ? resolvedConversationContext.requested_category : '',
     requireIdentityMatch: !isStartingPriceQuery(userText)
       && (isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText) || specsQuestion)
-  });
+  };
+  let retrieval = buildContext(searchQuery, retrievalOptions);
+  let { context, products } = retrieval;
+  if (resolvedConversationContext.alternative_product_request) {
+    products = products.filter(product => !isSameProduct(product, resolvedConversationContext));
+  }
+  if (
+    !policyQuestion
+    && !products.length
+    && ['buy', 'price', 'product_search', 'product_specs', 'order'].includes(intent)
+  ) {
+    const broaderQuery = resolvedConversationContext.alternative_product_request
+      ? buildAlternativeSearchQuery(userText, resolvedConversationContext)
+      : buildBroaderSearchQuery(userText, resolvedConversationContext, scopeBrand);
+    if (broaderQuery && normalize(broaderQuery) !== normalize(searchQuery)) {
+      retrieval = buildContext(broaderQuery, {
+        ...retrievalOptions,
+        requireIdentityMatch: false
+      });
+      if (retrieval.products.length) {
+        searchQuery = broaderQuery;
+        ({ context, products } = retrieval);
+        if (resolvedConversationContext.alternative_product_request) {
+          products = products.filter(product => !isSameProduct(product, resolvedConversationContext));
+        }
+      }
+    }
+  }
   const productPageContext = productUrlQuestion
     ? await readProductPageContext(userText, { products })
     : { ok: false, skipped: 'no_product_url' };
@@ -1448,6 +1615,17 @@ ${intent === 'greeting'
       conversationContext: resolvedConversationContext
     };
   }
+  if (resolvedConversationContext.alternative_product_request && products.length && !guidanceQuestion && !policyQuestion) {
+    return {
+      reply: buildAlternativeProductsReply(products, messageLanguage, customerBrand),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_alternative_products',
+      searchQuery,
+      ragProducts: products.slice(0, 3),
+      conversationContext: resolvedConversationContext
+    };
+  }
   const budgetProductReply = (!guidanceQuestion && !policyQuestion && ['buy', 'price', 'product_search', 'order'].includes(intent))
     ? buildBudgetProductReply(userText, products, scopeBrand)
     : null;
@@ -1471,6 +1649,28 @@ ${intent === 'greeting'
       aiUsed: 0,
       aiError: false,
       aiSource: 'direct_starting_price_lookup',
+      searchQuery,
+      ragProducts: products.slice(0, 3),
+      conversationContext: resolvedConversationContext
+    };
+  }
+  if (
+    resolvedConversationContext.new_category_request
+    && resolvedConversationContext.requested_category
+    && products.length
+    && !guidanceQuestion
+    && !policyQuestion
+  ) {
+    return {
+      reply: buildCategoryProductsReply(
+        products,
+        resolvedConversationContext.requested_category,
+        messageLanguage,
+        customerBrand
+      ),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_need_category_products',
       searchQuery,
       ragProducts: products.slice(0, 3),
       conversationContext: resolvedConversationContext
@@ -1575,6 +1775,10 @@ Quy tắc:
 - Nếu khách yêu cầu gặp nhân viên thật trên website, hãy trả lời là bạn đã chuyển thông tin cho bộ phận chuyên trách và họ sẽ hỗ trợ trực tiếp tại đây.
 - KingCom chuyên bán phụ kiện nhiếp ảnh, quay phim và sáng tạo nội dung. Hãy từ chối lịch sự nếu khách hỏi về mỹ phẩm hoặc ngành hàng không liên quan.
 - Luôn giữ thái độ chuyên nghiệp, tôn trọng và lịch sự với khách hàng trong mọi tình huống.
+- Không cười, trêu, chê hoặc nói khách "nhầm lẫn gì đây"; nếu câu hỏi ngoài phạm vi, hãy giải thích lịch sự và gợi ý hướng phù hợp.
+- Không nói mình là "giao diện tự động", "hệ thống tự động" hoặc "không thể trao đổi trực tiếp".
+- Không tự thêm mẫu trống như "Số điện thoại: ____".
+- Chỉ nhắc lại số điện thoại khi khách vừa cung cấp hoặc hỏi lại số đã cung cấp; không chèn câu xác nhận đã có số điện thoại vào câu trả lời không liên quan.
 - BẮT BUỘC chỉ tư vấn dựa trên "Dữ liệu tham khảo". Nếu dữ liệu không có thông tin (giá, tồn kho, bảo hành, model), hãy chủ động xin lỗi, báo "chưa có thông tin" và đề nghị chuyển nhân viên KingCom kiểm tra.
 - TUYỆT ĐỐI KHÔNG tự tạo ra (bịa) tên sản phẩm, giá bán, link mua hàng hay chương trình khuyến mãi. Mọi link sản phẩm phải lấy chính xác từ trường Link/url trong "Dữ liệu tham khảo".
 - Khi được hỏi ngắn gọn "gửi link", hãy ngầm hiểu là khách muốn link của sản phẩm vừa nhắc đến gần nhất trong lịch sử hội thoại.
@@ -1672,7 +1876,7 @@ async function generateReply(payload) {
   };
 }
 
-async function summarizeConversation({ messages, customer, language = 'vi' }) {
+async function summarizeConversation({ messages, customer, language = 'vi', fallbackOnError = true }) {
   const compact = (messages || []).slice(-20).map(m => `${m.sender_type}: ${m.text}`).join('\n');
   if (!compact.trim()) return '';
 
@@ -1690,6 +1894,7 @@ ${compact}`;
     return summary.slice(0, 2000);
   } catch (e) {
     console.error('OpenAI summary error:', e.message);
+    if (!fallbackOnError) throw e;
     return fallbackSummary(messages, customer);
   }
 }
@@ -1709,5 +1914,9 @@ module.exports = {
   extractCatalogSpecFacts,
   buildProductSpecsEvidenceReply,
   buildSearchQuery,
+  buildAlternativeSearchQuery,
+  buildBroaderSearchQuery,
+  isBroadConsultationRequest,
+  buildAlternativeProductsReply,
   buildProductSpecsFallbackReply
 };

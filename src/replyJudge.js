@@ -1,42 +1,26 @@
 const { detectMessageLanguage } = require('./ai');
 const { resolveCustomerBrand } = require('./sourceRegistry');
-const { createEmptyResponseError, extractAssistantText } = require('./llmResponse');
+const { chatCompletion } = require('./llmClient');
 const { loadTextFile } = require('./rag');
-const { normalizeContext, isContextualProductFollowUp } = require('./conversationContext');
+const { normalizeContext, isContextualProductFollowUp, isAlternativeProductRequest } = require('./conversationContext');
 
 function getApiConfig() {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
-  if (!apiKey) throw new Error('OPENAI_API_KEY/OPENROUTER_API_KEY not configured');
-
-  const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = process.env.OPENAI_JUDGE_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini';
-  const maxOutputTokens = Number(process.env.OPENAI_JUDGE_MAX_OUTPUT_TOKENS || 256);
+  const maxOutputTokens = Number(process.env.OPENAI_JUDGE_MAX_OUTPUT_TOKENS || 1200);
   const timeoutMs = Number(process.env.OPENAI_JUDGE_TIMEOUT_MS || process.env.AI_TIMEOUT_MS || 45000);
-  return { apiKey, baseUrl, model, maxOutputTokens, timeoutMs };
+  return { model, maxOutputTokens, timeoutMs };
 }
 
 async function callOpenAI(prompt, timeoutMs, attempt = 1) {
-  const { apiKey, baseUrl, model, maxOutputTokens } = getApiConfig();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  const isOpenRouter = /openrouter\.ai/i.test(baseUrl);
-  const appReferer = process.env.OPENROUTER_HTTP_REFERER || process.env.PUBLIC_BASE_URL || '';
-  const appTitle = process.env.OPENROUTER_TITLE || 'KingCom AI Agent';
-
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`
-  };
-  if (isOpenRouter && appReferer) headers['HTTP-Referer'] = String(appReferer);
-  if (isOpenRouter && appTitle) {
-    headers['X-Title'] = String(appTitle);
-    headers['X-OpenRouter-Title'] = String(appTitle);
-  }
-
-  const requestBody = {
+  const { model, maxOutputTokens } = getApiConfig();
+  // Judge stays deterministic because it is a safety decision, not copywriting.
+  return chatCompletion({
     model,
     temperature: 0,
+    timeoutMs,
+    maxOutputTokens: attempt === 1 ? maxOutputTokens : Math.max(maxOutputTokens * 2, 1000),
+    maxAttempts: 1,
+    reasoningEffort: process.env.OPENAI_JUDGE_REASONING_EFFORT || 'minimal',
     messages: [
       {
         role: 'system',
@@ -44,45 +28,8 @@ async function callOpenAI(prompt, timeoutMs, attempt = 1) {
       },
       { role: 'user', content: prompt }
     ],
-    response_format: { type: 'json_object' }
-  };
-  requestBody[isOpenRouter ? 'max_tokens' : 'max_completion_tokens'] = attempt === 1
-    ? maxOutputTokens
-    : Math.max(maxOutputTokens * 2, 1000);
-  if (isOpenRouter) {
-    requestBody.reasoning = {
-      effort: process.env.OPENAI_JUDGE_REASONING_EFFORT || 'minimal',
-      exclude: true
-    };
-  }
-
-  try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers,
-      body: JSON.stringify(requestBody)
-    });
-
-    const raw = await res.text();
-    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${raw.slice(0, 1000)}`);
-
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      throw new Error('OpenAI returned invalid JSON');
-    }
-
-    const content = extractAssistantText(data);
-    if (!content) throw createEmptyResponseError(data);
-    return content;
-  } catch (err) {
-    if (err?.name === 'AbortError') throw new Error(`OpenAI timeout after ${timeoutMs}ms`);
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
+    responseFormat: { type: 'json_object' }
+  });
 }
 
 function safeJsonParse(text) {
@@ -210,7 +157,12 @@ function summarizeConversationContext(context = {}) {
     current_customer_goal: ctx.current_customer_goal || '',
     context_confidence: ctx.context_confidence || 0,
     needs_clarification: !!ctx.needs_clarification,
-    clarification_reason: ctx.clarification_reason || ''
+    clarification_reason: ctx.clarification_reason || '',
+    requested_category: ctx.requested_category || '',
+    new_category_request: !!ctx.new_category_request,
+    alternative_product_request: !!ctx.alternative_product_request,
+    previous_product_name: ctx.previous_product_name || '',
+    previous_product_sku: ctx.previous_product_sku || ''
   });
 }
 
@@ -270,6 +222,7 @@ function buildLocalJudgeFallback(payload = {}) {
   const userFollowUp = isContextualProductFollowUp(userText)
     || ['product_search', 'price', 'product_specs', 'order'].includes(intent);
   const contextSensitiveQuestion = userFollowUp || (currentProduct && shortQuestion);
+  const alternativeRequest = !!ctx.alternative_product_request || isAlternativeProductRequest(userText);
   const customerPhone = String(payload?.customer?.phone || '').trim();
   const asksForPhoneAgain = customerPhone
     && /(phone number|s[ốo]\s*điện thoại|so dien thoai|để lại số điện thoại|leave your phone|leave your number|sdt)/i.test(reply);
@@ -288,7 +241,7 @@ function buildLocalJudgeFallback(payload = {}) {
     };
   }
 
-  if (contextSensitiveQuestion && currentProduct) {
+  if (contextSensitiveQuestion && currentProduct && !alternativeRequest) {
     const ragProducts = Array.isArray(payload.ragProducts) ? payload.ragProducts : [];
     const hasProductList = /\n\s*(?:\d+\.|-)\s|\blink\s*:/i.test(reply);
     const mentionsCurrentProduct = currentProduct && replyNorm.includes(currentProduct);
@@ -349,7 +302,7 @@ function buildJudgePrompt({
   webSources = [],
   conversationContext = {}
 }) {
-  const language = detectMessageLanguage(userText);
+  const language = detectMessageLanguage(userText, history);
   const expectedBrand = customerBrand || resolveCustomerBrand({ sourceKey, sourceName, sourceGroup });
   const languageLabel = language === 'en' ? 'English' : language === 'zh' ? 'Simplified Chinese' : 'Vietnamese';
   const historyText = summarizeHistory(history);
@@ -422,6 +375,7 @@ function buildJudgePrompt({
     'Audit checklist:',
     '1. The latest customer message has priority. Use recent conversation and Conversation context state only to resolve a genuine follow-up such as "that product", "the previous model", "link for it", "con mau do", or "san pham do".',
     '1a. If the latest message is self-contained, do not add a camera brand, mount, model, budget, or requirement that the customer did not mention. Never infer those details from an older image or an older topic.',
+    '1b. If alternative_product_request is true, or the customer asks for another/different model, the previous product is an exclusion rather than a required match. Different models or brands are valid when they remain in the requested category, active source scope, and retrieved catalog evidence.',
     '2. Check whether the draft reply answers that inferred need directly OR politely defers the question to staff. A polite apology and offer to check with staff is an ACCEPTABLE and DIRECT answer. Do NOT reject it.',
     '3. Check product relevance. Product name/category/brand/model/price/link in the reply MUST EXACTLY MATCH the retrieved catalog or official web sources. Reject IMMEDIATELY if the AI invents a product, link, or price that is not in the evidence. Do not let a generic word match change the category.',
     '4. Check source scope. If a fanpage/source is scoped to one brand, the reply must not recommend another brand unless recent context clearly asks to switch.',
@@ -531,6 +485,14 @@ function judgeUnavailableResult(reason, payload = {}) {
   return buildLocalJudgeFallback({ ...payload, reason });
 }
 
+function isTrustedDeterministicReplySource(aiSource = '') {
+  const source = String(aiSource || '').trim();
+  if (source === 'rule_source_store_info') return false;
+  return source === 'rule'
+    || source.startsWith('rule_')
+    || source.startsWith('direct_');
+}
+
 async function judgeAiReply(payload) {
   const enabled = process.env.REPLY_JUDGE_ENABLED !== 'false';
   if (!enabled) {
@@ -546,6 +508,22 @@ async function judgeAiReply(payload) {
 
   const trustedStoreInfo = approveTrustedSourceStoreInfo(payload);
   if (trustedStoreInfo) return trustedStoreInfo;
+
+  if (isTrustedDeterministicReplySource(payload?.aiSource)) {
+    return {
+      approve: true,
+      inferredCustomerNeed: '',
+      riskType: 'ok',
+      reason: `Judge skipped for deterministic reply source: ${payload.aiSource}`,
+      severity: 'low',
+      confidence: 1,
+      needsHandoff: false,
+      correctedReply: '',
+      correctedSimilarity: 0,
+      deterministic: true,
+      skipped: 'deterministic_reply_source'
+    };
+  }
 
   const timeoutMs = Number(process.env.OPENAI_JUDGE_TIMEOUT_MS || process.env.AI_TIMEOUT_MS || 45000);
   const attempts = Math.max(1, Number(process.env.OPENAI_JUDGE_RETRIES || 2));
@@ -565,6 +543,10 @@ async function judgeAiReply(payload) {
       return normalizeJudgeResult(parsed, payload?.reply || '');
     } catch (error) {
       lastError = error.message || String(error);
+      if (isJudgeCapacityError(error) && attempt < attempts) {
+        console.warn(`Judge capacity error; retrying with a larger output budget (${attempt}/${attempts}): ${lastError}`);
+        continue;
+      }
       if (isJudgeCapacityError(error)) {
         return judgeUnavailableResult(lastError, payload);
       }
@@ -581,5 +563,6 @@ module.exports = {
   judgeAiReply,
   approveTrustedSourceStoreInfo,
   buildJudgePrompt,
-  judgeUnavailableResult
+  judgeUnavailableResult,
+  isTrustedDeterministicReplySource
 };

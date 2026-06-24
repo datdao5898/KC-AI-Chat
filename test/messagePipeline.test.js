@@ -1,6 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { avoidRepeatedContactRequest, trimHistoryToActiveSession } = require('../src/messagePipeline');
+const {
+  avoidRepeatedContactRequest,
+  detectHandoff,
+  normalizeCustomerReply,
+  parseMessageTimestamp,
+  trimHistoryToActiveSession
+} = require('../src/messagePipeline');
 
 test('trimHistoryToActiveSession drops messages before a long inactivity gap', () => {
   const messages = [
@@ -21,6 +27,17 @@ test('trimHistoryToActiveSession keeps messages in the same active chat session'
   ];
 
   assert.equal(trimHistoryToActiveSession(messages, 360).length, 2);
+});
+
+test('parseMessageTimestamp treats legacy timestamps without timezone as UTC', () => {
+  assert.equal(
+    parseMessageTimestamp('2026-06-09 02:40:00.000'),
+    Date.parse('2026-06-09T02:40:00.000Z')
+  );
+  assert.equal(
+    parseMessageTimestamp('2026-06-09T09:40:00.000+07:00'),
+    Date.parse('2026-06-09T02:40:00.000Z')
+  );
 });
 
 test('avoidRepeatedContactRequest removes Vietnamese phone request when customer phone exists', () => {
@@ -53,4 +70,47 @@ test('avoidRepeatedContactRequest strips generic stored-phone acknowledgement wh
   const result = avoidRepeatedContactRequest(reply, { phone: '0944190237' }, 'gi\u00e1 \u0111\u00e3 bao g\u1ed3m vat ch\u01b0a');
 
   assert.equal(result, 'D\u1ea1, gi\u00e1 s\u1ea3n ph\u1ea9m \u0111\u00e3 bao g\u1ed3m VAT \u1ea1.');
+});
+
+test('detectHandoff does not escalate a supported policy answer', () => {
+  const result = detectHandoff({
+    text: 'giá đã bao gồm VAT chưa',
+    intent: 'warranty',
+    aiError: false,
+    ragProducts: [],
+    aiSource: 'rule_policy'
+  });
+
+  assert.equal(result.needed, false);
+});
+
+test('detectHandoff escalates an unresolved product lookup', () => {
+  const result = detectHandoff({
+    text: 'shop có bán sản phẩm xyzabc không',
+    intent: 'product_search',
+    aiError: false,
+    ragProducts: [],
+    aiSource: 'rule_no_catalog_match'
+  });
+
+  assert.equal(result.needed, true);
+});
+
+test('detectHandoff does not escalate a web-supported specs reply without RAG rows', () => {
+  const result = detectHandoff({
+    text: 'thông số sản phẩm này là gì',
+    intent: 'product_specs',
+    aiError: false,
+    ragProducts: [],
+    aiSource: 'provider_web_product_specs'
+  });
+
+  assert.equal(result.needed, false);
+});
+
+test('normalizeCustomerReply only performs format and decoration cleanup', () => {
+  const reply = 'Ha ha, khách hỏi nhầm lẫn gì đây 😊\n\n\nNội dung tiếp theo.';
+  const result = normalizeCustomerReply(reply);
+
+  assert.equal(result, 'Ha ha, khách hỏi nhầm lẫn gì đây\n\nNội dung tiếp theo.');
 });

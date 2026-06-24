@@ -38,12 +38,29 @@ function isGenericConsultationRequest(text, intent) {
   const normalized = normalizeForMatch(text);
   const words = normalized.split(/\s+/).filter(Boolean);
   if (!['product_search', 'general'].includes(intent)) return false;
-  return words.length <= 5
-    && /\b(tu van|gioi thieu|goi y|san pham|sp|can tu van)\b/i.test(normalized)
-    && !/\b(gia|bao nhieu|mua|ban|con hang|co hang|model|sku|den|micro|mic|lens|tripod|gimbal|filter|ulanzi|synco|viltrox|maono|boya|fifine)\b/i.test(normalized);
+  const genericWords = new Set([
+    'anh', 'chi', 'em', 'minh', 'toi', 'shop', 'ben', 'co', 'khong', 'a',
+    'tu', 'van', 'gioi', 'thieu', 'goi', 'y', 'san', 'pham', 'sp', 'can',
+    'cho', 'hoi', 'mua', 'muon', 'tim', 'hieu', 'do', 'quay', 'phim', 'chup',
+    'phu', 'kien', 'lens', 'micro', 'mic', 'den', 'tripod', 'gimbal', 'filter', 'camera'
+  ]);
+  const hasSpecificIdentity = words.some(word => !genericWords.has(word));
+  return words.length <= 10
+    && /\b(tu van|gioi thieu|goi y|san pham|sp|can tu van|cho hoi|can mua|muon mua|tim hieu|do quay phim|do quay chup|phu kien)\b/i.test(normalized)
+    && !hasSpecificIdentity
+    && !/\b(gia|bao nhieu|con hang|co hang|model|sku|ulanzi|synco|viltrox|maono|boya|fifine|nanlite|zhiyun)\b/i.test(normalized);
 }
 
-function detectHandoff({ text, intent, aiError, ragProducts }) {
+function isUnresolvedReplySource(aiSource = '') {
+  const source = String(aiSource || '').trim();
+  return source === 'rule_no_catalog_match'
+    || source === 'fallback'
+    || source === 'fallback_product_specs'
+    || source === 'guardrail_fallback'
+    || source === 'guardrail_fallback_product_specs';
+}
+
+function detectHandoff({ text, intent, aiError, ragProducts, aiSource = '' }) {
   const t = String(text || '').toLowerCase();
   const normalized = normalizeForMatch(text);
   if (intent === 'human') return { needed: true, reason: 'Khách yêu cầu gặp nhân viên' };
@@ -61,9 +78,14 @@ function detectHandoff({ text, intent, aiError, ragProducts }) {
     return { needed: false };
   }
   if (isPolicyFollowUpText(text, intent)) {
-    return { needed: true, reason: 'Khách cần xác nhận VAT/bảo hành/chính sách' };
+    return { needed: false };
   }
-  if (['buy', 'price', 'product_search', 'product_specs', 'order'].includes(intent) && (!ragProducts || ragProducts.length === 0) && !isGenericConsultationRequest(text, intent)) {
+  if (
+    ['buy', 'price', 'product_search', 'product_specs', 'order'].includes(intent)
+    && (!ragProducts || ragProducts.length === 0)
+    && !isGenericConsultationRequest(text, intent)
+    && isUnresolvedReplySource(aiSource)
+  ) {
     return { needed: true, reason: 'Không có dữ liệu sản phẩm phù hợp trong RAG' };
   }
   return { needed: false };
@@ -103,43 +125,10 @@ function buildJudgeRejectedReply(customerText = '') {
 }
 
 function normalizeCustomerReply(reply) {
-  let text = String(reply || '')
+  return String(reply || '')
     .replace(/\*\*/g, '')
     .replace(/[\u200D\uFE0E\uFE0F]/g, '')
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
-  const toneKey = text.toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  text = text
-    .replace(/^(ha\s*ha|haha|hihi|hehe|lol)[,!.\s-]*/i, 'Dạ anh/chị ơi, ')
-    .replace(/có vẻ nhầm lẫn gì đây\s*ạ?[!,.]*/i, 'có thể anh/chị đang hỏi nhầm nhóm sản phẩm ạ.')
-    .replace(/có vẻ nhầm lẫn\s*ạ?[!,.]*/i, 'có thể anh/chị đang hỏi nhầm nhóm sản phẩm ạ.')
-    .replace(/\bnhầm lẫn gì đây\b/gi, 'đang hỏi nhầm nhóm sản phẩm')
-    .replace(/Rất tiếc\s+em\s+hiện\s+tại\s+là\s+giao\s+diện\s+tự\s+động,\s*không\s+thể\s+trao\s+đổi\s+trực\s+tiếp\.?/gi, 'Em đã chuyển yêu cầu của anh/chị cho nhân viên KingCom. Anh/chị có thể tiếp tục nhắn tại khung chat này, nhân viên sẽ phản hồi tại đây khi có mặt.')
-    .replace(/Để\s+hỗ\s+trợ\s+nhanh\s+nhất,\s*anh\/chị\s+vui\s+lòng\s+để\s+lại\s+số\s+điện\s+thoại\s+để\s+nhân\s+viên\s+KingCom\s+liên\s+hệ\s+hỗ\s+trợ\s+nhé\.?/gi, 'Nếu tiện, anh/chị có thể để lại số điện thoại để KingCom hỗ trợ nhanh hơn ạ.')
-    .replace(/Số điện thoại:\s*_+/gi, '');
-
-  if (toneKey.startsWith('ha ha co ve nham lan gi day') || toneKey.startsWith('haha co ve nham lan gi day')) {
-    text = text.replace(/^Dạ anh\/chị ơi,\s*/i, '');
-    text = text.replace(/^.*?(KingCom\s+là|KingCom la)/i, 'Dạ anh/chị ơi, hiện KingCom chưa kinh doanh sản phẩm này ạ. KingCom là');
-  }
-
-  if (toneKey.includes('giao dien tu dong') && toneKey.includes('khong the trao doi truc tiep')) {
-    text = text.replace(/Rất tiếc[\s\S]*?(?=\n\n|$)/i, 'Em đã chuyển yêu cầu của anh/chị cho nhân viên KingCom. Anh/chị có thể tiếp tục nhắn tại khung chat này, nhân viên sẽ phản hồi tại đây khi có mặt.');
-    text = text.replace(/Số điện thoại:\s*_+/i, '');
-  }
-
-  return text
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -238,7 +227,22 @@ function updateConversationSummaryInBackground(conversationId, customerId, custo
       const summaryMessages = await getRecentMessages(conversationId, 20);
       let summary = '';
       if (process.env.AUTO_AI_SUMMARY !== 'false') {
-        summary = await summarizeConversation({ messages: summaryMessages, customer, language });
+        const attempts = Math.max(1, Number(process.env.AUTO_SUMMARY_RETRIES || 2));
+        for (let attempt = 1; attempt <= attempts && !summary; attempt += 1) {
+          try {
+            summary = await summarizeConversation({
+              messages: summaryMessages,
+              customer,
+              language,
+              fallbackOnError: false
+            });
+          } catch (error) {
+            console.warn(`auto summary attempt ${attempt}/${attempts} failed:`, error.message);
+            if (attempt < attempts) {
+              await sleep(Number(process.env.AUTO_SUMMARY_RETRY_DELAY_MS || 500));
+            }
+          }
+        }
       }
       if (!summary) summary = summarizeConversationFast({ messages: summaryMessages, customer });
       if (summary) await updateConversationSummary(conversationId, customerId, summary);
@@ -270,6 +274,18 @@ function enrichHistoryWithMediaContext(messages = []) {
   });
 }
 
+function parseMessageTimestamp(value) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  const raw = String(value || '').trim();
+  if (!raw) return NaN;
+  const hasTimezone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(raw);
+  const normalized = hasTimezone || !/^\d{4}-\d{2}-\d{2}[t\s]\d{2}:\d{2}/i.test(raw)
+    ? raw
+    : `${raw.replace(' ', 'T')}Z`;
+  return new Date(normalized).getTime();
+}
+
 function trimHistoryToActiveSession(messages = [], maxGapMinutes = Number(process.env.CONVERSATION_CONTEXT_MAX_GAP_MINUTES || 360)) {
   const rows = [...(messages || [])];
   if (rows.length < 2) return rows;
@@ -277,8 +293,8 @@ function trimHistoryToActiveSession(messages = [], maxGapMinutes = Number(proces
   let sessionStart = 0;
 
   for (let index = rows.length - 1; index > 0; index--) {
-    const currentTime = new Date(rows[index].created_at || rows[index].createdAt || 0).getTime();
-    const previousTime = new Date(rows[index - 1].created_at || rows[index - 1].createdAt || 0).getTime();
+    const currentTime = parseMessageTimestamp(rows[index].created_at || rows[index].createdAt || 0);
+    const previousTime = parseMessageTimestamp(rows[index - 1].created_at || rows[index - 1].createdAt || 0);
     if (!Number.isFinite(currentTime) || !Number.isFinite(previousTime) || currentTime <= 0 || previousTime <= 0) continue;
     if (currentTime - previousTime > maxGapMs) {
       sessionStart = index;
@@ -419,7 +435,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   const generatedReply = rawReply;
   const baseHandoff = mediaRecognitionFailed
     ? { needed: true, reason: `Không nhận dạng được hình ảnh sản phẩm ${channel === 'facebook' ? 'Facebook' : 'website'}` }
-    : detectHandoff({ text: processingText, intent, aiError, ragProducts });
+    : detectHandoff({ text: processingText, intent, aiError, ragProducts, aiSource });
   let handoff = baseHandoff;
   let reply = applyCustomerBranding(
     normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, originalText || processingText)),
@@ -582,6 +598,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     validatorBlocked: validation.ok ? false : true,
     validatorReason: validation.reason || '',
     judgeApproved: !!judge?.approve,
+    judgeSkipped: judge?.skipped || '',
     judgeReason: judge?.reason || '',
     judgeInferredNeed: judge?.inferredCustomerNeed || '',
     judgeRiskType: judge?.riskType || '',
@@ -609,5 +626,6 @@ module.exports = {
   estimateHumanReplyDelayMs,
   improveNoDataReply,
   avoidRepeatedContactRequest,
-  trimHistoryToActiveSession
+  trimHistoryToActiveSession,
+  parseMessageTimestamp
 };

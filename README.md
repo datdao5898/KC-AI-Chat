@@ -20,6 +20,8 @@ npm run migrate-sqlite-to-postgres
 
 Xem huong dan tao database, migrate va backup tai `POSTGRESQL.md`.
 
+File `legacy/sqliteLegacyDb.js` chi giu lai nhu ma legacy, khong dung cho production deploy.
+
 Mo dashboard: http://localhost:8650
 
 Dashboard se hien man hinh dang nhap. Dat `ADMIN_USERNAME` va `ADMIN_PASSWORD_HASH`
@@ -68,7 +70,7 @@ App goi OpenRouter/OpenAI truc tiep, khong can CLI trung gian.
 - `OPENAI_BASE_URL`: mac dinh `https://api.openai.com/v1`, doi sang `https://openrouter.ai/api/v1` neu anh dung OpenRouter.
 - `REPLY_JUDGE_ENABLED`: bat/tat tang Conversation Auditor kiem tra cau tra loi truoc khi gui cho khach.
 - `OPENAI_JUDGE_MODEL`: de trong thi dung chung model voi `OPENAI_MODEL`; dien model khac neu muon tang judge rieng.
-- `OPENAI_JUDGE_MAX_OUTPUT_TOKENS`: so token toi da cho ket qua judge, nen de khoang `520`.
+- `OPENAI_JUDGE_MAX_OUTPUT_TOKENS`: ngan sach token cho Judge, nen de `1200`; lan retry se tu tang them de tranh reasoning chiem het output.
 - `OPENAI_JUDGE_RETRIES`: so lan thu lai neu judge tra JSON loi, mac dinh `2`.
 - `PRODUCT_GUIDANCE_WEB_SEARCH_ENABLED`: kill switch toan cuc. Dat `false` de tat web guidance cho tat ca source; neu bo trong thi moi source bat/tat rieng trong `source.json`.
 - `PRODUCT_GUIDANCE_WEB_SEARCH_MODEL`: model dung cho huong dan co tim web; de trong thi dung `OPENAI_MODEL`.
@@ -105,9 +107,15 @@ Dashboard tu cap nhat tom tat sau moi tin nhan neu bat:
 AUTO_SUMMARY=true
 AUTO_AI_SUMMARY=true
 AUTO_SUMMARY_DELAY_MS=250
+AUTO_SUMMARY_RETRIES=2
+AUTO_SUMMARY_RETRY_DELAY_MS=500
 ```
 
-Neu muon tiet kiem token, dat `AUTO_AI_SUMMARY=false`; app se dung tom tat nhanh noi bo.
+Neu AI tom tat bi timeout/loi provider, app thu lai theo `AUTO_SUMMARY_RETRIES`, sau do moi dung tom tat nhanh noi bo. Neu muon tiet kiem token, dat `AUTO_AI_SUMMARY=false`.
+
+`OPENAI_MAX_ATTEMPTS` la tong so lan goi reply AI, bao gom lan dau. `OPENAI_EMPTY_RESPONSE_RETRIES` chi duoc giu de tuong thich voi cau hinh cu.
+
+Dashboard doc toi da `JUDGE_METRICS_SAMPLE_SIZE` dong log AI gan nhat de hien thi ty le Judge tu choi; mac dinh la 1000.
 
 Neu AI da xu ly lau hon muc delay muc tieu thi app se khong bat khach cho them.
 

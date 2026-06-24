@@ -347,6 +347,30 @@ function findProductsByExactPrice(query, limit = 5, options = {}) {
     .slice(0, limit);
 }
 
+function matchesRequiredCategory(product = {}, category = '') {
+  const name = normalize(product.name || product.title || '');
+  const normalizedCategory = normalize(category);
+  if (!normalizedCategory) return true;
+  if (normalizedCategory === 'gimbal') {
+    const accessory = /\b(phu kien|case|tui|plate|mount|adapter|khung)\b/i.test(name)
+      || /\b(tay cam|handle).*\b(danh cho|for)\b.*\b(gimbal|ronin)\b/i.test(name);
+    return !accessory && /\b(gimbal|weebill|crane|smooth)\b/i.test(name);
+  }
+  const rules = {
+    tripod: /\b(tripod|chan may|chan den|gay selfie|gay chup hinh|monopod)\b/i,
+    headphones: /\b(tai nghe|headphone|headphones|headset)\b/i,
+    webcam: /\bwebcam\b/i,
+    microphone: /\b(micro|mic|microphone|thu am)\b/i,
+    light: /\b(den|light|led|ring light|tube light)\b/i,
+    lens: /\b(lens|ong kinh)\b/i,
+    filter: /\b(filter|kinh loc)\b/i,
+    monitor: /\b(man hinh|monitor)\b/i,
+    bag: /\b(balo|backpack|tui)\b/i
+  };
+  const pattern = rules[normalizedCategory];
+  return pattern ? pattern.test(name) : true;
+}
+
 function searchProducts(query, topK = 8, options = {}) {
   const products = loadProducts(options);
   const words = queryWords(query);
@@ -373,6 +397,7 @@ function searchProducts(query, topK = 8, options = {}) {
   });
   const wantsTripod = /\b(tripod|chan may|chan den|gia do)\b/i.test(normQuery);
   const wantsMicrophone = /\b(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)\b/i.test(normQuery);
+  const wantsHeadphones = /\b(tai nghe|headphone|headphones|headset)\b/i.test(normQuery);
   const wantsPhone = /\b(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)\b/i.test(normQuery);
   const accentLight = hasAccentWord(accentQuery, 'đèn');
   const asciiLight = /\b(den|led|light|ring light|rgb|tube light)\b/i.test(normQuery);
@@ -415,9 +440,11 @@ function searchProducts(query, topK = 8, options = {}) {
     const accessoryProduct = looksAccessoryProduct(name);
 
     if (scopeBrand && vendor && vendor !== scopeBrand && !vendor.includes(scopeBrand) && !scopeBrand.includes(vendor)) continue;
+    if (!matchesRequiredCategory(p, options.requiredCategory)) continue;
     if (requestedProductUrls.length && !urlMatched) continue;
     if (identityWords.length && !urlMatched && !identityWords.some(w => identityText.includes(w))) continue;
     if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
+    if (wantsHeadphones && !/\b(tai nghe|headphone|headphones|headset)\b/i.test(name)) continue;
     if (wantsLight && !isTrueLightProduct(productShape)) continue;
     if (wantsLens && !isTrueLensProduct(productShape)) continue;
     if (wantsLens && !wantsMobileOrActionLens && isMobileOrActionLensProduct(productShape)) continue;
@@ -473,6 +500,7 @@ function searchProducts(query, topK = 8, options = {}) {
 
     if (wantsTripod && /(tripod|chan may|chan den|gia do)/i.test(name)) score += 8;
     if (wantsMicrophone && /(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)/i.test(`${name} ${vendor}`)) score += 8;
+    if (wantsHeadphones && /\b(tai nghe|headphone|headphones|headset)\b/i.test(name)) score += 10;
     if (wantsLight && isTrueLightProduct(productShape)) score += 8;
     if (wantsLens && isTrueLensProduct(productShape)) score += 8;
     if (wantsPortraitLens && /\b(50|56|75|85)\s*mm\b/i.test(name)) score += 12;
@@ -550,6 +578,7 @@ module.exports = {
   normalize,
   extractMaxPrice,
   parsePriceNumber,
+  matchesRequiredCategory,
   getPriceExtremes,
   isPriceExtremeQuery,
   requestedPriceExtremes,

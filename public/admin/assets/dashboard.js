@@ -43,6 +43,11 @@
           ${stat(KC.t('dashboardNeedsStaff'), data.stats.needs_human)}
           ${stat(KC.t('dashboardOpenAlerts'), data.stats.open_alerts)}
           ${stat(KC.t('dashboardProducts'), data.stats.products)}
+          ${stat(
+            KC.t('dashboardJudgeRejects'),
+            `${data.stats.judge?.rejected ?? 0}/${data.stats.judge?.judged ?? 0} (${data.stats.judge?.reject_rate ?? 0}%)`,
+            Number(data.stats.judge?.reject_rate || 0) >= 20 ? 'danger' : ''
+          )}
         </div>
         <div class="card dashboard-alerts">
           <div class="card-head">

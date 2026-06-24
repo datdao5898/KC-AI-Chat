@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 const {
   resolveConversationContext,
   contextSearchText,
-  buildClarificationReply
+  buildClarificationReply,
+  isAlternativeProductRequest,
+  inferRequestedCategory
 } = require('../src/conversationContext');
 const { buildSearchQuery } = require('../src/ai');
 
@@ -93,4 +95,78 @@ test('missing current product in a follow-up asks for clarification', () => {
 
   assert.equal(context.needs_clarification, true);
   assert.equal(context.clarification_reason, 'missing_current_product');
+});
+
+test('alternative product request preserves the previous product as an exclusion', () => {
+  assert.equal(isAlternativeProductRequest('mình muốn tư vấn sản phẩm tai nghe khác'), true);
+  assert.equal(isAlternativeProductRequest('còn mẫu nào khác không'), true);
+  assert.equal(isAlternativeProductRequest('còn sản phẩm nào khác khoong'), true);
+
+  const context = resolveConversationContext({
+    userText: 'mình muốn tư vấn sản phẩm tai nghe khác',
+    history: [],
+    existingContext: {
+      current_product_name: 'BOYA BY-HP2 Tai nghe giám sát',
+      current_product_sku: 'FB501',
+      current_product_url: 'https://newlite.vn/products/boya-by-hp2',
+      current_brand: 'Boya',
+      context_confidence: 0.88
+    },
+    intent: 'product_search',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(context.alternative_product_request, true);
+  assert.equal(context.previous_product_sku, 'FB501');
+  assert.equal(context.previous_product_name, 'BOYA BY-HP2 Tai nghe giám sát');
+  assert.equal(context.needs_clarification, false);
+});
+
+test('a new category need clears stale product context', () => {
+  assert.equal(
+    inferRequestedCategory('toi can tim dung cu giup chup hinh khong bi rung'),
+    'gimbal'
+  );
+
+  const context = resolveConversationContext({
+    userText: 'toi can tim dung cu nao do giup chup hinh khong bi rung',
+    history: [],
+    existingContext: {
+      current_product_name: 'SYNCO XView M4',
+      current_product_sku: 'XVIEWM4',
+      current_brand: 'Synco',
+      context_confidence: 0.9
+    },
+    intent: 'product_search',
+    sourceKey: 'website/newlite'
+  });
+
+  assert.equal(context.requested_category, 'gimbal');
+  assert.equal(context.new_category_request, true);
+  assert.equal(context.current_product_name, undefined);
+  assert.equal(context.current_product_sku, undefined);
+  assert.equal(context.context_confidence, 0);
+});
+
+test('similar product follow-up inherits a category even when the old model is absent', () => {
+  const firstContext = resolveConversationContext({
+    userText: 'ulanzi mt44 co hang khong',
+    history: [],
+    existingContext: {},
+    intent: 'product_search',
+    sourceKey: 'website/newlite'
+  });
+  const context = resolveConversationContext({
+    userText: 'co san pham nao tuong tu khong',
+    history: [],
+    existingContext: firstContext,
+    intent: 'product_search',
+    sourceKey: 'website/newlite'
+  });
+
+  assert.equal(isAlternativeProductRequest('co san pham nao tuong tu khong'), true);
+  assert.equal(context.alternative_product_request, true);
+  assert.equal(context.requested_category, 'tripod');
 });

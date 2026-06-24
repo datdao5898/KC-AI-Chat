@@ -4,7 +4,8 @@ const {
   judgeAiReply,
   approveTrustedSourceStoreInfo,
   buildJudgePrompt,
-  judgeUnavailableResult
+  judgeUnavailableResult,
+  isTrustedDeterministicReplySource
 } = require('../src/replyJudge');
 
 test('trusted source store address is approved without model judgment', async () => {
@@ -109,4 +110,52 @@ test('judge unavailable fallback blocks obvious product drift on follow-up quest
   assert.equal(result.needsHandoff, true);
   assert.equal(result.riskType, 'wrong_product');
   assert.match(result.correctedReply, /chuyển thông tin cho nhân viên/i);
+});
+
+test('deterministic rule and direct reply sources do not call the model judge', async () => {
+  for (const aiSource of ['rule_policy', 'rule_no_catalog_match', 'direct_catalog_product_specs']) {
+    assert.equal(isTrustedDeterministicReplySource(aiSource), true);
+    const result = await judgeAiReply({
+      aiSource,
+      intent: 'product_search',
+      reply: 'Câu trả lời được tạo trực tiếp từ dữ liệu đã xác định.'
+    });
+
+    assert.equal(result.approve, true);
+    assert.equal(result.needsHandoff, false);
+    assert.equal(result.skipped, 'deterministic_reply_source');
+  }
+});
+
+test('provider and fallback replies still require model or local judge checks', () => {
+  assert.equal(isTrustedDeterministicReplySource('rule_source_store_info'), false);
+  assert.equal(isTrustedDeterministicReplySource('provider'), false);
+  assert.equal(isTrustedDeterministicReplySource('provider_web_product_specs'), false);
+  assert.equal(isTrustedDeterministicReplySource('fallback'), false);
+});
+
+test('local judge allows different catalog models for an alternative product request', () => {
+  const result = judgeUnavailableResult('OpenAI timeout after 45000ms', {
+    userText: 'mình muốn tư vấn sản phẩm tai nghe khác',
+    intent: 'product_search',
+    reply: [
+      'Dạ NewLite còn các lựa chọn khác:',
+      '1. Fifine H6 - Tai nghe USB',
+      '2. Fifine H9 - Tai nghe USB'
+    ].join('\n'),
+    conversationContext: {
+      current_product_name: 'BOYA BY-HP2 Tai nghe giám sát',
+      current_brand: 'Boya',
+      alternative_product_request: true,
+      previous_product_name: 'BOYA BY-HP2 Tai nghe giám sát',
+      previous_product_sku: 'FB501'
+    },
+    ragProducts: [
+      { name: 'Fifine H6 - Tai nghe USB', brand: 'Fifine', sku: 'FEKA1' },
+      { name: 'Fifine H9 - Tai nghe USB', brand: 'Fifine', sku: 'FEKA3' }
+    ]
+  });
+
+  assert.equal(result.approve, true);
+  assert.equal(result.needsHandoff, false);
 });
