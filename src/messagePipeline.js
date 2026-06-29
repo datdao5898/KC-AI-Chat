@@ -10,7 +10,7 @@ const {
 } = require('./sourceRegistry');
 const { judgeAiReply } = require('./replyJudge');
 const { analyzeProductImages } = require('./mediaVision');
-const { resolveConversationContext } = require('./conversationContext');
+const { resolveConversationContext, updateContextFromReply } = require('./conversationContext');
 
 function normalizeForMatch(text) {
   return String(text || '')
@@ -321,8 +321,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   const originalText = String(text || '').trim();
   const mediaUrls = [...new Set((imageUrls || []).filter(Boolean))].slice(0, 3);
   const visionEnabled = channel === 'facebook'
-    ? process.env.FACEBOOK_IMAGE_RECOGNITION_ENABLED !== 'false'
-    : process.env.WEBSITE_IMAGE_RECOGNITION_ENABLED !== 'false';
+    && process.env.FACEBOOK_IMAGE_RECOGNITION_ENABLED !== 'false';
   const source = buildSourceContext({ channel, raw, customerAttrs });
   const customerBrand = resolveCustomerBrand(source);
   const vision = mediaUrls.length
@@ -429,8 +428,12 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     searchQuery,
     ragProducts,
     webSources = [],
-    webSearchRequests = 0
+    webSearchRequests = 0,
+    conversationContext: replyConversationContext
   } = replyResult;
+  const effectiveConversationContext = replyConversationContext && typeof replyConversationContext === 'object'
+    ? replyConversationContext
+    : conversationContext;
   const validation = { ok: true, skipped: 'single_ai_judge_final_check' };
   const generatedReply = rawReply;
   const baseHandoff = mediaRecognitionFailed
@@ -459,7 +462,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     aiSource,
     searchQuery,
     webSources,
-    conversationContext
+    conversationContext: effectiveConversationContext
   });
   if (!judge.approve) {
     if (judge.correctedReply) {
@@ -489,6 +492,13 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   }
   reply = applyCustomerBranding(reply, customerBrand, ragProducts);
   reply = avoidRepeatedContactRequest(reply, freshCustomer, originalText || processingText);
+  const finalConversationContext = updateContextFromReply({
+    context: effectiveConversationContext,
+    ragProducts,
+    reply,
+    sourceKey: source.sourceKey
+  });
+  await updateConversationContext(conversation.id, finalConversationContext);
   const humanDelayMs = estimateHumanReplyDelayMs(reply, Date.now() - startedAt);
   if (humanDelayMs > 0) await sleep(humanDelayMs);
 
@@ -549,7 +559,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       humanDelayMs,
       webSources,
       webSearchRequests,
-      conversationContext
+      conversationContext: finalConversationContext
     },
     intent,
     aiUsed,
@@ -592,7 +602,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceGroup: source.sourceGroup,
     sourceKey: source.sourceKey,
     sourceName: source.sourceName,
-    conversationContext,
+    conversationContext: finalConversationContext,
     humanDelayMs,
     reply,
     validatorBlocked: validation.ok ? false : true,

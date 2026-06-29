@@ -351,6 +351,11 @@ function matchesRequiredCategory(product = {}, category = '') {
   const name = normalize(product.name || product.title || '');
   const normalizedCategory = normalize(category);
   if (!normalizedCategory) return true;
+  if (normalizedCategory === 'livestream') {
+    const coreDevice = /\b(thiet bi live|thiet bi quay phat truc tiep|live stream chuyen nghiep|livestream chuyen nghiep|video switcher|switcher|capture card|console pad|livepro)\b/i.test(name);
+    const accessory = /\b(chan de|gia do|kep|tripod|micro|mic|den|light|webcam|cap|cable|adapter|mount|holder)\b/i.test(name);
+    return coreDevice && !accessory;
+  }
   if (normalizedCategory === 'gimbal') {
     const accessory = /\b(phu kien|case|tui|plate|mount|adapter|khung)\b/i.test(name)
       || /\b(tay cam|handle).*\b(danh cho|for)\b.*\b(gimbal|ronin)\b/i.test(name);

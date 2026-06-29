@@ -144,3 +144,20 @@ test('required gimbal category excludes frames and gimbal accessories', () => {
   assert.ok(products.some(product => /weebill 3e/i.test(product.name || '')));
   assert.ok(products.every(product => !/\b(khung|danh cho .* gimbal)\b/i.test(normalize(product.name || ''))));
 });
+
+test('required livestream category keeps core devices and excludes livestream accessories', () => {
+  assert.equal(matchesRequiredCategory({ name: 'Cadothy iBig 5S - Thiet bi live stream chuyen nghiep' }, 'livestream'), true);
+  assert.equal(matchesRequiredCategory({ name: 'Ulanzi DD02 HD Video Switcher for Live Streaming' }, 'livestream'), true);
+  assert.equal(matchesRequiredCategory({ name: 'VIJIM LS08 - Chan de kep canh ban tien loi Livestream' }, 'livestream'), false);
+  assert.equal(matchesRequiredCategory({ name: 'Micro livestream USB' }, 'livestream'), false);
+
+  const products = searchProducts(
+    'livestream live stream quay phat truc tiep switcher capture card',
+    8,
+    { sourceKey: 'website/newlite', requiredCategory: 'livestream' }
+  );
+  assert.ok(products.length > 0);
+  assert.ok(products.every(product => matchesRequiredCategory(product, 'livestream')));
+  assert.ok(products.some(product => product.sku === 'FG121'));
+  assert.ok(products.every(product => !/\b(chan de|micro|den livestream)\b/i.test(normalize(product.name || ''))));
+});

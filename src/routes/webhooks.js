@@ -7,12 +7,6 @@ const { sendFacebookMessage, getFacebookUserProfile, verifySignature, requireSig
 const { sendZaloMessage } = require('../channels/zalo');
 const { sendHaravanMessage } = require('../channels/haravan');
 const { extractFacebookImageUrls } = require('../mediaVision');
-const {
-  maxImageBytes,
-  resolveWebsiteAttachments,
-  resolveWebsiteImage,
-  saveWebsiteImage
-} = require('../websiteMedia');
 
 function parseLimit(value, fallback) {
   const parsed = Number(value);
@@ -110,39 +104,13 @@ router.post('/haravan', async (req, res) => {
   } catch (e) { console.error('Haravan webhook error:', e); }
 });
 
-router.post(
-  '/website-chat/media',
-  websiteChatLimiter,
-  express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: maxImageBytes() }),
-  (req, res) => {
-    try {
-      const visitorId = String(req.headers['x-kc-visitor-id'] || '').trim();
-      const media = saveWebsiteImage(req.body, visitorId);
-      res.json({ ok: true, media });
-    } catch (e) {
-      const status = e.message === 'image_too_large' ? 413
-        : ['visitor_id_required', 'image_required', 'unsupported_image_type'].includes(e.message) ? 400
-          : 500;
-      res.status(status).json({ error: e.message });
-    }
-  }
-);
-
-router.get('/website-chat/media/:id', (req, res) => {
-  const image = resolveWebsiteImage(req.params.id, req.query.token);
-  if (!image) return res.status(404).json({ error: 'image_not_found' });
-  res.setHeader('Cache-Control', 'private, max-age=86400');
-  res.type(image.mime);
-  return res.sendFile(image.filePath);
-});
-
 router.post('/website-chat', websiteChatLimiter, async (req, res) => {
   try {
-    const { visitorId, message, name, phone, email, siteName, siteHost, siteUrl, origin, referrer, attachments } = req.body;
-    const resolvedMedia = resolveWebsiteAttachments(attachments, visitorId);
-    if (!String(message || '').trim() && !resolvedMedia.length) {
-      return res.status(400).json({ error: 'message_or_image_required' });
+    const { visitorId, message, name, phone, email, siteName, siteHost, siteUrl, origin, referrer } = req.body;
+    if (Array.isArray(req.body?.attachments) && req.body.attachments.length) {
+      return res.status(400).json({ error: 'website_images_not_supported' });
     }
+    if (!String(message || '').trim()) return res.status(400).json({ error: 'message_required' });
     const result = await processIncoming({
       channel: 'haravan_website',
       externalUserId: visitorId || phone || 'web-' + Date.now(),
@@ -150,15 +118,13 @@ router.post('/website-chat', websiteChatLimiter, async (req, res) => {
       externalMessageId: 'web-' + Date.now(),
       raw: {
         ...req.body,
-        attachments: resolvedMedia.map(({ id, token, mime, bytes, url }) => ({ id, token, mime, bytes, url })),
+        attachments: undefined,
         siteName,
         siteHost,
         siteUrl,
         origin,
         referrer
       },
-      imageUrls: resolvedMedia.map(item => item.url),
-      visionImageInputs: resolvedMedia.map(item => item.visionInput),
       customerAttrs: { name, phone, email },
       sendFn: null
     });

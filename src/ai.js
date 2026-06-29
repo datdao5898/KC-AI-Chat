@@ -11,7 +11,8 @@ const {
   loadTextFile,
   extractProductPageUrls,
   parsePriceNumber,
-  normalize
+  normalize,
+  matchesRequiredCategory
 } = require('./rag');
 const {
   readSourceConfig,
@@ -27,7 +28,8 @@ const {
   contextSearchText,
   buildClarificationReply,
   isContextualProductFollowUp,
-  isAlternativeProductRequest
+  isAlternativeProductRequest,
+  inferRequestedCategory
 } = require('./conversationContext');
 
 async function callOpenAI(prompt, timeoutMs) {
@@ -1018,6 +1020,7 @@ const ALTERNATIVE_SEARCH_STOPWORDS = new Set([
 function productCategorySearchTerms(productName = '') {
   const normalized = normalize(productName);
   const categories = [
+    ['livestream', /\b(live stream|livestream|quay phat truc tiep|phat song truc tiep|switcher|capture card|console pad|livepro)\b/i],
     ['tai nghe', /\b(tai nghe|headphone|headset)\b/i],
     ['webcam', /\bwebcam\b/i],
     ['micro', /\b(micro|mic|microphone|thu am)\b/i],
@@ -1034,6 +1037,7 @@ function productCategorySearchTerms(productName = '') {
 
 function categorySearchTerms(category = '') {
   const terms = {
+    livestream: 'livestream live stream quay phat truc tiep switcher capture card',
     gimbal: 'gimbal chong rung stabilizer',
     tripod: 'tripod chan may',
     headphones: 'tai nghe headphone headset',
@@ -1065,7 +1069,20 @@ function isSameProduct(product = {}, context = {}) {
   const productSku = normalize(product.sku || '');
   const productUrl = String(product.url || product.link || product.product_url || '').trim().replace(/\/+$/, '');
   const productName = normalize(product.name || product.title || '');
+  const previouslyRecommended = Array.isArray(context.last_recommended_products)
+    ? context.last_recommended_products
+    : [];
+  const wasRecommended = previouslyRecommended.some(previous => {
+    const sku = normalize(previous.current_product_sku || previous.sku || '');
+    const url = String(previous.current_product_url || previous.url || '').trim().replace(/\/+$/, '');
+    const name = normalize(previous.current_product_name || previous.name || '');
+    return (sku && sku === productSku)
+      || (url && url === productUrl)
+      || (name && name === productName);
+  });
   return Boolean(
+    wasRecommended
+    ||
     (previousSku && productSku === previousSku)
     || (previousUrl && productUrl === previousUrl)
     || (previousName && productName === previousName)
@@ -1086,8 +1103,9 @@ function buildAlternativeProductsReply(products, lang, customerBrand = 'KingCom'
   return `Dạ, ${customerBrand} còn các lựa chọn phù hợp khác như sau:\n\n${rows}\n\nAnh/chị muốn em so sánh kỹ mẫu nào ạ?`;
 }
 
-function buildCategoryProductsReply(products, category, lang, customerBrand = 'KingCom') {
-  const labels = {
+function categoryLabel(category) {
+  return ({
+    livestream: 'thiết bị livestream',
     gimbal: 'thiết bị chống rung',
     tripod: 'chân máy',
     headphones: 'tai nghe',
@@ -1098,8 +1116,11 @@ function buildCategoryProductsReply(products, category, lang, customerBrand = 'K
     filter: 'kính lọc',
     monitor: 'màn hình',
     bag: 'balo hoặc túi máy ảnh'
-  };
-  const label = labels[category] || 'sản phẩm';
+  })[category] || 'sản phẩm';
+}
+
+function buildCategoryProductsReply(products, category, lang, customerBrand = 'KingCom') {
+  const label = categoryLabel(category);
   const rows = (products || []).slice(0, 3).map((product, index) => {
     const name = productDisplayName(product, `Sản phẩm ${index + 1}`);
     const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
@@ -1111,6 +1132,84 @@ function buildCategoryProductsReply(products, category, lang, customerBrand = 'K
   if (lang === 'en') return `${customerBrand} found these suitable options:\n\n${rows}\n\nWhich model would you like to explore further?`;
   if (lang === 'zh') return `${customerBrand} 找到以下合适的产品：\n\n${rows}\n\n您想进一步了解哪一款？`;
   return `Dạ, với nhu cầu về ${label}, ${customerBrand} có các mẫu phù hợp sau:\n\n${rows}\n\nAnh/chị muốn em tư vấn kỹ mẫu nào ạ?`;
+}
+
+function buildCategoryNoMatchReply(category, userText, lang, customerBrand = 'KingCom') {
+  const label = categoryLabel(category);
+  const maxPrice = extractMaxPrice(userText);
+  const budget = maxPrice ? formatPrice(maxPrice) : '';
+  if (lang === 'en') {
+    return budget
+      ? `${customerBrand} currently has no ${label} in the catalog within a budget of ${budget}. Would you like to increase the budget or consider another product group?`
+      : `${customerBrand} currently has no matching ${label} in the catalog. Would you like to adjust the requirements?`;
+  }
+  if (lang === 'zh') {
+    return budget
+      ? `${customerBrand} 当前产品目录中没有价格在 ${budget} 以内的${label}。您想提高预算还是考虑其他产品类别？`
+      : `${customerBrand} 当前产品目录中没有符合条件的${label}。您想调整需求吗？`;
+  }
+  return budget
+    ? `Dạ, hiện trong catalog ${customerBrand} chưa có ${label} nào trong ngân sách ${budget}. Anh/chị muốn tăng ngân sách hoặc xem nhóm sản phẩm khác không ạ?`
+    : `Dạ, hiện trong catalog ${customerBrand} chưa có ${label} phù hợp với yêu cầu này. Anh/chị muốn điều chỉnh nhu cầu không ạ?`;
+}
+
+function assessRetrievalUncertainty({
+  userText = '',
+  intent = '',
+  conversationContext = {},
+  products = []
+} = {}) {
+  if (!['general', 'product_search', 'buy', 'price', 'product_specs', 'order'].includes(intent)) return null;
+  if (conversationContext.requested_category || conversationContext.current_product_name) return null;
+  const hasStrongExplicitReference = /https?:\/\/\S+\/products?\//i.test(String(userText || ''))
+    || queryWords(userText).some(word => /[a-z]+\d|\d+[a-z]+/i.test(word));
+  if (conversationContext.alternative_product_request || hasStrongExplicitReference) return null;
+  if (!Array.isArray(products) || products.length < 2) return null;
+
+  const categorized = products.slice(0, 6).map(product => ({
+    product,
+    category: inferRequestedCategory(
+      `${product.name || product.title || ''} ${product.tags || product.category || ''}`
+    )
+  }));
+  const categories = [...new Set(categorized.map(item => item.category).filter(Boolean))];
+  if (categories.length >= 2) {
+    return {
+      reason: 'ambiguous_category',
+      categories: categories.slice(0, 4),
+      products: products.slice(0, 3)
+    };
+  }
+
+  const topScore = Number(products[0]?.score || 0);
+  const secondScore = Number(products[1]?.score || 0);
+  const closeScores = topScore > 0 && secondScore > 0 && Math.abs(topScore - secondScore) <= 2;
+  const queryHasIdentityHint = queryWords(userText).some(word => /[a-z]+\d|\d+[a-z]+/i.test(word));
+  if (queryHasIdentityHint && closeScores) {
+    return {
+      reason: 'ambiguous_product',
+      categories,
+      products: products.slice(0, 3)
+    };
+  }
+  return null;
+}
+
+function buildRetrievalClarificationReply(uncertainty, lang, customerBrand = 'KingCom') {
+  const categoryNames = (uncertainty?.categories || []).map(categoryLabel);
+  const productNames = (uncertainty?.products || [])
+    .map(product => productDisplayName(product, ''))
+    .filter(Boolean);
+  if (uncertainty?.reason === 'ambiguous_category') {
+    const options = categoryNames.join(', ');
+    if (lang === 'en') return `I am not yet certain which product category you mean. Are you looking for ${options}, or another category?`;
+    if (lang === 'zh') return `我还不能确定您想咨询的产品类别。您需要的是${options}，还是其他类别？`;
+    return `Dạ, em chưa xác định chắc anh/chị đang cần nhóm sản phẩm nào. Anh/chị đang tìm ${options}, hay nhóm khác ạ?`;
+  }
+  const options = productNames.join(', ');
+  if (lang === 'en') return `I found several similar products and do not want to advise the wrong one. Could you confirm the exact model${options ? `: ${options}` : ''}?`;
+  if (lang === 'zh') return `我找到几款相似产品，为避免提供错误信息，请确认具体型号${options ? `：${options}` : ''}。`;
+  return `Dạ, ${customerBrand} tìm thấy vài sản phẩm gần giống nhau nên em chưa muốn chọn nhầm. Anh/chị xác nhận giúp em đúng model${options ? ` trong các mẫu: ${options}` : ''} ạ?`;
 }
 
 const BROAD_SEARCH_STOPWORDS = new Set([
@@ -1388,7 +1487,6 @@ async function generateReplyRaw({
       conversationContext: resolvedConversationContext
     };
   }
-
   const directPriceReply = buildDirectPriceReply(userText, { sourceKey });
   if (directPriceReply) {
     return {
@@ -1498,15 +1596,15 @@ ${intent === 'greeting'
     topK: policyQuestion ? 0 : ((guidanceQuestion || specsQuestion) ? 1 : 8),
     includeDescriptions: true,
     descriptionMaxChars: specsQuestion ? 3500 : 800,
-    requiredCategory: (
-      resolvedConversationContext.new_category_request
-      || resolvedConversationContext.alternative_product_request
-    ) ? resolvedConversationContext.requested_category : '',
+    requiredCategory: resolvedConversationContext.requested_category || '',
     requireIdentityMatch: !isStartingPriceQuery(userText)
       && (isAvailabilityQuestion(userText) || isShortSpecificFollowUp(userText) || specsQuestion)
   };
   let retrieval = buildContext(searchQuery, retrievalOptions);
   let { context, products } = retrieval;
+  if (retrievalOptions.requiredCategory) {
+    products = products.filter(product => matchesRequiredCategory(product, retrievalOptions.requiredCategory));
+  }
   if (resolvedConversationContext.alternative_product_request) {
     products = products.filter(product => !isSameProduct(product, resolvedConversationContext));
   }
@@ -1526,11 +1624,43 @@ ${intent === 'greeting'
       if (retrieval.products.length) {
         searchQuery = broaderQuery;
         ({ context, products } = retrieval);
+        if (retrievalOptions.requiredCategory) {
+          products = products.filter(product => matchesRequiredCategory(product, retrievalOptions.requiredCategory));
+        }
         if (resolvedConversationContext.alternative_product_request) {
           products = products.filter(product => !isSameProduct(product, resolvedConversationContext));
         }
       }
     }
+  }
+  const retrievalUncertainty = assessRetrievalUncertainty({
+    userText,
+    intent,
+    conversationContext: resolvedConversationContext,
+    products
+  });
+  if (retrievalUncertainty && !guidanceQuestion && !policyQuestion) {
+    const clarificationContext = {
+      ...resolvedConversationContext,
+      needs_clarification: true,
+      clarification_reason: retrievalUncertainty.reason,
+      clarification_options: retrievalUncertainty.products.map(product => ({
+        current_product_id: product.sku || product.url || product.name || '',
+        current_product_name: product.name || product.title || '',
+        current_product_sku: product.sku || '',
+        current_product_url: product.url || product.link || product.product_url || '',
+        current_brand: product.vendor || product.brand || ''
+      }))
+    };
+    return {
+      reply: buildRetrievalClarificationReply(retrievalUncertainty, messageLanguage, customerBrand),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_retrieval_clarification',
+      searchQuery,
+      ragProducts: [],
+      conversationContext: clarificationContext
+    };
   }
   const productPageContext = productUrlQuestion
     ? await readProductPageContext(userText, { products })
@@ -1615,7 +1745,13 @@ ${intent === 'greeting'
       conversationContext: resolvedConversationContext
     };
   }
-  if (resolvedConversationContext.alternative_product_request && products.length && !guidanceQuestion && !policyQuestion) {
+  if (
+    resolvedConversationContext.alternative_product_request
+    && products.length
+    && products.every(product => matchesRequiredCategory(product, resolvedConversationContext.requested_category))
+    && !guidanceQuestion
+    && !policyQuestion
+  ) {
     return {
       reply: buildAlternativeProductsReply(products, messageLanguage, customerBrand),
       aiUsed: 0,
@@ -1673,6 +1809,28 @@ ${intent === 'greeting'
       aiSource: 'rule_need_category_products',
       searchQuery,
       ragProducts: products.slice(0, 3),
+      conversationContext: resolvedConversationContext
+    };
+  }
+  if (
+    resolvedConversationContext.requested_category
+    && !products.length
+    && extractMaxPrice(userText)
+    && !guidanceQuestion
+    && !policyQuestion
+  ) {
+    return {
+      reply: buildCategoryNoMatchReply(
+        resolvedConversationContext.requested_category,
+        userText,
+        messageLanguage,
+        customerBrand
+      ),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_category_no_match',
+      searchQuery,
+      ragProducts: [],
       conversationContext: resolvedConversationContext
     };
   }
@@ -1918,5 +2076,7 @@ module.exports = {
   buildBroaderSearchQuery,
   isBroadConsultationRequest,
   buildAlternativeProductsReply,
+  assessRetrievalUncertainty,
+  buildRetrievalClarificationReply,
   buildProductSpecsFallbackReply
 };

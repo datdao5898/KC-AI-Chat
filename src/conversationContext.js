@@ -50,9 +50,9 @@ function isContextualProductFollowUp(text) {
 
 function isAlternativeProductRequest(text) {
   const normalized = normalize(text);
-  const directAlternative = /\b(mau khac|model khac|san pham khac|sp khac|loai khac|lua chon khac|phuong an khac|con mau nao|con model nao|con san pham nao|con loai nao|cai khac|khac khong|khac nua|san pham tuong tu|mau tuong tu|model tuong tu|loai tuong tu|tuong tu khong|another|other option|other product|something else|anything else|similar product|similar option)\b/i.test(normalized);
+  const directAlternative = /\b(mau khac|model khac|san pham khac|sp khac|thiet bi khac|loai khac|lua chon khac|phuong an khac|con mau nao|con model nao|con san pham nao|con thiet bi nao|con loai nao|cai khac|khac khong|khac nua|san pham tuong tu|mau tuong tu|model tuong tu|loai tuong tu|tuong tu khong|another|other option|other product|something else|anything else|similar product|similar option)\b/i.test(normalized);
   const categoryAlternative = /\bkhac\b/i.test(normalized)
-    && /\b(san pham|mau|model|loai|tai nghe|webcam|micro|mic|tripod|gimbal|den|lens|filter|man hinh|balo|tui)\b/i.test(normalized);
+    && /\b(san pham|thiet bi|mau|model|loai|livestream|live stream|tai nghe|webcam|micro|mic|tripod|gimbal|den|lens|filter|man hinh|balo|tui)\b/i.test(normalized);
   return directAlternative || categoryAlternative;
 }
 
@@ -64,11 +64,12 @@ function inferRequestedCategory(text) {
     ['headphones', /\b(tai nghe|headphone|headphones|headset)\b/i],
     ['webcam', /\b(webcam|hop online|goi video|video call)\b/i],
     ['microphone', /\b(micro|mic|microphone|thu am|ghi am|loc tap am)\b/i],
-    ['light', /\b(den quay|den chup|den led|ring light|tube light|bo sung anh sang)\b/i],
+    ['light', /\b(den quay|den chup|den led|den livestream|ring light|tube light|bo sung anh sang)\b/i],
     ['lens', /\b(lens|ong kinh|chup phong canh|chup chan dung|xoa phong)\b/i],
     ['filter', /\b(filter|kinh loc|nd filter|cpl)\b/i],
     ['monitor', /\b(man hinh phu|monitor|man hinh selfie)\b/i],
-    ['bag', /\b(balo|backpack|tui may anh|tui dung)\b/i]
+    ['bag', /\b(balo|backpack|tui may anh|tui dung)\b/i],
+    ['livestream', /\b(livestream|live stream|thiet bi live|ban hang online|phat song truc tiep|quay phat truc tiep|video switcher|switcher|capture card|console pad|livepro)\b/i]
   ];
   return rules.find(([, pattern]) => pattern.test(normalized))?.[0] || '';
 }
@@ -97,7 +98,8 @@ function clearProductState(context = {}) {
     'previous_product_name',
     'previous_product_brand',
     'previous_product_sku',
-    'previous_product_url'
+    'previous_product_url',
+    'last_recommended_products'
   ]) {
     delete cleaned[key];
   }
@@ -335,6 +337,58 @@ function contextSearchText(context = '') {
   ].filter(Boolean).join(' ');
 }
 
+function updateContextFromReply({
+  context = {},
+  ragProducts = [],
+  reply = '',
+  sourceKey = ''
+} = {}) {
+  const current = normalizeContext(context);
+  const products = Array.isArray(ragProducts) ? ragProducts.filter(Boolean) : [];
+  if (!products.length) {
+    return {
+      ...current,
+      new_category_request: false,
+      alternative_product_request: false
+    };
+  }
+
+  const replyText = normalize(reply);
+  const mentioned = products.filter(product => {
+    const name = normalize(product.name || product.title || '');
+    return name && replyText.includes(name);
+  });
+  const selected = mentioned.length === 1
+    ? mentioned[0]
+    : (products.length === 1 ? products[0] : null);
+  const productCategory = inferRequestedCategory(
+    `${selected?.name || selected?.title || ''} ${selected?.tags || selected?.category || ''}`
+  );
+  const requestedCategory = current.requested_category
+    || productCategory
+    || inferRequestedCategory(`${products[0]?.name || products[0]?.title || ''} ${products[0]?.tags || products[0]?.category || ''}`);
+  const base = {
+    ...current,
+    last_recommended_products: products.slice(0, 5).map(product => productSnapshot(product, sourceKey || current.current_source_key || '')).filter(Boolean),
+    requested_category: requestedCategory || '',
+    new_category_request: false,
+    alternative_product_request: false,
+    needs_clarification: false,
+    clarification_reason: ''
+  };
+
+  if (!selected) return base;
+  const snapshot = productSnapshot(selected, sourceKey || current.current_source_key || '');
+  if (!snapshot) return base;
+  return {
+    ...base,
+    ...snapshot,
+    requested_category: productCategory || requestedCategory || '',
+    last_explicit_product: snapshot,
+    context_confidence: Math.max(Number(current.context_confidence || 0), 0.86)
+  };
+}
+
 module.exports = {
   normalizeContext,
   identityWords,
@@ -346,6 +400,7 @@ module.exports = {
   looksLikeProductSpecificQuestion,
   findExplicitProduct,
   resolveConversationContext,
+  updateContextFromReply,
   contextSearchText,
   buildClarificationReply
 };

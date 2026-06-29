@@ -6,7 +6,8 @@ const {
   buildSearchQuery,
   detectMessageLanguage,
   generateReply,
-  isBroadConsultationRequest
+  isBroadConsultationRequest,
+  assessRetrievalUncertainty
 } = require('../src/ai');
 const { normalize } = require('../src/rag');
 
@@ -241,4 +242,150 @@ test('similar request after an unavailable tripod model stays in tripod category
   assert.ok(result.ragProducts.length > 0);
   assert.ok(result.ragProducts.every(product => /\b(tripod|chan may|chan den|gay selfie|monopod)\b/i.test(normalize(product.name || ''))));
   assert.ok(result.ragProducts.every(product => !/\b(micro|microphone|boya)\b/i.test(product.name || '')));
+});
+
+test('livestream category transition and alternative request never return old tripod context', async () => {
+  const { resolveConversationContext, updateContextFromReply } = require('../src/conversationContext');
+  const firstText = 'tu van thiet bi livestream chuyen nghiep dung ban hang online';
+  const firstContext = resolveConversationContext({
+    userText: firstText,
+    history: [],
+    existingContext: {
+      requested_category: 'tripod',
+      current_product_name: 'ULANZI MT-33',
+      current_product_sku: 'FUCAJ',
+      context_confidence: 0.98
+    },
+    intent: 'buy',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+  const firstReply = await generateReply({
+    channel: 'haravan_website',
+    userText: firstText,
+    history: [],
+    customer: {},
+    intent: 'buy',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: firstContext
+  });
+  const storedContext = updateContextFromReply({
+    context: firstContext,
+    ragProducts: firstReply.ragProducts,
+    reply: firstReply.reply,
+    sourceKey: 'website/newlite'
+  });
+  const secondText = 'con thiet bi nao khac khong';
+  const secondContext = resolveConversationContext({
+    userText: secondText,
+    history: [],
+    existingContext: storedContext,
+    intent: 'general',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+  const secondReply = await generateReply({
+    channel: 'haravan_website',
+    userText: secondText,
+    history: [],
+    customer: {},
+    intent: 'general',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: secondContext
+  });
+
+  const firstSkus = new Set(firstReply.ragProducts.map(product => product.sku));
+  assert.equal(firstReply.aiSource, 'rule_need_category_products');
+  assert.equal(secondReply.aiSource, 'rule_alternative_products');
+  assert.ok(secondReply.ragProducts.length > 0);
+  assert.ok(secondReply.ragProducts.every(product => !firstSkus.has(product.sku)));
+  assert.ok(secondReply.ragProducts.every(product => !/\btripod|chan may\b/i.test(normalize(product.name || ''))));
+});
+
+test('budget follow-up remains constrained to the active category', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'tai chinh duoi 600k',
+    history: [],
+    customer: {},
+    intent: 'general',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'gimbal',
+      context_confidence: 0.6
+    }
+  });
+
+  assert.equal(result.aiSource, 'rule_category_no_match');
+  assert.equal(result.ragProducts.length, 0);
+  assert.match(result.reply, /thiết bị chống rung/i);
+  assert.doesNotMatch(result.reply, /Vijim VL120/i);
+});
+
+test('uncertain retrieval asks the customer to confirm category instead of guessing', async () => {
+  const uncertainty = assessRetrievalUncertainty({
+    userText: 'toi can san pham ho tro quay',
+    intent: 'product_search',
+    conversationContext: {},
+    products: [
+      { name: 'Zhiyun Weebill 3E Gimbal', score: 12 },
+      { name: 'Ulanzi MT80 Tripod', score: 11 },
+      { name: 'BOYA Microphone', score: 10 }
+    ]
+  });
+  assert.equal(uncertainty.reason, 'ambiguous_category');
+  assert.deepEqual(uncertainty.categories, ['gimbal', 'tripod', 'microphone']);
+
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'toi muon mua san pham ulanzi',
+    history: [],
+    customer: {},
+    intent: 'buy',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: {}
+  });
+
+  assert.equal(result.aiSource, 'rule_retrieval_clarification');
+  assert.equal(result.aiUsed, 0);
+  assert.equal(result.ragProducts.length, 0);
+  assert.equal(result.conversationContext.needs_clarification, true);
+  assert.equal(result.conversationContext.clarification_reason, 'ambiguous_category');
+  assert.ok(result.conversationContext.clarification_options.length > 0);
+  assert.ok(result.conversationContext.clarification_options.every(option => !('description' in option)));
+  assert.match(result.reply, /chưa xác định chắc/i);
+});
+
+test('clear category or exact model bypasses the uncertainty gate', () => {
+  const categorized = assessRetrievalUncertainty({
+    userText: 'tu van gimbal',
+    intent: 'product_search',
+    conversationContext: { requested_category: 'gimbal' },
+    products: [
+      { name: 'Zhiyun Weebill 3E Gimbal', score: 12 },
+      { name: 'Ulanzi MT80 Tripod', score: 11 }
+    ]
+  });
+  const exactModel = assessRetrievalUncertainty({
+    userText: 'thong so MT85',
+    intent: 'product_specs',
+    conversationContext: {},
+    products: [
+      { name: 'Ulanzi MT85 Tripod', score: 12 },
+      { name: 'Ulanzi MT80 Tripod', score: 11 }
+    ]
+  });
+
+  assert.equal(categorized, null);
+  assert.equal(exactModel, null);
 });

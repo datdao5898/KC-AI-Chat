@@ -69,14 +69,12 @@ Các script mới có thể chạy qua cron hoặc systemd timer:
 
 ```bash
 node scripts/rotate-logs.js --dry-run
-node scripts/cleanup-website-media.js --dry-run
 ```
 
 Nếu ổn, bỏ `--dry-run` và lên lịch, ví dụ:
 
 ```cron
 0 2 * * * cd /srv/KC-AI-Chat && /usr/bin/node scripts/rotate-logs.js
-30 2 * * * cd /srv/KC-AI-Chat && /usr/bin/node scripts/cleanup-website-media.js
 ```
 
 ## 4. Ghi chú an toàn
@@ -84,4 +82,4 @@ Nếu ổn, bỏ `--dry-run` và lên lịch, ví dụ:
 - Không in secret, token, hoặc password ra log.
 - `GET /health` nên giữ nhẹ để monitor ngoài.
 - `GET /api/health/deep` dùng cho kiểm tra nội bộ sau khi đăng nhập.
-- Khi rollback, giữ lại dữ liệu `data/website-media/`, `data/*.log` và file `.env` đã mã hóa.
+- Khi rollback, giữ lại dữ liệu `data/*.log` và file `.env` đã mã hóa.

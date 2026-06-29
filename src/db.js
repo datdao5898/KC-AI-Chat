@@ -663,10 +663,9 @@ async function rateWebsiteConversation(visitorId, conversationIdValue, ratingVal
   return decorateConversation(rows[0]);
 }
 
-async function addStaffReply(conversationId, text, attachments = []) {
+async function addStaffReply(conversationId, text) {
   const cleanText = String(text || '').trim();
-  const cleanAttachments = (Array.isArray(attachments) ? attachments : []).slice(0, 3);
-  if (!cleanText && !cleanAttachments.length) return null;
+  if (!cleanText) return null;
   const found = await db.query(`
     SELECT c.*, cu.id AS customer_id
     FROM conversations c
@@ -685,9 +684,7 @@ async function addStaffReply(conversationId, text, attachments = []) {
     externalMessageId: `staff-${Date.now()}`, direction: 'out', senderType: 'staff',
     text: cleanText,
     rawJson: {
-      source: 'admin_live_chat',
-      attachments: cleanAttachments,
-      _media: { imageUrls: cleanAttachments.map(item => item.url) }
+      source: 'admin_live_chat'
     },
     intent: 'staff_reply', aiUsed: 0, deliveryStatus: 'returned_via_poll',
     sourceGroup: conversation.source_group || 'website', sourceKey: conversation.source_key || '',

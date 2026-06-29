@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const fs = require('fs/promises');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const express = require('express');
@@ -46,6 +47,38 @@ function createMinuteLimiter(envName, fallback, error) {
 }
 
 const loginLimiter = createMinuteLimiter('ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE', 5, 'too_many_login_attempts');
+const dataDeletionLimiter = createMinuteLimiter('DATA_DELETION_RATE_LIMIT_PER_MINUTE', 5, 'too_many_requests');
+
+function cleanText(value, maxLength = 1000) {
+  return String(value || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim()
+    .slice(0, maxLength);
+}
+
+async function saveDataDeletionRequest(body) {
+  const record = {
+    id: crypto.randomUUID(),
+    ts: new Date().toISOString(),
+    name: cleanText(body.name, 160),
+    contact: cleanText(body.contact, 240),
+    channel: cleanText(body.channel, 80),
+    source: cleanText(body.source, 240),
+    identifier: cleanText(body.identifier, 240),
+    approximateTime: cleanText(body.approximateTime, 240),
+    details: cleanText(body.details, 2000),
+    status: 'open'
+  };
+  const dataDir = path.join(__dirname, '..', 'data');
+  await fs.mkdir(dataDir, { recursive: true });
+  await fs.appendFile(
+    path.join(dataDir, 'data_deletion_requests.log'),
+    JSON.stringify(record) + '\n',
+    'utf8'
+  );
+  return record;
+}
 
 if (process.env.REQUEST_LOG !== 'false') {
   app.use((req, res, next) => {
@@ -91,6 +124,22 @@ app.use(express.json({
 
 app.get('/', (req, res) => res.redirect('/admin/'));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.get('/privacy-policy', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'privacy-policy.html')));
+app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'data-deletion.html')));
+app.post('/data-deletion/request', dataDeletionLimiter, async (req, res) => {
+  try {
+    const contact = cleanText(req.body?.contact, 240);
+    const identifier = cleanText(req.body?.identifier, 240);
+    const details = cleanText(req.body?.details, 2000);
+    if (!contact) return res.status(400).json({ error: 'contact_required' });
+    if (!identifier && details.length < 10) return res.status(400).json({ error: 'request_details_required' });
+    const record = await saveDataDeletionRequest(req.body || {});
+    return res.json({ ok: true, requestId: record.id });
+  } catch (error) {
+    console.error('Data deletion request error:', error.message);
+    return res.status(500).json({ error: 'request_failed' });
+  }
+});
 app.use('/webhooks', webhooks);
 // Alias tương thích với prototype cũ: /webhook/facebook
 app.use('/webhook', webhooks);

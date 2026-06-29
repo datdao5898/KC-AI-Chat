@@ -20,8 +20,6 @@
     detailsOpen: false,
     summaryDraft: null,
     staffDraft: '',
-    staffImage: null,
-    staffImagePreviewUrl: '',
     messageScrollTop: 0,
     messageStickBottom: true,
     listScrollTop: 0
@@ -228,7 +226,7 @@
   function ratingStars(rating) {
     const value = Math.max(0, Math.min(5, Number(rating) || 0));
     if (!value) return '';
-    return `<span class="customer-rating" title="${KC.esc(`${value}/5`)}">${'â˜…'.repeat(value)}${'â˜†'.repeat(5 - value)}</span>`;
+    return `<span class="customer-rating" title="${KC.esc(`${value}/5`)}">${'&#9733;'.repeat(value)}${'&#9734;'.repeat(5 - value)}</span>`;
   }
 
   function convItem(conv) {
@@ -308,7 +306,7 @@
     return `
       <div class="msg ${message.direction === 'out' ? 'out' : 'in'}">
         <div class="msg-meta">
-          <span>${KC.esc(message.sender_type || '')} Â· ${KC.esc(KC.shortDate(message.created_at))}</span>
+          <span>${KC.esc(message.sender_type || '')} &middot; ${KC.esc(KC.shortDate(message.created_at))}</span>
           <span class="row">
             ${message.direction === 'out' && String(message.sender_type || '').toLowerCase() === 'ai' ? `<button class="mini" data-review-msg="${KC.esc(message.id)}" type="button">${KC.esc(KC.t('markWrong'))}</button>` : ''}
             <button class="mini" data-delete-msg="${KC.esc(message.id)}" type="button">${KC.esc(KC.t('delete'))}</button>
@@ -328,7 +326,7 @@
       [KC.t('source'), conv.source_name || conv.source_key],
       [KC.t('customerPage'), customerPageUrl],
       [KC.t('status'), conv.status || 'open'],
-      [KC.t('customerRating'), conv.customer_rating ? `${'â˜…'.repeat(Number(conv.customer_rating))}${'â˜†'.repeat(5 - Number(conv.customer_rating))} ${conv.customer_rating}/5` : ''],
+      [KC.t('customerRating'), conv.customer_rating ? `${'&#9733;'.repeat(Number(conv.customer_rating))}${'&#9734;'.repeat(5 - Number(conv.customer_rating))} ${conv.customer_rating}/5` : ''],
       [KC.t('ratingFeedback'), conv.customer_rating_feedback]
     ].filter(([, value]) => String(value || '').trim());
     return rows.length
@@ -421,7 +419,7 @@
         <header class="conversation-header">
           <div class="conversation-identity">
             <h3>${KC.esc(convName(conv))}</h3>
-            <div>${KC.esc(conv.source_name || sourceGroupLabel(groupKey(conv)))} Â· ${KC.esc(conv.phone || conv.external_id || '')}</div>
+            <div>${KC.esc(conv.source_name || sourceGroupLabel(groupKey(conv)))} &middot; ${KC.esc(conv.phone || conv.external_id || '')}</div>
             ${customerPageUrl ? `
               <a class="customer-page-link" href="${KC.esc(customerPageUrl)}" target="_blank" rel="noopener noreferrer" title="${KC.esc(KC.t('openCustomerPage'))}">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7"></path><path d="M10 14 21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>
@@ -437,7 +435,7 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
             </button>
             <details class="action-menu">
-              <summary title="${KC.esc(KC.t('moreActions'))}" aria-label="${KC.esc(KC.t('moreActions'))}">â€¢â€¢â€¢</summary>
+              <summary title="${KC.esc(KC.t('moreActions'))}" aria-label="${KC.esc(KC.t('moreActions'))}">&hellip;</summary>
               <div>
                 <button data-open-details type="button">${KC.esc(KC.t('summarize'))}</button>
                 <button class="danger-text" data-delete-conversation type="button">${KC.esc(KC.t('deleteConversation'))}</button>
@@ -497,7 +495,6 @@
   }
 
   async function openConversation(id, rerenderPage = true) {
-    clearStaffImage();
     data.selected = await KC.api(KC.API + '/conversations/' + encodeURIComponent(id));
     data.detailsOpen = false;
     data.summaryDraft = null;
@@ -576,23 +573,17 @@
 
   async function sendStaffReply() {
     const text = KC.$('#staffReplyText')?.value.trim();
-    const image = data.staffImage;
-    if (!text && !image) return;
+    if (!text) return;
     const sendButton = KC.$('#staffReplyBtn');
     if (sendButton) sendButton.disabled = true;
     try {
-      const uploadedMedia = image ? await uploadStaffImage(image) : null;
       await KC.api(KC.API + '/conversations/' + encodeURIComponent(data.selected.conversation.id) + '/staff-reply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          attachments: uploadedMedia ? [{ id: uploadedMedia.id, token: uploadedMedia.token }] : []
-        })
+        body: JSON.stringify({ text })
       });
       await refreshSelected();
       data.staffDraft = '';
-      clearStaffImage();
       rerender(false);
       KC.toast(KC.t('sentReply'));
     } catch (error) {
@@ -601,41 +592,6 @@
       const currentButton = KC.$('#staffReplyBtn');
       if (currentButton) currentButton.disabled = false;
     }
-  }
-
-  async function uploadStaffImage(file) {
-    const result = await KC.api(
-      KC.API + '/conversations/' + encodeURIComponent(data.selected.conversation.id) + '/staff-media',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': file.type },
-        body: file
-      }
-    );
-    return result.media;
-  }
-
-  function setStaffImage(file) {
-    const allowed = new Set(['image/jpeg', 'image/png', 'image/webp']);
-    if (!file || !allowed.has(file.type)) {
-      KC.toast(KC.t('imageRequirements'));
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      KC.toast(KC.t('imageRequirements'));
-      return;
-    }
-    clearStaffImage();
-    data.staffImage = file;
-    data.staffImagePreviewUrl = URL.createObjectURL(file);
-    rerender();
-  }
-
-  function clearStaffImage(rerenderPage = false) {
-    if (data.staffImagePreviewUrl) URL.revokeObjectURL(data.staffImagePreviewUrl);
-    data.staffImage = null;
-    data.staffImagePreviewUrl = '';
-    if (rerenderPage) rerender();
   }
 
   async function deleteConversation() {
@@ -742,20 +698,10 @@
     if (KC.$('#saveSummaryBtn')) KC.$('#saveSummaryBtn').onclick = saveSummary;
     if (KC.$('#summarizeBtn')) KC.$('#summarizeBtn').onclick = summarize;
     if (KC.$('#staffReplyBtn')) KC.$('#staffReplyBtn').onclick = sendStaffReply;
-    if (KC.$('#staffImageBtn')) KC.$('#staffImageBtn').onclick = () => KC.$('#staffImageInput')?.click();
-    if (KC.$('#staffImageInput')) KC.$('#staffImageInput').onchange = event => setStaffImage(event.target.files?.[0]);
-    if (KC.$('#removeStaffImageBtn')) KC.$('#removeStaffImageBtn').onclick = () => clearStaffImage(true);
     if (KC.$('#deleteConvBtn')) KC.$('#deleteConvBtn').onclick = deleteConversation;
     if (KC.$('#summaryText')) KC.$('#summaryText').oninput = event => { data.summaryDraft = event.target.value; };
     if (KC.$('#staffReplyText')) {
       KC.$('#staffReplyText').oninput = event => { data.staffDraft = event.target.value; };
-      KC.$('#staffReplyText').onpaste = event => {
-        const image = [...(event.clipboardData?.items || [])]
-          .find(item => item.kind === 'file' && String(item.type || '').startsWith('image/'));
-        if (!image) return;
-        event.preventDefault();
-        setStaffImage(image.getAsFile());
-      };
     }
     requestAnimationFrame(restoreUiState);
   }

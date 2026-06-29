@@ -8,14 +8,8 @@ const { summarizeConversation, summarizeConversationFast } = require('../ai');
 const { notifyStaff } = require('../staffAlert');
 const { getJudgeMetrics } = require('../aiTrace');
 const { SOURCES_DIR, readSourceConfig, lookupEnvMap } = require('../sourceRegistry');
-const {
-  maxImageBytes,
-  resolveWebsiteAttachments,
-  saveWebsiteImage
-} = require('../websiteMedia');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const WEBSITE_MEDIA_DIR = path.join(DATA_DIR, 'website-media');
 const KNOWLEDGE_FILES = { faq: 'faq.md', policies: 'policies.md', catalog_summary: 'catalog_summary.md' };
 const TRAINING_FILES = { products: 'products.csv', faq: 'faq.md', policies: 'policies.md' };
 const LOG_FILES = {
@@ -201,10 +195,9 @@ router.get('/health/deep', async (req, res) => {
       flags: {
         autoReply: envFlag('AUTO_REPLY', true),
         replyJudgeEnabled: envFlag('REPLY_JUDGE_ENABLED', true),
-        imageRecognitionEnabled: envFlag('WEBSITE_IMAGE_RECOGNITION_ENABLED', true)
+        imageRecognitionEnabled: envFlag('FACEBOOK_IMAGE_RECOGNITION_ENABLED', true)
       },
       files: {
-        media: fileStatus(WEBSITE_MEDIA_DIR),
         aiTrace: fileStatus(path.join(DATA_DIR, 'ai_responses.log')),
         staffAlerts: fileStatus(path.join(DATA_DIR, 'staff_alerts.log'))
       }
@@ -291,38 +284,16 @@ router.post('/conversations/:id/resolve-handoff', async (req, res) => {
   res.json({ ok: true, data: await getConversation(req.params.id) });
 });
 
-router.post(
-  '/conversations/:id/staff-media',
-  express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: maxImageBytes() }),
-  async (req, res) => {
-    try {
-      const data = await getConversation(req.params.id);
-      if (!data.conversation) return res.status(404).json({ error: 'conversation_not_found' });
-      if (data.conversation.channel !== 'haravan_website') {
-        return res.status(400).json({ error: 'staff_reply_only_supports_website_chat' });
-      }
-      const media = saveWebsiteImage(req.body, data.conversation.external_id);
-      res.json({ ok: true, media });
-    } catch (e) {
-      const status = e.message === 'image_too_large' ? 413
-        : ['visitor_id_required', 'image_required', 'unsupported_image_type'].includes(e.message) ? 400
-          : 500;
-      res.status(status).json({ error: e.message });
-    }
-  }
-);
-
 router.post('/conversations/:id/staff-reply', async (req, res) => {
   try {
     const text = String(req.body?.text || '').trim();
     const data = await getConversation(req.params.id);
     if (!data.conversation) return res.status(404).json({ error: 'conversation_not_found' });
-    const attachments = resolveWebsiteAttachments(
-      req.body?.attachments,
-      data.conversation.external_id
-    ).map(({ id, token, mime, bytes, url }) => ({ id, token, mime, bytes, url }));
-    if (!text && !attachments.length) return res.status(400).json({ error: 'reply_text_or_image_required' });
-    const message = await addStaffReply(req.params.id, text, attachments);
+    if (Array.isArray(req.body?.attachments) && req.body.attachments.length) {
+      return res.status(400).json({ error: 'website_images_not_supported' });
+    }
+    if (!text) return res.status(400).json({ error: 'reply_text_required' });
+    const message = await addStaffReply(req.params.id, text);
     if (!message) return res.status(404).json({ error: 'conversation_not_found' });
     res.json({ ok: true, message, data: await getConversation(req.params.id) });
   } catch (e) {

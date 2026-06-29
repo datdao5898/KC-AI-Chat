@@ -5,7 +5,8 @@ const {
   contextSearchText,
   buildClarificationReply,
   isAlternativeProductRequest,
-  inferRequestedCategory
+  inferRequestedCategory,
+  updateContextFromReply
 } = require('../src/conversationContext');
 const { buildSearchQuery } = require('../src/ai');
 
@@ -169,4 +170,56 @@ test('similar product follow-up inherits a category even when the old model is a
   assert.equal(isAlternativeProductRequest('co san pham nao tuong tu khong'), true);
   assert.equal(context.alternative_product_request, true);
   assert.equal(context.requested_category, 'tripod');
+});
+
+test('new livestream need replaces an unrelated product category', () => {
+  assert.equal(inferRequestedCategory('tu van thiet bi livestream ban hang online'), 'livestream');
+  assert.equal(inferRequestedCategory('micro livestream nao tot'), 'microphone');
+  assert.equal(inferRequestedCategory('den livestream nao tot'), 'light');
+
+  const context = resolveConversationContext({
+    userText: 'tu van thiet bi livestream chuyen nghiep dung ban hang online',
+    history: [],
+    existingContext: {
+      requested_category: 'tripod',
+      current_product_name: 'ULANZI MT-33',
+      current_product_sku: 'FUCAJ',
+      current_brand: 'Ulanzi',
+      context_confidence: 0.98
+    },
+    intent: 'buy',
+    sourceKey: 'website/newlite'
+  });
+
+  assert.equal(context.requested_category, 'livestream');
+  assert.equal(context.new_category_request, true);
+  assert.equal(context.current_product_name, undefined);
+  assert.equal(context.current_product_sku, undefined);
+});
+
+test('reply context remembers recommendations and selects one explicitly named product', () => {
+  const products = [
+    { sku: 'FG121', name: 'Cadothy AMAZE 5Pro - Thiet bi quay phat truc tiep', vendor: 'CADOTHY' },
+    { sku: 'FG111', name: 'Cadothy iBig 5S - Thiet bi live stream chuyen nghiep', vendor: 'CADOTHY' }
+  ];
+  const listContext = updateContextFromReply({
+    context: { requested_category: 'livestream', new_category_request: true },
+    ragProducts: products,
+    reply: products.map(product => product.name).join('\n'),
+    sourceKey: 'website/newlite'
+  });
+  assert.deepEqual(
+    listContext.last_recommended_products.map(product => product.current_product_sku),
+    ['FG121', 'FG111']
+  );
+  assert.equal(listContext.current_product_sku, undefined);
+
+  const selectedContext = updateContextFromReply({
+    context: listContext,
+    ragProducts: products,
+    reply: `NewLite tim thay san pham phu hop: ${products[1].name}`,
+    sourceKey: 'website/newlite'
+  });
+  assert.equal(selectedContext.current_product_sku, 'FG111');
+  assert.equal(selectedContext.requested_category, 'livestream');
 });
