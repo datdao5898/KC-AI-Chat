@@ -45,6 +45,16 @@ test('headphone search excludes microphones and voice amplifiers', () => {
   assert.ok(products.every(product => !/\b(may tro giang|micro thu am)\b/i.test(normalize(product.name || ''))));
 });
 
+test('short exact model code boosts the matching microphone product', () => {
+  const products = searchProducts('chi thay co micro fifine A6v thi sao em', 5, {
+    sourceKey: 'website/kingcom'
+  });
+
+  assert.ok(products.length > 0);
+  assert.equal(products[0].sku, 'FEK61');
+  assert.match(products[0].name, /Fifine A6 \/ A6V/i);
+});
+
 test('product specification context includes the matched catalog description', () => {
   const result = buildContext(
     'thong so Cadothy AMAZE 5Pro',

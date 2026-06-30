@@ -476,10 +476,17 @@ function isProductGuidanceQuery(userText) {
     || /(使用|怎么用|如何使用|说明书|连接|设置|安装|配对)/.test(raw);
 }
 
+function isCompatibilityFollowUp(userText) {
+  const normalized = normalize(userText);
+  const asksCompatibility = /\b(tuong thich|dung cho|danh cho|dung voi|dung duoc voi|dung duoc cho|cho laptop|cho may tinh|ket noi|ho tro|compatible|compatibility)\b/i.test(normalized);
+  const targetDevice = /\b(laptop|may tinh|pc|windows|mac|macbook|iphone|android|dien thoai|smartphone|camera|may anh)\b/i.test(normalized);
+  return asksCompatibility && targetDevice;
+}
+
 function isDirectProductSpecsQuery(userText) {
   const raw = String(userText || '');
   const normalized = normalize(userText);
-  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|cao bao nhieu|chieu cao|dai bao nhieu|rong bao nhieu|nang bao nhieu|luc hut|tai trong|tuong thich|dung duoc voi|dung duoc cho|ho tro iphone|ho tro android|co remote|kem remote|remote khong|phu kien kem theo|kem theo gi|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?|height|weight|dimensions|compatible with|compatibility|include remote|come with remote|included accessories)\b/i.test(normalized)
+  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|cao bao nhieu|chieu cao|dai bao nhieu|rong bao nhieu|nang bao nhieu|luc hut|tai trong|tuong thich|dung cho|danh cho|dung voi|dung duoc voi|dung duoc cho|cho laptop|cho may tinh|ket noi laptop|ket noi may tinh|ho tro laptop|ho tro may tinh|ho tro iphone|ho tro android|co remote|kem remote|remote khong|phu kien kem theo|kem theo gi|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?|height|weight|dimensions|compatible with|compatibility|include remote|come with remote|included accessories)\b/i.test(normalized)
     || /(\u53c2\u6570|\u89c4\u683c|\u6280\u672f\u53c2\u6570|\u914d\u7f6e|\u5c3a\u5bf8|\u91cd\u91cf|\u529f\u7387|\u5206\u8fa8\u7387|\u4f20\u611f\u5668|\u5149\u5708)/.test(raw);
 }
 
@@ -986,18 +993,33 @@ function buildSearchQuery(userText, history, customer, conversationContext = {})
   const asksGuidance = isProductGuidanceQuery(userText);
   const contextText = contextSearchText(conversationContext);
   const asksContextFollowUp = isContextualProductFollowUp(userText);
+  const asksBudgetFollowUp = Boolean(extractMaxPrice(userText))
+    && /\b(duoi|toi da|max|nho hon|be hon|ngan sach|tai chinh|re hon|gia re|loai nao|mau nao|cai nao|san pham nao)\b/i.test(normalize(userText));
   if (isAlternativeProductRequest(userText)) {
     return buildAlternativeSearchQuery(userText, conversationContext);
+  }
+  if (asksBudgetFollowUp && (contextText || conversationContext?.requested_category || recentCustomer || interests)) {
+    const categoryTerms = conversationContext?.requested_category
+      ? categorySearchTerms(conversationContext.requested_category)
+      : '';
+    return `${categoryTerms} ${contextText} ${userText} ${recentCustomer} ${interests} ${expandedTerms}`.trim();
   }
   if (conversationContext?.new_category_request && conversationContext?.requested_category) {
     return `${categorySearchTerms(conversationContext.requested_category)} ${userText} ${expandedTerms}`.trim();
   }
   if (asksSpecs || asksGuidance || isFollowUpLinkRequest(userText) || (asksContextFollowUp && contextText)) {
-    if (hasExplicitProductReference(userText)) {
+    const explicitReferenceIsCompatibilityTarget = conversationContext?.requested_category
+      && isCompatibilityFollowUp(userText);
+    if (hasExplicitProductReference(userText) && !explicitReferenceIsCompatibilityTarget) {
       return `${userText} ${expandedTerms}`.trim();
     }
+    if (!contextText && conversationContext?.requested_category) {
+      return `${categorySearchTerms(conversationContext.requested_category)} ${userText} ${recentCustomer} ${expandedTerms}`.trim();
+    }
     if (contextText) {
-      return `${contextText} ${userText} ${expandedTerms}`.trim();
+      const needsRecentCategoryContext = conversationContext?.requested_category
+        && !conversationContext?.current_product_name;
+      return `${contextText} ${userText} ${needsRecentCategoryContext ? recentCustomer : ''} ${expandedTerms}`.trim();
     }
     const referencedProduct = latestExplicitProductMessage(history, userText);
     return `${referencedProduct?.text || ''} ${userText} ${expandedTerms}`.trim();
@@ -1593,7 +1615,7 @@ ${intent === 'greeting'
   let searchQuery = buildSearchQuery(userText, history, customer, resolvedConversationContext);
   const retrievalOptions = {
     sourceKey,
-    topK: policyQuestion ? 0 : ((guidanceQuestion || specsQuestion) ? 1 : 8),
+    topK: policyQuestion ? 0 : ((guidanceQuestion || specsQuestion) ? 1 : 12),
     includeDescriptions: true,
     descriptionMaxChars: specsQuestion ? 3500 : 800,
     requiredCategory: resolvedConversationContext.requested_category || '',

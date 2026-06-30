@@ -357,7 +357,8 @@ function matchesRequiredCategory(product = {}, category = '') {
     return coreDevice && !accessory;
   }
   if (normalizedCategory === 'gimbal') {
-    const accessory = /\b(phu kien|case|tui|plate|mount|adapter|khung)\b/i.test(name)
+    const accessory = /\b(phu kien|case|tui|plate|mount|adapter|khung|ngam|thao lap|doi trong|den|light|protector|bao ve|screen protector)\b/i.test(name)
+      || /\b(danh cho|for)\b.*\b(gimbal|ronin|dji rs)\b/i.test(name)
       || /\b(tay cam|handle).*\b(danh cho|for)\b.*\b(gimbal|ronin)\b/i.test(name);
     return !accessory && /\b(gimbal|weebill|crane|smooth)\b/i.test(name);
   }
@@ -397,7 +398,7 @@ function searchProducts(query, topK = 8, options = {}) {
   if (scopeBrand && mentionedBrands.some(brand => brand !== scopeBrand)) return [];
   const maxPrice = extractMaxPrice(query);
   const codeWords = words.filter(w => {
-    if (!(w.length >= 4 && /[a-z]/.test(w) && /\d/.test(w))) return false;
+    if (!(w.length >= 2 && /[a-z]/.test(w) && /\d/.test(w))) return false;
     return !/^\d+(?:k|m|tr|trieu|nghin|ngan)$/i.test(w);
   });
   const wantsTripod = /\b(tripod|chan may|chan den|gia do)\b/i.test(normQuery);
@@ -441,6 +442,7 @@ function searchProducts(query, topK = 8, options = {}) {
     const productShape = { nameNorm: name, nameAccent, descNorm: desc };
     const nameWords = wordSet(name);
     const significantNameMatches = significantWords.filter(w => nameWords.has(w));
+    const exactCodeNameMatches = codeWords.filter(w => nameWords.has(w));
     const orderedNameMatches = orderedMatchScore(significantWords, name);
     const accessoryProduct = looksAccessoryProduct(name);
 
@@ -483,8 +485,18 @@ function searchProducts(query, topK = 8, options = {}) {
       if (productUrl.includes(w)) { score += 8; strongMatches++; }
       if (desc.includes(w)) score += 1;
     }
+    for (const w of codeWords) {
+      if (sku === w || nameWords.has(w)) {
+        score += 26;
+        strongMatches += 2;
+      } else if (sku.includes(w) || name.includes(w)) {
+        score += 14;
+        strongMatches += 1;
+      }
+    }
     if (significantWords.length) {
       score += significantNameMatches.length * 5;
+      score += exactCodeNameMatches.length * 10;
       if (orderedNameMatches >= Math.min(significantWords.length, 3)) {
         score += orderedNameMatches * 4;
         strongMatches += 1;

@@ -20,6 +20,7 @@ test('classifyIntent handles warranty and policy questions', () => {
 
 test('classifyIntent handles product search', () => {
   assert.equal(classifyIntent('looking for mobile tripod').intent, 'product_search');
+  assert.equal(classifyIntent('co loai nao duoi 1 trieu ko em').intent, 'product_search');
 });
 
 test('classifyIntent handles product specification questions', () => {
@@ -31,5 +32,11 @@ test('classifyIntent handles product specification questions', () => {
   assert.equal(classifyIntent('camera n\u00e0y c\u00f3 \u0111\u1ed9 ph\u00e2n gi\u1ea3i bao nhi\u00eau').intent, 'product_specs');
   assert.equal(classifyIntent('Ulanzi MT85 cao bao nhi\u00eau m').intent, 'product_specs');
   assert.equal(classifyIntent('m\u1eabu n\u00e0y d\u00f9ng \u0111\u01b0\u1ee3c cho iPhone kh\u00f4ng').intent, 'product_specs');
+  assert.equal(classifyIntent('D\u00f9ng cho m\u00e1y laptop').intent, 'product_specs');
+  assert.equal(classifyIntent('mic n\u00e0y d\u00f9ng cho laptop kh\u00f4ng').intent, 'product_specs');
   assert.equal(classifyIntent('Cadothy AMAZE 5Pro \u7684\u6280\u672f\u53c2\u6570').intent, 'product_specs');
+});
+
+test('classifyIntent keeps laptop store questions unsupported', () => {
+  assert.equal(classifyIntent('shop c\u00f3 b\u00e1n laptop kh\u00f4ng').intent, 'unsupported');
 });

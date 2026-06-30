@@ -103,6 +103,29 @@ test('context product leads a follow-up search query', () => {
   assert.match(query, /^Ulanzi MT85 Automatic Tripod MT85/i);
 });
 
+test('compatibility follow-up reuses category context and recent need', () => {
+  const history = [
+    {
+      sender_type: 'customer',
+      text: 'Mic thu am livestream tai nha chong tap am gia re'
+    },
+    {
+      sender_type: 'ai',
+      text: 'Da anh/chi xac nhan giup em dung model micro minh dang hoi.'
+    }
+  ];
+  const query = buildSearchQuery(
+    'Dung cho may laptop',
+    history,
+    {},
+    { requested_category: 'microphone' }
+  );
+
+  assert.match(query, /micro/i);
+  assert.match(query, /laptop/i);
+  assert.match(query, /livestream/i);
+});
+
 test('broader search query keeps source scope and removes conversational filler', () => {
   const query = buildBroaderSearchQuery(
     'anh muốn tìm hiểu về thiết bị này giúp anh',
@@ -328,6 +351,52 @@ test('budget follow-up remains constrained to the active category', async () => 
   assert.equal(result.ragProducts.length, 0);
   assert.match(result.reply, /thiết bị chống rung/i);
   assert.doesNotMatch(result.reply, /Vijim VL120/i);
+});
+
+test('budget follow-up reuses microphone context and finds Fifine A6V', async () => {
+  const history = [
+    {
+      sender_type: 'customer',
+      text: 'chi muon tu van ve micro thu am de ban, chu yeu cho livestream hoac edit video ma danh cho gaming'
+    },
+    {
+      sender_type: 'ai',
+      text: 'Da, voi nhu cau ve micro, KingCom co cac mau phu hop sau.'
+    },
+    {
+      sender_type: 'customer',
+      text: 'chi thay co micro fifine A6v thi sao em'
+    }
+  ];
+
+  const searchQuery = buildSearchQuery(
+    'co loai nao duoi 1 trieu ko em',
+    history,
+    {},
+    { requested_category: 'microphone' }
+  );
+  assert.match(searchQuery, /micro/i);
+  assert.match(searchQuery, /fifine/i);
+
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'co loai nao duoi 1 trieu ko em',
+    history,
+    customer: {},
+    intent: 'product_search',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'microphone',
+      context_confidence: 0.6
+    }
+  });
+
+  assert.equal(result.aiSource, 'direct_budget_lookup');
+  assert.ok(result.ragProducts.some(product => product.sku === 'FEK61'));
+  assert.match(result.reply, /Fifine A6 \/ A6V/i);
+  assert.doesNotMatch(result.reply, /chưa có micro|chua co micro/i);
 });
 
 test('uncertain retrieval asks the customer to confirm category instead of guessing', async () => {

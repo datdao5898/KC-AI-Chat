@@ -66,6 +66,11 @@ function classifyIntent(text) {
   ])) return { intent: 'catalog_info', confidence: 0.9 };
 
   if (hasWord(msg, ['mua', 'dat', 'chot'])) return { intent: 'buy', confidence: 0.85 };
+  if (
+    /\b(duoi|toi da|nho hon|be hon)\s*\d/i.test(msg)
+    && (hasPhrase(msg, ['loai nao', 'mau nao', 'cai nao', 'san pham nao'])
+      || hasWord(msg, ['loai', 'mau']))
+  ) return { intent: 'product_search', confidence: 0.85 };
   if (hasPhrase(msg, ['looking for', 'i am looking', 'im looking', 'please im looking', 'please i am looking']) || hasWord(msg, ['tripod', 'mobile', 'phone', 'smartphone'])) return { intent: 'product_search', confidence: 0.85 };
   if (hasPhrase(msg, ['i want to buy', 'want to buy', 'looking to buy']) || hasWord(msg, ['buy'])) return { intent: 'buy', confidence: 0.85 };
 
@@ -88,6 +93,15 @@ function classifyIntent(text) {
     'danh mục sản phẩm', 'danh muc san pham', 'catalog'
   ])) return { intent: 'catalog_info', confidence: 0.9 };
   if (hasWord(msg, ['hello','hi','alo']) || hasPhrase(msg, ['xin chao','chao ban','chao shop','em chao'])) return { intent: 'greeting', confidence: 0.9 };
+
+  const mentionsComputer = hasWord(msg, ['laptop','thinkpad','macbook','máy tính','may tinh', 'pc', 'windows', 'mac']);
+  const asksCompatibility = hasPhrase(msg, [
+    'dung cho', 'danh cho', 'dung voi', 'dung duoc voi', 'dung duoc cho',
+    'cho may', 'cho laptop', 'cho may tinh', 'cam laptop', 'cam vao laptop',
+    'ket noi laptop', 'ket noi may tinh', 'tuong thich laptop', 'tuong thich may tinh',
+    'windows mac', 'win mac'
+  ]);
+  if (mentionsComputer && asksCompatibility) return { intent: 'product_specs', confidence: 0.9 };
 
   if (hasWord(msg, ['laptop','thinkpad','macbook','máy tính','may tinh'])) return { intent: 'unsupported', confidence: 0.85 };
   if (hasPhrase(msg, ['giá','bao nhiêu','cost','price']) || hasWord(msg, ['bn'])) return { intent: 'price', confidence: 0.85 };
