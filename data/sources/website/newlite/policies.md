@@ -5,6 +5,10 @@ Nguon tham khao cong khai:
 - https://store.kingcom.com.vn/pages/chinh-sach-doi-tra
 - https://newlite.vn/pages/chinh-sach-doi-tra
 
+## Gia va VAT
+- Gia niem yet cua tat ca san pham NewLite da bao gom VAT (full VAT). Khach khong can tra them VAT khi mua hang.
+- NewLite ho tro xuat hoa don VAT theo thong tin don hang hop le.
+
 ## Pham vi bat buoc
 - Chi tu van theo du lieu trong products.csv va kien thuc training cua nguon dang nhan tin.
 - Khong bia gia, ton kho, khuyen mai, thoi gian giao hang, thoi han bao hanh rieng cua tung model neu du lieu khong co.

@@ -1,5 +1,6 @@
 const { searchProducts, normalize, queryWords } = require('./rag');
 const { readSourceConfig } = require('./sourceRegistry');
+const { parseCustomerMessage } = require('./customerIntentParser');
 
 const CONTEXT_STOPWORDS = new Set([
   'anh', 'chi', 'ban', 'minh', 'toi', 'em', 'shop', 'can', 'muon',
@@ -215,16 +216,24 @@ function resolveConversationContext({
   intent = '',
   sourceKey = '',
   sourceName = '',
-  sourceGroup = ''
+  sourceGroup = '',
+  parsedMessage = null
 } = {}) {
   const previous = normalizeContext(existingContext);
   const sourceConfig = readSourceConfig(sourceKey);
+  const customerIntent = parsedMessage && typeof parsedMessage === 'object'
+    ? parsedMessage
+    : parseCustomerMessage(userText, { sourceKey, sourceName, sourceGroup, existingContext: previous });
   const explicit = findExplicitProduct(userText, sourceKey);
   const contextualFollowUp = isContextualProductFollowUp(userText);
   const alternativeRequest = isAlternativeProductRequest(userText);
   const inferredCategory = inferRequestedCategory(userText);
-  const requestedCategory = inferredCategory || previous.requested_category || '';
-  const newCategoryRequest = isNewCategoryRequest(userText, intent, inferredCategory);
+  const structuredMessageCategory = customerIntent?.signals?.category_source === 'message'
+    ? customerIntent.category
+    : '';
+  const detectedCategory = inferredCategory || structuredMessageCategory || '';
+  const requestedCategory = detectedCategory || previous.requested_category || '';
+  const newCategoryRequest = isNewCategoryRequest(userText, intent, detectedCategory);
   const productSpecific = looksLikeProductSpecificQuestion(userText, intent);
   const base = {
     ...(newCategoryRequest ? clearProductState(previous) : previous),
@@ -234,6 +243,7 @@ function resolveConversationContext({
     current_brand: newCategoryRequest ? '' : (previous.current_brand || sourceConfig.brand || ''),
     current_customer_goal: intent || previous.current_customer_goal || '',
     requested_category: requestedCategory,
+    customer_intent: customerIntent,
     new_category_request: newCategoryRequest,
     alternative_product_request: false,
     context_confidence: newCategoryRequest ? 0 : Number(previous.context_confidence || 0),
@@ -250,7 +260,7 @@ function resolveConversationContext({
       previous_product_brand: previous.current_brand || '',
       previous_product_sku: previous.current_product_sku || '',
       previous_product_url: previous.current_product_url || '',
-      requested_category: inferredCategory || previous.requested_category || inferRequestedCategory(previous.current_product_name || ''),
+      requested_category: detectedCategory || previous.requested_category || inferRequestedCategory(previous.current_product_name || ''),
       new_category_request: false,
       context_confidence: Math.max(Number(previous.context_confidence || 0), previous.current_product_name ? 0.8 : 0.6),
       needs_clarification: false,
@@ -271,7 +281,7 @@ function resolveConversationContext({
       ...snapshot,
       current_brand: snapshot.current_brand || sourceConfig.brand || base.current_brand || '',
       current_customer_goal: intent || base.current_customer_goal || '',
-      requested_category: inferredCategory || inferRequestedCategory(snapshot.current_product_name) || '',
+      requested_category: detectedCategory || inferRequestedCategory(snapshot.current_product_name) || '',
       last_explicit_product: snapshot,
       context_confidence: explicit.confidence,
       needs_clarification: false,
@@ -296,7 +306,7 @@ function resolveConversationContext({
         ...base,
         ...snapshot,
         current_brand: snapshot.current_brand || sourceConfig.brand || base.current_brand || '',
-        requested_category: inferRequestedCategory(snapshot.current_product_name) || base.requested_category || '',
+        requested_category: inferRequestedCategory(snapshot.current_product_name) || base.requested_category || customerIntent.category || '',
         last_explicit_product: snapshot,
         context_confidence: Math.max(historyMatch.confidence, 0.76),
         needs_clarification: false,
@@ -329,8 +339,17 @@ function resolveConversationContext({
 
 function contextSearchText(context = '') {
   const ctx = normalizeContext(context);
+  const intent = ctx.customer_intent && typeof ctx.customer_intent === 'object'
+    ? ctx.customer_intent
+    : {};
   return [
     ctx.requested_category,
+    intent.product,
+    intent.product_sku,
+    intent.brand,
+    intent.category,
+    intent.use_case,
+    intent.compatibility_target,
     ctx.current_product_name,
     ctx.current_product_sku,
     ctx.current_product_url

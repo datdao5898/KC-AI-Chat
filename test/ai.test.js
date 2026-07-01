@@ -9,7 +9,7 @@ const {
   isBroadConsultationRequest,
   assessRetrievalUncertainty
 } = require('../src/ai');
-const { normalize } = require('../src/rag');
+const { normalize, parsePriceNumber } = require('../src/rag');
 
 test('generateReply answers landscape lens starting price from catalog', async () => {
   const result = await generateReply({
@@ -80,6 +80,99 @@ test('generateReply answers NewLite store address from source FAQ', async () => 
   assert.doesNotMatch(result.reply, /phường Bảy Hiền/i);
 });
 
+test('generateReply answers warranty policy without provider fallback', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'bảo hành như thế nào shop',
+    history: [],
+    customer: {},
+    intent: 'warranty',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_policy');
+  assert.match(result.reply, /bảo hành/i);
+  assert.equal(result.ragProducts.length, 0);
+  assert.doesNotMatch(result.reply, /Link:/i);
+});
+
+test('brand-only product request asks for clarification instead of guessing a product', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'mua synco',
+    history: [],
+    customer: {},
+    intent: 'product_search',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: {
+      customer_intent: {
+        brand: 'Synco',
+        signals: { brand_only: true }
+      }
+    }
+  });
+
+  assert.equal(result.aiSource, 'rule_retrieval_clarification');
+  assert.match(result.reply, /nhóm|nhu cầu|model|đang tìm/i);
+  assert.doesNotMatch(result.reply, /Link:/i);
+});
+
+test('unsupported product reply names the requested outside-category item', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'bên mình có bán cà phê không',
+    history: [],
+    customer: {},
+    intent: 'unsupported',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule');
+  assert.match(result.reply, /cà phê/i);
+  assert.doesNotMatch(result.reply, /laptop|ThinkPad/i);
+});
+
+test('out-of-scope product search does not fall through to unrelated catalog products', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'tôi muốn mua bóp da bò',
+    history: [],
+    customer: {},
+    intent: 'product_search',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_out_of_scope_product');
+  assert.match(result.reply, /bóp da bò/i);
+  assert.equal(result.ragProducts.length, 0);
+  assert.doesNotMatch(result.reply, /PHOTOCITY|BOYA|Link:/i);
+});
+
+test('English unsupported product reply does not repeat sales verbs as product names', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'do you sell coffee',
+    history: [],
+    customer: {},
+    intent: 'unsupported',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule');
+  assert.match(result.reply, /does not sell coffee/i);
+  assert.doesNotMatch(result.reply, /sell sell/i);
+});
+
 test('short ambiguous message inherits the recent customer language', () => {
   assert.equal(detectMessageLanguage('yes', [
     { sender_type: 'customer', text: 'Please show me the product price' }
@@ -126,6 +219,55 @@ test('compatibility follow-up reuses category context and recent need', () => {
   assert.match(query, /livestream/i);
 });
 
+test('compatibility follow-up answers compatibility instead of unrelated specs', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'dung cho laptop khong',
+    history: [
+      { sender_type: 'customer', text: 'co loai micro nao duoi 1 trieu khong' },
+      { sender_type: 'ai', text: 'Da em co mot so mau micro phu hop.' }
+    ],
+    customer: {},
+    intent: 'product_specs',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'microphone',
+      context_confidence: 0.6
+    }
+  });
+
+  assert.equal(result.aiSource, 'direct_catalog_compatibility');
+  assert.doesNotMatch(result.reply, /Trọng lượng|Pin|Công suất/i);
+  assert.match(result.reply, /laptop|máy tính/i);
+});
+
+test('spec follow-up keeps the current product context for height questions', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'cao tối đa bao nhiêu',
+    history: [],
+    customer: {},
+    intent: 'product_specs',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {
+      current_product_name: 'Gậy Selfie Tripod MagSafe Ulanzi MT85 Tự Động Bung Chân',
+      current_product_sku: 'FUB87',
+      current_product_url: 'https://store.kingcom.com.vn/products/ulanzi-mt85-automatic-pop-up-phone-tripod-magsafe',
+      requested_category: 'tripod',
+      context_confidence: 0.9
+    }
+  });
+
+  assert.equal(result.aiSource, 'direct_catalog_product_specs');
+  assert.match(result.reply, /MT85/i);
+  assert.match(result.reply, /1\.5m|150cm/i);
+  assert.doesNotMatch(result.reply, /AT-05/i);
+});
+
 test('broader search query keeps source scope and removes conversational filler', () => {
   const query = buildBroaderSearchQuery(
     'anh muốn tìm hiểu về thiết bị này giúp anh',
@@ -153,6 +295,29 @@ test('broad consultation request asks for clarification without calling provider
   assert.equal(result.aiSource, 'rule_context_clarification');
   assert.match(result.reply, /nhu cầu sử dụng/i);
   assert.equal(result.aiUsed, 0);
+});
+
+test('conversation stop request does not call provider or search products', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'ko can ho tro nua',
+    history: [],
+    customer: {},
+    intent: 'general',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'tripod',
+      current_product_name: 'Ulanzi MT85',
+      context_confidence: 0.8
+    }
+  });
+
+  assert.equal(result.aiSource, 'rule_conversation_stop');
+  assert.equal(result.aiUsed, 0);
+  assert.equal(result.ragProducts.length, 0);
+  assert.match(result.reply, /dừng tại đây|dung tai day/i);
 });
 
 test('alternative product request returns other catalog products and excludes the previous model', async () => {
@@ -395,8 +560,191 @@ test('budget follow-up reuses microphone context and finds Fifine A6V', async ()
 
   assert.equal(result.aiSource, 'direct_budget_lookup');
   assert.ok(result.ragProducts.some(product => product.sku === 'FEK61'));
+  assert.ok(result.ragProducts.every(product => parsePriceNumber(product.price || product.gia || '') <= 1000000));
   assert.match(result.reply, /Fifine A6 \/ A6V/i);
+  assert.doesNotMatch(result.reply, /SKU:/i);
   assert.doesNotMatch(result.reply, /chưa có micro|chua co micro/i);
+});
+
+test('budget product reply never lists products above the requested budget', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'co loai micro nao duoi 1 trieu khong',
+    history: [],
+    customer: {},
+    intent: 'product_search',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'microphone',
+      context_confidence: 0.6
+    }
+  });
+
+  assert.equal(result.aiSource, 'direct_budget_lookup');
+  assert.ok(result.ragProducts.length > 0);
+  assert.ok(result.ragProducts.every(product => parsePriceNumber(product.price || product.gia || '') <= 1000000));
+  assert.doesNotMatch(result.reply, /SKU:/i);
+  assert.doesNotMatch(result.reply, /2\.390\.000|1\.790\.000|1\.490\.000/);
+});
+
+test('budget product reply does not ask for phone again when customer profile has phone', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'co loai micro nao duoi 1 trieu khong',
+    history: [],
+    customer: { phone: '0944190237' },
+    intent: 'product_search',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'microphone',
+      context_confidence: 0.6
+    }
+  });
+
+  assert.equal(result.aiSource, 'direct_budget_lookup');
+  assert.doesNotMatch(result.reply, /xin số điện thoại|để lại số điện thoại|phone number/i);
+});
+
+test('exact compact model price lookup resolves MT33 to NewLite MT-33', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'Ulanzi MT33 gia bao nhieu',
+    history: [],
+    customer: {},
+    intent: 'price',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'tripod',
+      context_confidence: 0.8
+    }
+  });
+
+  assert.equal(result.aiSource, 'direct_price_lookup');
+  assert.ok(result.ragProducts.some(product => product.sku === 'FUCAJ'));
+  assert.match(result.reply, /MT-33|MT33/i);
+  assert.match(result.reply, /newlite\.vn/);
+  assert.doesNotMatch(result.reply, /store\.kingcom\.com\.vn/);
+});
+
+test('price extreme lookup respects requested product category', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'tripod re nhat la mau nao',
+    history: [],
+    customer: {},
+    intent: 'price',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'tripod',
+      context_confidence: 0.8
+    }
+  });
+
+  assert.equal(result.aiSource, 'direct_price_lookup');
+  assert.ok(result.ragProducts.length > 0);
+  assert.ok(result.ragProducts.every(product => /tripod|chan|gay selfie|monopod/i.test(normalize(product.name || product.title || ''))));
+  assert.doesNotMatch(result.reply, /Dung Dich Tao Khoi|dung dich tao khoi|Lensgo Smoke/i);
+  assert.match(result.reply, /newlite\.vn/);
+});
+
+test('product URL lookup bypasses mistaken category filter', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'https://newlite.vn/products/synco-xtalk-master',
+    history: [],
+    customer: {},
+    intent: 'product_search',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: {}
+  });
+
+  assert.notEqual(result.aiSource, 'rule_no_catalog_match');
+  assert.equal(result.ragProducts.length, 1);
+  assert.equal(result.ragProducts[0].sku, 'C321');
+  assert.match(result.reply, /Synco Xtalk Master/i);
+  assert.match(result.reply, /newlite\.vn\/products\/synco-xtalk-master/i);
+});
+
+test('comparison questions are answered from catalog specs instead of handing off early', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'so sanh Ulanzi MT85 va MT33 giup em',
+    history: [],
+    customer: {},
+    intent: 'product_search',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'tripod',
+      context_confidence: 0.8
+    }
+  });
+
+  const replyNorm = normalize(result.reply);
+  assert.equal(result.aiSource, 'direct_catalog_comparison');
+  assert.match(replyNorm, /ulanzi mt85/);
+  assert.match(replyNorm, /mt-33|mt33/);
+  assert.match(replyNorm, /so sanh|comparison|compare/);
+  assert.doesNotMatch(replyNorm, /nhan vien|staff/);
+});
+
+test('subjective product questions answer from catalog facts before escalating', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'ulanzi mt85 nghe on khong',
+    history: [],
+    customer: {},
+    intent: 'product_search',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {
+      current_product_name: 'Gay Selfie Tripod MagSafe Ulanzi MT85 Tu Dong Bung Chan',
+      current_product_sku: 'FUCB8A',
+      requested_category: 'tripod',
+      context_confidence: 0.9
+    }
+  });
+
+  const replyNorm = normalize(result.reply);
+  assert.equal(result.aiSource, 'direct_catalog_subjective_assessment');
+  assert.match(replyNorm, /mt85/);
+  assert.match(replyNorm, /20n|25n|150cm|remote bluetooth|385g/);
+  assert.doesNotMatch(replyNorm, /nhan vien|staff|phone number/);
+});
+
+test('opinion product lookup stays scoped to the active website catalog', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'ulanzi mt85 nghe on khong',
+    history: [],
+    customer: {},
+    intent: 'product_search',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: {
+      current_product_name: 'Gay Selfie Tripod MagSafe Ulanzi MT85 Tu Dong Bung Chan',
+      current_product_sku: 'FUCB8A',
+      requested_category: 'tripod',
+      context_confidence: 0.9
+    }
+  });
+
+  assert.notEqual(result.aiSource, 'direct_catalog_subjective_assessment');
+  assert.equal(result.ragProducts.length, 0);
+  assert.doesNotMatch(result.reply, /store\.kingcom\.com\.vn/i);
 });
 
 test('uncertain retrieval asks the customer to confirm category instead of guessing', async () => {

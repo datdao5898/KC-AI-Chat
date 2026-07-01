@@ -23,6 +23,12 @@ test('classifyIntent handles product search', () => {
   assert.equal(classifyIntent('co loai nao duoi 1 trieu ko em').intent, 'product_search');
 });
 
+test('classifyIntent handles short catalog overview questions', () => {
+  assert.equal(classifyIntent('bạn bán gì').intent, 'catalog_info');
+  assert.equal(classifyIntent('shop bán gì').intent, 'catalog_info');
+  assert.equal(classifyIntent('bên mình bán gì').intent, 'catalog_info');
+});
+
 test('classifyIntent handles product specification questions', () => {
   assert.equal(
     classifyIntent('g\u1eedi cho m\u00ecnh th\u00f4ng s\u1ed1 c\u1ee7a Cadothy AMAZE 5Pro').intent,

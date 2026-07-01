@@ -223,3 +223,23 @@ test('reply context remembers recommendations and selects one explicitly named p
   assert.equal(selectedContext.current_product_sku, 'FG111');
   assert.equal(selectedContext.requested_category, 'livestream');
 });
+
+test('conversation context stores structured customer intent', () => {
+  const context = resolveConversationContext({
+    userText: 'Dung cho may laptop khong',
+    history: [
+      { sender_type: 'customer', text: 'Mic thu am livestream tai nha chong tap am gia re' }
+    ],
+    existingContext: {
+      requested_category: 'microphone',
+      context_confidence: 0.6
+    },
+    intent: 'product_specs',
+    sourceKey: 'website/kingcom'
+  });
+
+  assert.equal(context.requested_category, 'microphone');
+  assert.equal(context.customer_intent.category, 'microphone');
+  assert.equal(context.customer_intent.compatibility_target, 'laptop');
+  assert.match(contextSearchText(context), /laptop/i);
+});

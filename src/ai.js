@@ -29,8 +29,10 @@ const {
   buildClarificationReply,
   isContextualProductFollowUp,
   isAlternativeProductRequest,
-  inferRequestedCategory
+  inferRequestedCategory,
+  findExplicitProduct
 } = require('./conversationContext');
+const { structuredMessageSearchText } = require('./customerIntentParser');
 
 async function callOpenAI(prompt, timeoutMs) {
   const model = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
@@ -225,12 +227,22 @@ function productDisplayName(product, fallback = 'product') {
   return product.name || product.title || product.sku || fallback;
 }
 
+function isConversationStopRequest(text = '') {
+  const normalized = normalize(text);
+  return /\b(khong can ho tro|ko can ho tro|khong can nua|ko can nua|khong nhan nua|ko nhan nua|dung nhan|dung gui|thoi khong can|thoi ko can|khong lam phien|ko lam phien|stop|no need|no more|do not message)\b/i.test(normalized);
+}
+
+function buildConversationStopReply(lang = 'vi', customerBrand = 'KingCom') {
+  if (lang === 'en') return `Understood. I will stop here. If you need support later, please message ${customerBrand} anytime.`;
+  if (lang === 'zh') return `好的，我先不打扰您了。之后如需协助，可以随时联系 ${customerBrand}。`;
+  return `Dạ vâng ạ. Em sẽ dừng tại đây. Khi nào cần hỗ trợ thêm, anh/chị cứ nhắn ${customerBrand} nhé.`;
+}
+
 function buildAvailabilityReply(userText, products) {
   if (!isAvailabilityQuestion(userText) || !products?.length) return null;
 
   const product = products[0];
   const name = productDisplayName(product);
-  const sku = product.sku ? `SKU: ${product.sku}` : '';
   const rawPrice = product._price || product.price || product.compare_at_price || product.gia || '';
   const url = product.url || product.link || product.product_url || '';
   const lang = detectMessageLanguage(userText);
@@ -252,7 +264,6 @@ function buildAvailabilityReply(userText, products) {
       cnIntro,
       '',
       name,
-      sku,
       `价格: ${price}`,
       url ? `链接: ${url}` : '',
       '',
@@ -265,7 +276,6 @@ function buildAvailabilityReply(userText, products) {
       intro,
       '',
       name,
-      sku,
       `Price: ${price}`,
       url ? `Link: ${url}` : '',
       '',
@@ -277,7 +287,6 @@ function buildAvailabilityReply(userText, products) {
     intro,
     '',
     name,
-    sku,
     `Giá: ${price}`,
     url ? `Link: ${url}` : '',
     '',
@@ -287,10 +296,9 @@ function buildAvailabilityReply(userText, products) {
 
 function productLine(product, index = 1) {
   const name = product.name || product.title || product.sku || `Sản phẩm ${index}`;
-  const sku = product.sku ? `SKU: ${product.sku}` : 'SKU: N/A';
   const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
   const url = product.url || product.link || product.product_url || '';
-  return `${index}. ${name}\n${sku}\nGiá: ${price}${url ? `\nLink: ${url}` : ''}`;
+  return `${index}. ${name}\nGiá: ${price}${url ? `\nLink: ${url}` : ''}`;
 }
 
 function isPreviousAdviceComplaint(userText) {
@@ -301,19 +309,47 @@ function isPreviousAdviceComplaint(userText) {
   ) || /\b(hoi|dang hoi).{0,50}(sai|nham|lac de|tra loi|tu van)\b/i.test(normalized);
 }
 
-function buildBudgetProductReply(userText, products, scopeBrand = '') {
+function buildBudgetProductReply(userText, products, scopeBrand = '', customerPhone = '') {
   const maxPrice = extractMaxPrice(userText);
   if (!maxPrice || !products?.length) return null;
   const lang = detectMessageLanguage(userText);
-  const rows = products.slice(0, 3).map((p, i) => productLine(p, i + 1)).join('\n\n');
+  const budgetProducts = productsWithinBudget(userText, products);
+  if (!budgetProducts.length) return null;
+  const rows = budgetProducts.slice(0, 3).map((p, i) => productLine(p, i + 1)).join('\n\n');
   const scope = scopeBrand ? ` trong catalog ${scopeBrand}` : '';
+  const hasPhone = Boolean(String(customerPhone || '').trim());
   if (lang === 'en') {
-    return `I found matching products${scope} within ${formatPrice(maxPrice)}:\n\n${rows}\n\nPlease tell me which model you prefer, or share your phone number so KingCom staff can check current stock.`;
+    const closing = hasPhone
+      ? 'Please tell me which model you prefer so I can help you compare further.'
+      : 'Please tell me which model you prefer, or share your phone number so KingCom staff can check current stock.';
+    return `I found matching products${scope} within ${formatPrice(maxPrice)}:\n\n${rows}\n\n${closing}`;
   }
   if (lang === 'zh') {
-    return `我找到以下${scope}中符合 ${formatPrice(maxPrice)} 以内的产品：\n\n${rows}\n\n请告诉我您想了解哪一款，或留下电话号码，方便 KingCom 员工确认库存。`;
+    const closing = hasPhone
+      ? '请告诉我您想进一步了解哪一款。'
+      : '请告诉我您想了解哪一款，或留下电话号码，方便 KingCom 员工确认库存。';
+    return `我找到以下${scope}中符合 ${formatPrice(maxPrice)} 以内的产品：\n\n${rows}\n\n${closing}`;
   }
-  return `Dạ em tìm thấy sản phẩm phù hợp${scope} trong tầm giá dưới ${formatPrice(maxPrice)}:\n\n${rows}\n\nAnh/chị muốn xem kỹ mẫu nào, hoặc để lại số điện thoại để nhân viên KingCom kiểm tra tồn kho hỗ trợ thêm ạ?`;
+  const closing = hasPhone
+    ? 'Anh/chị muốn xem kỹ mẫu nào để em tư vấn tiếp ạ?'
+    : 'Anh/chị muốn xem kỹ mẫu nào, hoặc để lại số điện thoại để nhân viên KingCom kiểm tra tồn kho hỗ trợ thêm ạ?';
+  return `Dạ em tìm thấy sản phẩm phù hợp${scope} trong tầm giá dưới ${formatPrice(maxPrice)}:\n\n${rows}\n\n${closing}`;
+}
+
+function productsWithinBudget(userText, products = []) {
+  const maxPrice = extractMaxPrice(userText);
+  if (!maxPrice) return [];
+  return (products || [])
+    .map(product => ({
+      product,
+      price: parsePriceNumber(product.price || product.compare_at_price || product.gia || '')
+    }))
+    .filter(item => item.price > 0 && item.price <= maxPrice)
+    .sort((a, b) => {
+      const scoreDiff = Number(b.product.score || 0) - Number(a.product.score || 0);
+      return scoreDiff || a.price - b.price;
+    })
+    .map(item => item.product);
 }
 
 function buildStartingPriceReply(userText, products, scopeBrand = '') {
@@ -375,9 +411,53 @@ function buildDirectPriceReply(userText, options = {}) {
     };
   }
 
+  const normalizedPriceQuestion = normalize(userText);
+  const hasDirectPriceProductAnchor = extractModelTokens(userText).length > 0
+    || extractProductPageUrls(userText).length > 0
+    || Boolean(options.conversationContext?.current_product_name || options.conversationContext?.current_product_sku);
+  const looksLikeProductPriceQuestion = /\b(gia|price|cost)\b/i.test(normalizedPriceQuestion)
+    && !extractMaxPrice(userText)
+    && !isPriceExtremeQuery(userText)
+    && hasDirectPriceProductAnchor;
+  if (looksLikeProductPriceQuestion) {
+    const matchedProducts = resolveOpinionProducts({
+      userText,
+      products: [],
+      conversationContext: options.conversationContext || {},
+      sourceKey: options.sourceKey || ''
+    }).slice(0, 1);
+    if (matchedProducts.length) {
+      const product = matchedProducts[0];
+      return {
+        reply: `Dạ em kiểm tra trong catalog hiện tại:\n\n${productLine(product, 1)}\n\nGiá có thể thay đổi theo tồn kho và chương trình bán hàng. Nếu anh/chị muốn chốt mua, em có thể chuyển nhân viên kiểm tra lại giá và tồn kho chính xác.`,
+        products: matchedProducts,
+        source: 'direct_price_lookup'
+      };
+    }
+  }
+
   if (!isPriceExtremeQuery(userText)) return null;
 
-  const { mostExpensive, cheapest } = getPriceExtremes(options);
+  const requestedCategory = options.requestedCategory
+    || options.conversationContext?.requested_category
+    || inferRequestedCategory(userText)
+    || '';
+  let mostExpensive = null;
+  let cheapest = null;
+  if (requestedCategory) {
+    const scopedProducts = loadProducts(options)
+      .filter(product => matchesRequiredCategory(product, requestedCategory))
+      .map(product => ({
+        ...product,
+        _price: parsePriceNumber(product.price || product.compare_at_price || product.gia || '')
+      }))
+      .filter(product => product._price > 0)
+      .sort((a, b) => b._price - a._price);
+    mostExpensive = scopedProducts[0] || null;
+    cheapest = [...scopedProducts].sort((a, b) => a._price - b._price)[0] || null;
+  } else {
+    ({ mostExpensive, cheapest } = getPriceExtremes(options));
+  }
   const requested = requestedPriceExtremes(userText);
   const includeExpensive = requested.expensive || (!requested.expensive && !requested.cheap);
   const includeCheap = requested.cheap;
@@ -486,7 +566,7 @@ function isCompatibilityFollowUp(userText) {
 function isDirectProductSpecsQuery(userText) {
   const raw = String(userText || '');
   const normalized = normalize(userText);
-  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|cao bao nhieu|chieu cao|dai bao nhieu|rong bao nhieu|nang bao nhieu|luc hut|tai trong|tuong thich|dung cho|danh cho|dung voi|dung duoc voi|dung duoc cho|cho laptop|cho may tinh|ket noi laptop|ket noi may tinh|ho tro laptop|ho tro may tinh|ho tro iphone|ho tro android|co remote|kem remote|remote khong|phu kien kem theo|kem theo gi|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?|height|weight|dimensions|compatible with|compatibility|include remote|come with remote|included accessories)\b/i.test(normalized)
+  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|cao bao nhieu|cao toi da|chieu cao|dai bao nhieu|rong bao nhieu|nang bao nhieu|luc hut|tai trong|tuong thich|dung cho|danh cho|dung voi|dung duoc voi|dung duoc cho|cho laptop|cho may tinh|ket noi laptop|ket noi may tinh|ho tro laptop|ho tro may tinh|ho tro iphone|ho tro android|co remote|kem remote|remote khong|phu kien kem theo|kem theo gi|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?|height|weight|dimensions|compatible with|compatibility|include remote|come with remote|included accessories)\b/i.test(normalized)
     || /(\u53c2\u6570|\u89c4\u683c|\u6280\u672f\u53c2\u6570|\u914d\u7f6e|\u5c3a\u5bf8|\u91cd\u91cf|\u529f\u7387|\u5206\u8fa8\u7387|\u4f20\u611f\u5668|\u5149\u5708)/.test(raw);
 }
 
@@ -556,7 +636,7 @@ function extractCatalogSpecFacts(product = {}, userText = '') {
 
   const query = normalize(userText);
   const wants = {
-    height: /\b(cao bao nhieu|chieu cao|height)\b/i.test(query),
+    height: /\b(cao bao nhieu|cao toi da|chieu cao|height)\b/i.test(query),
     dimensions: /\b(kich thuoc|dai bao nhieu|rong bao nhieu|dimensions)\b/i.test(query),
     weight: /\b(trong luong|nang bao nhieu|weight)\b/i.test(query),
     battery: /\b(pin|dung luong pin|thoi luong pin|battery)\b/i.test(query),
@@ -608,6 +688,66 @@ function extractCatalogSpecFacts(product = {}, userText = '') {
   return facts.map(({ label, value }) => ({ label, value })).slice(0, all ? 8 : 4);
 }
 
+function compatibilityTargetFromText(text = '') {
+  const normalized = normalize(text);
+  if (/\b(laptop|may tinh|pc|windows|macbook|mac)\b/i.test(normalized)) return { key: 'laptop', label: 'laptop/máy tính' };
+  if (/\b(iphone|ios|lightning|magsafe)\b/i.test(normalized)) return { key: 'iphone', label: 'iPhone' };
+  if (/\b(android|type c|type-c|usb c|usb-c)\b/i.test(normalized)) return { key: 'android', label: 'Android/USB-C' };
+  if (/\b(dien thoai|smartphone|phone)\b/i.test(normalized)) return { key: 'phone', label: 'điện thoại' };
+  if (/\b(camera|may anh|dslr|mirrorless)\b/i.test(normalized)) return { key: 'camera', label: 'máy ảnh/camera' };
+  return null;
+}
+
+function compatibilityMentionedInProduct(product = {}, target = null) {
+  if (!target) return false;
+  const text = normalize(`${product.name || product.title || ''} ${product.description || ''} ${product.tags || ''} ${product.category || ''}`);
+  const patterns = {
+    laptop: /\b(laptop|may tinh|pc|windows|macbook|mac|usb-a|usb a)\b/i,
+    iphone: /\b(iphone|ios|lightning|magsafe)\b/i,
+    android: /\b(android|type c|type-c|usb c|usb-c)\b/i,
+    phone: /\b(dien thoai|smartphone|phone|iphone|android)\b/i,
+    camera: /\b(camera|may anh|dslr|mirrorless|gopro|action camera)\b/i
+  };
+  return patterns[target.key]?.test(text) || false;
+}
+
+function productCompatibilityHints(product = {}) {
+  const text = normalize(`${product.name || product.title || ''} ${product.description || ''} ${product.tags || ''} ${product.category || ''}`);
+  const hints = [];
+  if (/\b(laptop|may tinh|pc|windows|macbook|mac|usb-a|usb a)\b/i.test(text)) hints.push('laptop/máy tính');
+  if (/\b(iphone|ios|lightning|magsafe)\b/i.test(text)) hints.push('iPhone');
+  if (/\b(android|type c|type-c|usb c|usb-c)\b/i.test(text)) hints.push('Android/USB-C');
+  if (/\b(dien thoai|smartphone|phone)\b/i.test(text)) hints.push('điện thoại');
+  if (/\b(camera|may anh|dslr|mirrorless|gopro|action camera)\b/i.test(text)) hints.push('máy ảnh/camera');
+  return [...new Set(hints)].slice(0, 4);
+}
+
+function buildCompatibilityEvidenceReply(products, userText, lang = 'vi') {
+  if (!isCompatibilityFollowUp(userText)) return null;
+  const product = products?.[0];
+  const name = productDisplayName(product, '');
+  const target = compatibilityTargetFromText(userText);
+  if (!product || !name || !target) return null;
+  const url = product.url || product.link || product.product_url || '';
+  const supported = compatibilityMentionedInProduct(product, target);
+  const hints = productCompatibilityHints(product).filter(hint => hint !== target.label);
+  const hintText = hints.length ? ` Catalog đang ghi/nhắc tới: ${hints.join(', ')}.` : '';
+
+  if (lang === 'en') {
+    return supported
+      ? `Yes, the catalog indicates ${name} supports ${target.label}.${url ? `\nProduct link: ${url}` : ''}`
+      : `I have not found confirmed ${target.label} compatibility for ${name} in the catalog.${hintText}${url ? `\nProduct link: ${url}` : ''}`;
+  }
+  if (lang === 'zh') {
+    return supported
+      ? `可以，目录信息显示 ${name} 支持 ${target.label}。${url ? `\n产品链接: ${url}` : ''}`
+      : `我在目录中还没有找到 ${name} 支持 ${target.label} 的确认信息。${hintText}${url ? `\n产品链接: ${url}` : ''}`;
+  }
+  return supported
+    ? `Dạ có ạ, catalog đang ghi ${name} hỗ trợ ${target.label}.${url ? `\nLink sản phẩm: ${url}` : ''}`
+    : `Dạ, với ${name}, em chưa thấy catalog xác nhận hỗ trợ ${target.label}.${hintText}${url ? `\nLink sản phẩm: ${url}` : ''}`;
+}
+
 function buildProductSpecsEvidenceReply(products, userText, lang = 'vi') {
   const product = products?.[0];
   const name = productDisplayName(product, '');
@@ -629,6 +769,462 @@ function buildProductSpecsEvidenceReply(products, userText, lang = 'vi') {
   return `D\u1ea1, trong catalog c\u1ee7a ${name} c\u00f3 c\u00e1c th\u00f4ng tin sau:\n\n${rows}${url ? `\n\nLink s\u1ea3n ph\u1ea9m: ${url}` : ''}`;
 }
 
+function isComparisonQuestion(userText = '') {
+  const raw = String(userText || '');
+  const normalized = normalize(raw);
+  return /\b(so sanh|compare|comparison|different|khac nhau|khac giua|nen chon|nen lay|nen dung|nen mua|nen chon mau nao|mau nao tot hon|loai nao tot hon|con so voi|vs|better|which one|which is better|a hay b|b hay a|hon mau nao|tot hon)\b/i.test(normalized)
+    || /\b(so\s*sanh|compare\s+with)\b/i.test(raw);
+}
+
+function isSubjectiveAssessmentQuestion(userText = '') {
+  const raw = String(userText || '');
+  const normalized = normalize(raw);
+  return /\b(on khong|nghe on|co on khong|co tot khong|tot khong|co ben khong|co dang mua khong|dang mua khong|co dang tien khong|dang tien khong|co hop khong|hop khong|phu hop khong|chat luong|review|danh gia|cam tinh|cam nhan|xai on|dung on|co nen mua|nen mua khong|nen chon khong|dung duoc khong|co ok khong|co on khong|co hay khong)\b/i.test(normalized)
+    || /\b(nghe ổn|đáng mua|đáng tiền|bền không|tốt không|ổn không|phù hợp không|nên mua|nên chọn|review|đánh giá|cảm tính|chất lượng|có bền|có tốt)\b/i.test(raw);
+}
+
+function productIdentityKey(product = {}) {
+  return normalize([
+    product.sku || '',
+    product.url || product.link || product.product_url || '',
+    product.name || product.title || ''
+  ].join(' '));
+}
+
+function productUrlHost(product = {}) {
+  const rawUrl = product.url || product.link || product.product_url || '';
+  try {
+    return new URL(String(rawUrl || '').trim()).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+function allowedWebsiteHostsForSource(sourceKey = '') {
+  const normalized = String(sourceKey || '').trim().toLowerCase();
+  if (normalized === 'website/newlite') return ['newlite.vn'];
+  if (normalized === 'website/kingcom') return ['store.kingcom.com.vn', 'kingcom.com.vn'];
+  return [];
+}
+
+function productMatchesSourceScope(product = {}, sourceKey = '') {
+  const allowedHosts = allowedWebsiteHostsForSource(sourceKey);
+  if (!allowedHosts.length) return true;
+  const host = productUrlHost(product);
+  if (!host) return true;
+  return allowedHosts.some(allowed => host === allowed || host.endsWith(`.${allowed}`));
+}
+
+function addUniqueProduct(target, product, seen = new Set()) {
+  if (!product || typeof product !== 'object') return;
+  const key = productIdentityKey(product);
+  if (!key || seen.has(key)) return;
+  seen.add(key);
+  target.push(product);
+}
+
+function catalogMatchProducts(query = '', sourceKey = '') {
+  const catalog = loadProducts({ sourceKey });
+  if (!Array.isArray(catalog) || !catalog.length) return [];
+  const normalizedQuery = normalize(query);
+  if (!normalizedQuery) return [];
+  const tokens = queryWords(query)
+    .filter(token => token.length >= 3 || /[a-z]+\d|\d+[a-z]+/i.test(token));
+  const identityTokens = tokens.filter(token => /[a-z]+\d|\d+[a-z]+/i.test(token) || token.length >= 4);
+  const scored = catalog.map(product => {
+    const haystack = normalize([
+      product.sku || '',
+      product.name || '',
+      product.title || '',
+      product.description || '',
+      product.content || '',
+      product.details || '',
+      product.tags || ''
+    ].join(' '));
+    let score = 0;
+    const sku = normalize(product.sku || '');
+    const name = normalize(product.name || product.title || '');
+    if (sku && (normalizedQuery === sku || normalizedQuery.split(/\s+/).includes(sku))) score += 120;
+    if (name && normalizedQuery.includes(name)) score += 100;
+    if (name && name.includes(normalizedQuery) && normalizedQuery.length >= 4) score += 70;
+    for (const token of identityTokens) {
+      if (haystack.includes(token)) score += token.length >= 5 ? 24 : 12;
+    }
+    if (identityTokens.length >= 2) {
+      const matched = identityTokens.filter(token => haystack.includes(token)).length;
+      score += matched * 8;
+    }
+    return score > 0 ? { product, score } : null;
+  }).filter(Boolean);
+  return scored.sort((a, b) => b.score - a.score).slice(0, 4).map(item => item.product);
+}
+
+function extractModelTokens(text = '') {
+  return [...new Set(
+    queryWords(text)
+      .filter(token => /[a-z]+\d|\d+[a-z]+/i.test(token))
+      .map(token => token.toLowerCase())
+  )];
+}
+
+function modelTokenVariants(token = '') {
+  const normalized = String(token || '').toLowerCase().trim();
+  if (!normalized) return [];
+  const variants = [normalized];
+  const hyphenated = normalized.replace(/^([a-z]+)(\d+[a-z0-9]*)$/i, '$1-$2');
+  const spaced = normalized.replace(/^([a-z]+)-?(\d+[a-z0-9]*)$/i, '$1 $2');
+  if (hyphenated && !variants.includes(hyphenated)) variants.push(hyphenated);
+  if (spaced && !variants.includes(spaced)) variants.push(spaced);
+  return variants;
+}
+
+function findExactProductMatch(token = '', sourceKey = '') {
+  const catalog = loadProducts({ sourceKey });
+  if (!Array.isArray(catalog) || !catalog.length) return null;
+  const variants = modelTokenVariants(token);
+  if (!variants.length) return null;
+  return catalog.find(product => {
+    const identity = normalize([
+      product.sku || '',
+      product.name || '',
+      product.title || '',
+      product.description || '',
+      product.content || '',
+      product.details || '',
+      product.tags || ''
+    ].join(' '));
+    return variants.some(variant => identity.includes(variant));
+  }) || null;
+}
+
+function productMatchesModelToken(product = {}, token = '') {
+  const identity = productIdentityKey(product);
+  if (!identity) return false;
+  return modelTokenVariants(token).some(variant => identity.includes(variant));
+}
+
+function resolveOpinionProducts({
+  userText = '',
+  products = [],
+  conversationContext = {},
+  sourceKey = ''
+} = {}) {
+  const resolved = [];
+  const seen = new Set();
+  const sourceScoped = Boolean(String(sourceKey || '').trim());
+  const add = product => {
+    if (!productMatchesSourceScope(product, sourceKey)) return;
+    addUniqueProduct(resolved, product, seen);
+  };
+  const refs = [
+    userText,
+    conversationContext?.current_product_name,
+    conversationContext?.current_product_sku,
+    conversationContext?.current_product_url,
+    conversationContext?.last_explicit_product?.current_product_name,
+    conversationContext?.previous_product_name,
+    conversationContext?.previous_product_sku,
+    conversationContext?.previous_product_url,
+    conversationContext?.customer_intent?.product,
+    conversationContext?.customer_intent?.product_sku,
+    conversationContext?.customer_intent?.product_url
+  ].filter(Boolean);
+
+  const modelTokens = [];
+  for (const ref of refs) {
+    for (const token of extractModelTokens(ref)) {
+      if (!modelTokens.includes(token)) modelTokens.push(token);
+    }
+  }
+  for (const token of modelTokens) {
+    const candidates = [];
+    const exactSourceMatch = findExactProductMatch(token, sourceKey);
+    if (exactSourceMatch) {
+      add(exactSourceMatch);
+      if (resolved.length >= 2) break;
+      continue;
+    }
+    for (const variant of modelTokenVariants(token)) {
+      for (const product of catalogMatchProducts(variant, sourceKey)) {
+        if (!candidates.some(existing => productIdentityKey(existing) === productIdentityKey(product))) {
+          candidates.push(product);
+        }
+      }
+      if (!sourceScoped) {
+        for (const product of catalogMatchProducts(variant, '')) {
+          if (!candidates.some(existing => productIdentityKey(existing) === productIdentityKey(product))) {
+            candidates.push(product);
+          }
+        }
+      }
+    }
+    const exact = candidates.find(product => {
+      const identity = productIdentityKey(product);
+      return modelTokenVariants(token).some(variant => identity.includes(variant));
+    });
+    if (exact) {
+      add(exact);
+    }
+    if (resolved.length >= 2) break;
+  }
+
+  const userModelTokens = extractModelTokens(userText);
+  if (userModelTokens.length) {
+    const matchedUserTokens = userModelTokens.filter(token =>
+      resolved.some(product => productMatchesModelToken(product, token))
+    );
+    const expectedMatches = isComparisonQuestion(userText)
+      ? Math.min(userModelTokens.length, 2)
+      : 1;
+    if (matchedUserTokens.length < expectedMatches) {
+      return resolved;
+    }
+  }
+
+  for (const ref of refs) {
+    const explicit = findExplicitProduct(ref, sourceKey);
+    if (explicit?.product && explicit.confidence >= 0.35) add(explicit.product);
+    for (const product of explicit?.products || []) add(product);
+    if (resolved.length < 2) {
+      for (const product of catalogMatchProducts(ref, sourceKey)) add(product);
+    }
+    if (resolved.length >= 2) break;
+  }
+
+  for (const product of products || []) {
+    add(product);
+    if (resolved.length >= 3) break;
+  }
+
+  return resolved;
+}
+
+function productComparisonHighlights(product = {}, userText = '') {
+  const facts = extractCatalogSpecFacts(product, userText);
+  if (facts.length) {
+    return facts.slice(0, 3).map(fact => `${fact.label}: ${fact.value}`).join('; ');
+  }
+  const description = productSpecText(product).replace(/\s+/g, ' ').trim();
+  return description ? description.slice(0, 220) : '';
+}
+
+function subjectiveNeedHint(userText = '') {
+  const normalized = normalize(userText);
+  if (/\b(livestream|stream|podcast|ghi am|thu am|gaming|game|video call)\b/i.test(normalized)) return 'livestream / thu âm / gaming';
+  if (/\b(quay|chup|vlog|content|camera|may anh|dien thoai)\b/i.test(normalized)) return 'quay chụp / sáng tạo nội dung';
+  if (/\b(iphone|android|magsafe|smartphone|phone|dien thoai)\b/i.test(normalized)) return 'điện thoại';
+  if (/\b(laptop|may tinh|pc)\b/i.test(normalized)) return 'laptop / máy tính';
+  return '';
+}
+
+function buildComparisonReply(products, userText, lang = 'vi', customerBrand = 'KingCom') {
+  const items = (products || []).slice(0, 2).filter(Boolean);
+  if (items.length < 2) return null;
+  const rows = items.map((product, index) => {
+    const name = productDisplayName(product, `Sản phẩm ${index + 1}`);
+    const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
+    const url = product.url || product.link || product.product_url || '';
+    const highlights = productComparisonHighlights(product, userText);
+    return {
+      name,
+      price,
+      url,
+      highlights
+    };
+  });
+
+  const formatRow = (row, index) => {
+    const lines = [
+      `${index + 1}. ${row.name}`,
+      `Giá: ${row.price}`
+    ];
+    if (row.highlights) lines.push(`Thông số nổi bật: ${row.highlights}`);
+    if (row.url) lines.push(`Link: ${row.url}`);
+    return lines.join('\n');
+  };
+
+  if (lang === 'en') {
+    const enRows = rows.map((row, index) => {
+      const lines = [
+        `${index + 1}. ${row.name}`,
+        `Price: ${row.price}`
+      ];
+      if (row.highlights) lines.push(`Key details: ${row.highlights}`);
+      if (row.url) lines.push(`Link: ${row.url}`);
+      return lines.join('\n');
+    }).join('\n\n');
+    return `Here is a quick comparison based on the catalog information:\n\n${enRows}\n\nIf you want, I can compare them again by the criteria you care about most, such as price, compatibility, size, or battery life.`;
+  }
+
+  if (lang === 'zh') {
+    const zhRows = rows.map((row, index) => {
+      const lines = [
+        `${index + 1}. ${row.name}`,
+        `价格: ${row.price}`
+      ];
+      if (row.highlights) lines.push(`重点信息: ${row.highlights}`);
+      if (row.url) lines.push(`链接: ${row.url}`);
+      return lines.join('\n');
+    }).join('\n\n');
+    return `我先根据目录信息帮您简单对比：\n\n${zhRows}\n\n如果您愿意，我也可以按您最在意的标准继续对比，比如价格、兼容性、尺寸或续航。`;
+  }
+
+  return `Dạ, em so sánh nhanh theo thông số catalog của 2 mẫu này:\n\n${rows.map(formatRow).join('\n\n')}\n\nNếu anh/chị muốn, em có thể so thêm theo tiêu chí ưu tiên như giá, tương thích, kích thước hoặc pin để chốt nhanh hơn ạ.`;
+}
+
+function buildSubjectiveAssessmentReply(product, userText, lang = 'vi', customerBrand = 'KingCom') {
+  const name = productDisplayName(product, '');
+  if (!name) return null;
+  const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
+  const highlights = productComparisonHighlights(product, userText);
+  const hint = subjectiveNeedHint(userText);
+
+  if (lang === 'en') {
+    const intro = hint
+      ? `Based on the catalog, ${name} looks suitable for ${hint}.`
+      : `Based on the catalog, ${name} looks like a reasonable choice.`;
+    const detail = highlights ? ` Key details: ${highlights}.` : '';
+    return `${intro}${detail} Price: ${price}.${hint ? '' : ' If you want, send me your use case and I will judge it more closely.'}`;
+  }
+
+  if (lang === 'zh') {
+    const intro = hint
+      ? `根据目录信息，${name} 适合 ${hint}。`
+      : `根据目录信息，${name} 是一个比较稳妥的选择。`;
+    const detail = highlights ? ` 重点信息：${highlights}。` : '';
+    return `${intro}${detail} 价格：${price}。${hint ? '' : ' 如果您愿意，也可以告诉我使用场景，我再帮您判断得更准一些。'}`;
+  }
+
+  const intro = hint
+    ? `Dạ, theo thông số catalog thì ${name} khá phù hợp cho nhu cầu ${hint} ạ.`
+    : `Dạ, theo thông số catalog thì ${name} là một lựa chọn khá ổn ạ.`;
+  const detail = highlights ? ` Điểm em dựa vào là: ${highlights}.` : '';
+  const caution = ' Phần cảm nhận thực tế như độ bền lâu dài hoặc trải nghiệm dùng thực tế thì em chỉ dám kết luận trong phạm vi dữ liệu catalog.';
+  const followUp = hint
+    ? ''
+    : ' Nếu anh/chị muốn, em có thể so thêm với một mẫu khác theo tiêu chí mình quan tâm nhất ạ.';
+  return `${intro}${detail} Giá hiện tại: ${price}.${caution}${followUp}`;
+}
+
+function unmatchedUserModelTokens(userText = '', products = []) {
+  const tokens = extractModelTokens(userText);
+  if (!tokens.length) return [];
+  return tokens.filter(token => !(products || []).some(product => productMatchesModelToken(product, token)));
+}
+
+function modelTokenLabel(token = '') {
+  return String(token || '').trim().toUpperCase();
+}
+
+function buildOpinionReply({
+  userText = '',
+  products = [],
+  conversationContext = {},
+  sourceKey = '',
+  lang = 'vi',
+  customerBrand = 'KingCom'
+} = {}) {
+  const explicit = findExplicitProduct(userText, sourceKey);
+  const hasProductAnchor = Boolean(
+    conversationContext?.current_product_name
+    || conversationContext?.current_product_sku
+    || conversationContext?.requested_category
+    || conversationContext?.customer_intent?.product
+    || conversationContext?.customer_intent?.product_sku
+    || conversationContext?.customer_intent?.brand
+    || explicit?.product
+  );
+  if (!hasProductAnchor) {
+    return {
+      reply: lang === 'en'
+        ? 'Could you please share the exact product name, model, or product group? Then I can compare or assess it based on the catalog.'
+        : lang === 'zh'
+          ? '请您提供具体的产品名称、型号或产品类别，我就可以根据目录帮您对比或判断。'
+          : 'Dạ anh/chị cho em xin đúng tên sản phẩm, model hoặc nhóm sản phẩm, rồi em sẽ so sánh / đánh giá dựa trên catalog cho sát hơn ạ.',
+      aiSource: 'rule_subjective_clarification',
+      ragProducts: []
+    };
+  }
+
+  const opinionProducts = resolveOpinionProducts({
+    userText,
+    products,
+    conversationContext,
+    sourceKey
+  });
+  const comparisonQuestion = isComparisonQuestion(userText);
+  const subjectiveQuestion = isSubjectiveAssessmentQuestion(userText);
+
+  if (comparisonQuestion) {
+    const comparisonProducts = opinionProducts.slice(0, 2);
+    if (comparisonProducts.length >= 2) {
+      return {
+        reply: buildComparisonReply(comparisonProducts, userText, lang, customerBrand),
+        aiSource: 'direct_catalog_comparison',
+        ragProducts: comparisonProducts
+      };
+    }
+    const fallbackProduct = comparisonProducts[0] || products?.[0] || null;
+    const productName = productDisplayName(fallbackProduct || {}, '');
+    const missingModels = unmatchedUserModelTokens(userText, comparisonProducts);
+    const missingLabel = missingModels.map(modelTokenLabel).join(', ');
+    if (missingLabel && lang !== 'zh') {
+      return {
+        reply: lang === 'en'
+          ? `I can compare based on the current catalog, but I do not have enough data for ${missingLabel} in this source yet. Please send another model available on ${customerBrand}, or update the catalog for that product.`
+          : `Dạ em có thể so sánh theo catalog ${customerBrand}, nhưng hiện em chưa có đủ dữ liệu cho ${missingLabel} trong nguồn đang chat. ${productName ? `Em mới tìm thấy ${productName}. ` : ''}Anh/chị gửi giúp em model khác đang có trên ${customerBrand}, hoặc cập nhật catalog sản phẩm đó để em so sánh chuẩn hơn ạ.`,
+        aiSource: 'rule_comparison_clarification',
+        ragProducts: comparisonProducts.length ? comparisonProducts : []
+      };
+    }
+    const clarification = lang === 'en'
+      ? `I can compare them, but I still need the exact second model. Please send the other product name or model so I can compare based on the catalog.`
+      : lang === 'zh'
+        ? `我可以帮您对比，但还需要第二个具体型号。请您再发一个产品名称或型号，我就能按目录信息对比给您。`
+        : productName
+          ? `Dạ em có thể so sánh, nhưng em vẫn cần thêm model còn lại để đối chiếu cho đúng catalog. Anh/chị gửi giúp em sản phẩm thứ hai hoặc tiêu chí mình muốn so sánh ạ.`
+          : 'Dạ em có thể so sánh, nhưng anh/chị gửi giúp em đúng 2 model cần đối chiếu để em trả lời theo catalog cho chuẩn ạ.';
+    return {
+      reply: clarification,
+      aiSource: 'rule_comparison_clarification',
+      ragProducts: comparisonProducts.length ? comparisonProducts : []
+    };
+  }
+
+  if (subjectiveQuestion) {
+    const product = opinionProducts[0] || products?.[0] || null;
+    if (product) {
+      return {
+        reply: buildSubjectiveAssessmentReply(product, userText, lang, customerBrand),
+        aiSource: 'direct_catalog_subjective_assessment',
+        ragProducts: [product]
+      };
+    }
+    const missingModels = unmatchedUserModelTokens(userText, []);
+    const missingLabel = missingModels.map(modelTokenLabel).join(', ');
+    if (missingLabel && lang !== 'zh') {
+      return {
+        reply: lang === 'en'
+          ? `I can assess products based on the current catalog, but I cannot find ${missingLabel} in ${customerBrand}'s active catalog yet. Please send another available model or update the product data first.`
+          : `Dạ em có thể đánh giá theo catalog, nhưng hiện em chưa tìm thấy ${missingLabel} trong catalog ${customerBrand} của nguồn đang chat. Anh/chị gửi giúp em model khác đang có trên ${customerBrand}, hoặc cập nhật dữ liệu sản phẩm đó để em tư vấn chính xác hơn ạ.`,
+        aiSource: 'rule_subjective_clarification',
+        ragProducts: []
+      };
+    }
+    return {
+      reply: lang === 'en'
+        ? 'I can help assess it based on the catalog, but I still need the exact product name or model.'
+        : lang === 'zh'
+          ? '我可以根据目录帮您判断，不过我还需要您提供具体的产品名称或型号。'
+          : 'Dạ em có thể đánh giá theo catalog, nhưng anh/chị cho em xin đúng tên sản phẩm hoặc model cụ thể để em trả lời sát hơn ạ.',
+      aiSource: 'rule_subjective_clarification',
+      ragProducts: []
+    };
+  }
+
+  return null;
+}
+
 function historyBeforeCurrentMessage(history = [], userText = '') {
   const rows = [...(history || [])];
   const last = rows[rows.length - 1];
@@ -643,9 +1239,13 @@ function historyBeforeCurrentMessage(history = [], userText = '') {
 
 const PRODUCT_CONTEXT_WORDS = new Set([
   'thong', 'so', 'ky', 'thuat', 'cau', 'hinh', 'chi', 'tiet',
+  'cao', 'toi', 'da', 'bao', 'nhieu', 'chieu', 'dai', 'rong', 'nang',
+  'kich', 'thuoc', 'trong', 'luong', 'pin', 'luc', 'hut', 'tai',
   'cach', 'su', 'dung', 'huong', 'dan', 'ket', 'noi', 'cai', 'dat',
   'gui', 'truc', 'tiep', 'qua', 'day', 'cho', 'xem', 'nhe', 'nha', 'giup',
   'san', 'pham', 'mau', 'may', 'nay', 'do', 'vua', 'noi', 'cua', 'gi',
+  'anh', 'chi', 'em', 'minh', 'toi', 'ban', 'ben', 'shop', 'co', 'khong',
+  'can', 'muon', 'mua', 'tim', 'hieu', 'hoi', 've', 'do', 'you', 'sell',
   'technical', 'specification', 'specifications', 'spec', 'specs',
   'how', 'use', 'using', 'guide', 'instructions', 'setup', 'install',
   'this', 'that', 'it', 'product', 'model', 'remote', 'kem', 'theo', 'phu', 'kien'
@@ -806,6 +1406,26 @@ function buildPolicyRuleReply(userText, lang, scopeBrand = '', sourceKey = '', c
     return `D\u1ea1, hi\u1ec7n em ch\u01b0a th\u1ea5y th\u00f4ng tin VAT \u0111\u01b0\u1ee3c ghi r\u00f5 trong d\u1eef li\u1ec7u ch\u00ednh s\u00e1ch c\u1ee7a ${brand}, n\u00ean em kh\u00f4ng t\u1ef1 x\u00e1c nh\u1eadn \u0111\u1ec3 tr\u00e1nh t\u01b0 v\u1ea5n sai. Nh\u00e2n vi\u00ean ${brand} c\u00f3 th\u1ec3 ki\u1ec3m tra th\u00f4ng tin h\u00f3a \u0111\u01a1n/VAT theo \u0111\u01a1n h\u00e0ng c\u1ee5 th\u1ec3 \u1ea1.`;
   }
 
+  if (/\b(doi tra|tra hang|doi hang|return policy|refund|exchange)\b/i.test(normalized)) {
+    if (lang === 'en') {
+      return `${brand} supports return/exchange checks when the received item is wrong, missing quantity/accessories, or damaged on arrival. Please keep order details and photos/videos of the package/product so staff can verify the case.`;
+    }
+    if (lang === 'zh') {
+      return `${brand} 可协助处理收到商品不符、缺件/少件或到货损坏等退换货情况。请保留订单信息以及包裹/产品照片或视频，方便工作人员核实。`;
+    }
+    return `Dạ, ${brand} hỗ trợ kiểm tra đổi trả khi hàng nhận không đúng mẫu/loại, thiếu số lượng/phụ kiện hoặc bị ảnh hưởng bên ngoài khi nhận hàng. Anh/chị giữ giúp em thông tin đơn hàng và hình ảnh/video sản phẩm, bao bì để nhân viên kiểm tra chính xác ạ.`;
+  }
+
+  if (/\b(giao hang|van chuyen|ship|shipping|phi ship|thoi gian giao)\b/i.test(normalized)) {
+    if (lang === 'en') {
+      return `${brand} supports nationwide delivery. Exact shipping fee and delivery time depend on the address and order details, so staff can confirm after receiving the destination/product information.`;
+    }
+    if (lang === 'zh') {
+      return `${brand} 支持全国配送。具体运费和时效取决于收货地址和订单信息，工作人员可在收到地址/产品信息后确认。`;
+    }
+    return `Dạ, ${brand} có hỗ trợ giao hàng toàn quốc ạ. Phí vận chuyển và thời gian giao chính xác sẽ phụ thuộc vào địa chỉ nhận hàng và đơn hàng cụ thể, nên nhân viên sẽ kiểm tra lại khi có thông tin địa chỉ/sản phẩm ạ.`;
+  }
+
   if (!/\b(bao hanh|warranty)\b/i.test(normalized)) return null;
 
   if (scope === 'viltrox') {
@@ -818,7 +1438,13 @@ function buildPolicyRuleReply(userText, lang, scopeBrand = '', sourceKey = '', c
     return 'Dạ sản phẩm Viltrox áp dụng bảo hành giới hạn 1 năm tính từ ngày mua hàng ạ. Bảo hành áp dụng cho lỗi phát sinh trong quá trình sử dụng bình thường, không gồm các trường hợp dùng sai cách, va đập, tự ý sửa chữa, lỗi nguồn điện hoặc lắp đặt/sử dụng không đúng hướng dẫn. Anh/chị gửi giúp em model hoặc thông tin đơn hàng để nhân viên KingCom kiểm tra chính xác hơn ạ.';
   }
 
-  return null;
+  if (lang === 'en') {
+    return `${brand} warranty policy generally applies to valid products/orders with clear warranty seal/documents and defects caused by product quality. Coverage can vary by product type, so please share the model or order information for staff to check the exact warranty term.`;
+  }
+  if (lang === 'zh') {
+    return `${brand} 的保修通常适用于保修标识/凭证清楚、订单信息有效且属于产品质量问题的情况。不同产品类型的保修期可能不同，请提供型号或订单信息，方便工作人员确认。`;
+  }
+  return `Dạ, chính sách bảo hành của ${brand} áp dụng cho sản phẩm/đơn hàng hợp lệ, tem hoặc chứng từ bảo hành rõ ràng và lỗi phát sinh từ chất lượng sản phẩm. Thời hạn bảo hành có thể khác nhau theo từng loại sản phẩm, nên anh/chị gửi giúp em model hoặc thông tin đơn hàng để nhân viên kiểm tra chính xác hơn ạ.`;
 }
 
 function sourceContactLines(sourceKey = '') {
@@ -955,7 +1581,7 @@ function fallbackReply(intent, userText, products) {
   if (products && products.length) {
     const p = products[0];
     const url = p.url || p.link || p.product_url || '';
-    const base = `KingCom tìm thấy sản phẩm phù hợp: ${p.name || p.title} (SKU: ${p.sku || 'N/A'}), giá ${formatPrice(p.price || 'liên hệ')}.${url ? `\nLink xem sản phẩm: ${url}` : ''}\nAnh/chị muốn mình tư vấn thêm mẫu nào ạ?`;
+    const base = `KingCom tìm thấy sản phẩm phù hợp: ${p.name || p.title}, giá ${formatPrice(p.price || 'liên hệ')}.${url ? `\nLink xem sản phẩm: ${url}` : ''}\nAnh/chị muốn mình tư vấn thêm mẫu nào ạ?`;
     return ensureProductLinks(base, products);
   }
   return 'Anh/chị vui lòng cho mình biết rõ hơn tên sản phẩm hoặc nhu cầu sử dụng để KingCom tư vấn chính xác nhé.';
@@ -992,8 +1618,10 @@ function buildSearchQuery(userText, history, customer, conversationContext = {})
   const asksSpecs = isProductSpecsRequest(userText, history);
   const asksGuidance = isProductGuidanceQuery(userText);
   const contextText = contextSearchText(conversationContext);
+  const structuredText = structuredMessageSearchText(conversationContext?.customer_intent || {});
+  const parsedBudgetMax = conversationContext?.customer_intent?.budget?.max || 0;
   const asksContextFollowUp = isContextualProductFollowUp(userText);
-  const asksBudgetFollowUp = Boolean(extractMaxPrice(userText))
+  const asksBudgetFollowUp = Boolean(parsedBudgetMax || extractMaxPrice(userText))
     && /\b(duoi|toi da|max|nho hon|be hon|ngan sach|tai chinh|re hon|gia re|loai nao|mau nao|cai nao|san pham nao)\b/i.test(normalize(userText));
   if (isAlternativeProductRequest(userText)) {
     return buildAlternativeSearchQuery(userText, conversationContext);
@@ -1002,32 +1630,32 @@ function buildSearchQuery(userText, history, customer, conversationContext = {})
     const categoryTerms = conversationContext?.requested_category
       ? categorySearchTerms(conversationContext.requested_category)
       : '';
-    return `${categoryTerms} ${contextText} ${userText} ${recentCustomer} ${interests} ${expandedTerms}`.trim();
+    return `${categoryTerms} ${contextText} ${structuredText} ${userText} ${recentCustomer} ${interests} ${expandedTerms}`.trim();
   }
   if (conversationContext?.new_category_request && conversationContext?.requested_category) {
-    return `${categorySearchTerms(conversationContext.requested_category)} ${userText} ${expandedTerms}`.trim();
+    return `${categorySearchTerms(conversationContext.requested_category)} ${structuredText} ${userText} ${expandedTerms}`.trim();
   }
   if (asksSpecs || asksGuidance || isFollowUpLinkRequest(userText) || (asksContextFollowUp && contextText)) {
     const explicitReferenceIsCompatibilityTarget = conversationContext?.requested_category
       && isCompatibilityFollowUp(userText);
     if (hasExplicitProductReference(userText) && !explicitReferenceIsCompatibilityTarget) {
-      return `${userText} ${expandedTerms}`.trim();
+      return `${userText} ${structuredText} ${expandedTerms}`.trim();
     }
     if (!contextText && conversationContext?.requested_category) {
-      return `${categorySearchTerms(conversationContext.requested_category)} ${userText} ${recentCustomer} ${expandedTerms}`.trim();
+      return `${categorySearchTerms(conversationContext.requested_category)} ${structuredText} ${userText} ${recentCustomer} ${expandedTerms}`.trim();
     }
     if (contextText) {
       const needsRecentCategoryContext = conversationContext?.requested_category
         && !conversationContext?.current_product_name;
-      return `${contextText} ${userText} ${needsRecentCategoryContext ? recentCustomer : ''} ${expandedTerms}`.trim();
+      return `${contextText} ${structuredText} ${userText} ${needsRecentCategoryContext ? recentCustomer : ''} ${expandedTerms}`.trim();
     }
     const referencedProduct = latestExplicitProductMessage(history, userText);
-    return `${referencedProduct?.text || ''} ${userText} ${expandedTerms}`.trim();
+    return `${referencedProduct?.text || ''} ${structuredText} ${userText} ${expandedTerms}`.trim();
   }
   if (currentWords.length === 0) {
-    return `${userText} ${expandedTerms} ${recentCustomer} ${interests}`.trim();
+    return `${userText} ${structuredText} ${expandedTerms} ${recentCustomer} ${interests}`.trim();
   }
-  return `${userText} ${expandedTerms}`.trim();
+  return `${userText} ${structuredText} ${expandedTerms}`.trim();
 }
 
 const ALTERNATIVE_SEARCH_STOPWORDS = new Set([
@@ -1195,6 +1823,23 @@ function assessRetrievalUncertainty({
     )
   }));
   const categories = [...new Set(categorized.map(item => item.category).filter(Boolean))];
+  const parsed = conversationContext.customer_intent && typeof conversationContext.customer_intent === 'object'
+    ? conversationContext.customer_intent
+    : {};
+  const brandOnlyRequest = parsed.brand
+    && !parsed.product
+    && !parsed.category
+    && !parsed.budget
+    && !parsed.policy_question
+    && !parsed.use_case
+    && !parsed.compatibility_target;
+  if (brandOnlyRequest) {
+    return {
+      reason: 'ambiguous_category',
+      categories: categories.slice(0, 4),
+      products: products.slice(0, 3)
+    };
+  }
   if (categories.length >= 2) {
     return {
       reason: 'ambiguous_category',
@@ -1224,6 +1869,11 @@ function buildRetrievalClarificationReply(uncertainty, lang, customerBrand = 'Ki
     .filter(Boolean);
   if (uncertainty?.reason === 'ambiguous_category') {
     const options = categoryNames.join(', ');
+    if (!options) {
+      if (lang === 'en') return `I am not yet certain which product category you mean. Could you share the product group, use case, or exact model you need?`;
+      if (lang === 'zh') return `我还不能确定您想咨询的产品类别。请告诉我产品类别、使用需求或具体型号。`;
+      return `Dạ, em chưa xác định chắc anh/chị đang cần nhóm sản phẩm nào. Anh/chị cho em biết nhóm sản phẩm, nhu cầu sử dụng hoặc model cụ thể để em tư vấn đúng hơn ạ.`;
+    }
     if (lang === 'en') return `I am not yet certain which product category you mean. Are you looking for ${options}, or another category?`;
     if (lang === 'zh') return `我还不能确定您想咨询的产品类别。您需要的是${options}，还是其他类别？`;
     return `Dạ, em chưa xác định chắc anh/chị đang cần nhóm sản phẩm nào. Anh/chị đang tìm ${options}, hay nhóm khác ạ?`;
@@ -1288,14 +1938,34 @@ function hasSpecificProductQuery(userText, intent) {
 }
 
 function productQueryLabel(userText) {
+  const normalized = normalize(userText);
+  const phraseLabels = [
+    [/bop da bo/i, 'bóp da bò'],
+    [/ca phe/i, 'cà phê'],
+    [/nuoc uong/i, 'nước uống'],
+    [/laptop|thinkpad/i, 'laptop/ThinkPad'],
+    [/my pham|lam dep/i, 'mỹ phẩm']
+  ];
+  const phrase = phraseLabels.find(([pattern]) => pattern.test(normalized));
+  if (phrase) return phrase[1];
+
   const words = queryWords(userText)
     .filter(w => !PRODUCT_CONTEXT_WORDS.has(w))
     .filter(w => w.length >= 2)
     .slice(0, 4);
   return words.join(' ')
     .replace(/\bden\b/g, 'đèn')
+    .replace(/\bca phe\b/g, 'cà phê')
+    .replace(/\bnuoc uong\b/g, 'nước uống')
     .replace(/\bmic\b/g, 'micro')
     .trim();
+}
+
+function isClearlyOutOfScopeProductRequest(userText, intent = '') {
+  if (!['buy', 'price', 'product_search', 'product_specs', 'order', 'unsupported'].includes(intent)) return false;
+  const normalized = normalize(userText);
+  if (isCompatibilityFollowUp(userText)) return false;
+  return /\b(bop da bo|ca phe|nuoc uong|laptop|thinkpad|my pham|son moi|kem duong|thuc pham|do an|quan ao|giay dep)\b/i.test(normalized);
 }
 
 function buildNoCatalogMatchReply(userText, lang, scopeBrand = '') {
@@ -1319,8 +1989,10 @@ function buildNoCatalogMatchReply(userText, lang, scopeBrand = '') {
     : 'Dạ hiện KingCom chưa có sản phẩm này trong catalog ạ. Em đã chuyển thông tin cho nhân viên KingCom kiểm tra thêm nếu anh/chị cần.';
 }
 
-function buildLocalizedRuleReply(intent, userText, lang, scopeBrand = '') {
+function buildLocalizedRuleReply(intent, userText, lang, scopeBrand = '', customerBrand = 'KingCom') {
   const scope = String(scopeBrand || '').trim();
+  const brand = String(customerBrand || 'KingCom').trim() || 'KingCom';
+  const unsupportedLabel = productQueryLabel(userText);
   if (lang === 'en') {
     if (intent === 'store_info') {
       return 'KingCom store address is 65 Nguyen Minh Hoang, Bay Hien Ward, Ho Chi Minh City. What product can I help you with?';
@@ -1330,7 +2002,7 @@ function buildLocalizedRuleReply(intent, userText, lang, scopeBrand = '') {
       return 'KingCom carries photography, filming, and content creation accessories such as gimbals, microphones, lights, filters, tripods, monitors, and livestream equipment. Which product group are you interested in?';
     }
     if (intent === 'unsupported') {
-      return 'KingCom currently does not sell laptops or ThinkPads. We focus on photography, filming, and content creation accessories such as gimbals, microphones, lights, filters, and tripods. Which product group would you like help with?';
+      return `${brand} currently does not sell ${unsupportedLabel || 'that product'}. We focus on photography, filming, and content creation accessories such as gimbals, microphones, lights, filters, and tripods. Which product group would you like help with?`;
     }
     if (intent === 'human') {
       if (hasPhoneNumber(userText)) return 'Thank you, I have received your phone number. I will forward it to KingCom staff for follow-up.';
@@ -1350,7 +2022,7 @@ function buildLocalizedRuleReply(intent, userText, lang, scopeBrand = '') {
       return 'KingCom 销售摄影、拍摄和内容创作相关配件，例如稳定器、麦克风、灯具、滤镜、三脚架、外接屏幕和直播设备。您想了解哪一类产品？';
     }
     if (intent === 'unsupported') {
-      return '目前 KingCom 暂未销售笔记本电脑或 ThinkPad。我们主要销售摄影、拍摄和内容创作相关配件，例如稳定器、麦克风、灯具、滤镜和三脚架。您想咨询哪一类产品？';
+      return `目前 ${brand} 暂未销售${unsupportedLabel || '该产品'}。我们主要销售摄影、拍摄和内容创作相关配件，例如稳定器、麦克风、灯具、滤镜和三脚架。您想咨询哪一类产品？`;
     }
     if (intent === 'human') {
       if (hasPhoneNumber(userText)) return '谢谢，我已收到您的电话号码，并会转交给 KingCom 员工跟进。';
@@ -1408,7 +2080,8 @@ async function generateReplyRaw({
 }) {
   const messageLanguage = detectMessageLanguage(userText, history);
   const guidanceQuestion = isProductGuidanceQuery(userText);
-  const specsQuestion = isProductSpecsRequest(userText, history);
+  const specsQuestion = intent === 'product_specs' || isProductSpecsRequest(userText, history);
+  const opinionQuestion = isComparisonQuestion(userText) || isSubjectiveAssessmentQuestion(userText);
   const policyQuestion = isCommercialPolicyQuestion(userText, intent);
   const productUrlQuestion = extractProductPageUrls(userText).length > 0;
   const sourceConfig = readSourceConfig(sourceKey);
@@ -1422,6 +2095,7 @@ async function generateReplyRaw({
   const existingContactInstruction = customerPhone
     ? `H\u1ed3 s\u01a1 kh\u00e1ch \u0111\u00e3 c\u00f3 s\u1ed1 \u0111i\u1ec7n tho\u1ea1i ${customerPhone}. Tuy\u1ec7t \u0111\u1ed1i kh\u00f4ng h\u1ecfi ho\u1eb7c xin l\u1ea1i s\u1ed1 \u0111i\u1ec7n tho\u1ea1i. Khi c\u1ea7n nh\u00e2n vi\u00ean theo d\u00f5i, h\u00e3y n\u00f3i s\u1ebd d\u00f9ng th\u00f4ng tin li\u00ean h\u1ec7 kh\u00e1ch \u0111\u00e3 cung c\u1ea5p.`
     : 'H\u1ed3 s\u01a1 kh\u00e1ch ch\u01b0a c\u00f3 s\u1ed1 \u0111i\u1ec7n tho\u1ea1i. Ch\u1ec9 xin th\u00f4ng tin li\u00ean h\u1ec7 khi th\u1ef1c s\u1ef1 c\u1ea7n nh\u00e2n vi\u00ean theo d\u00f5i.';
+  const structuredIntentForPrompt = JSON.stringify(resolvedConversationContext.customer_intent || {});
   const contactInfoReply = buildContactInfoReply(userText, messageLanguage);
   if (contactInfoReply) {
     return {
@@ -1430,6 +2104,18 @@ async function generateReplyRaw({
       aiError: false,
       aiSource: 'rule_contact_info',
       ragProducts: []
+    };
+  }
+
+  if (isConversationStopRequest(userText)) {
+    return {
+      reply: buildConversationStopReply(messageLanguage, customerBrand),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_conversation_stop',
+      searchQuery: '',
+      ragProducts: [],
+      conversationContext: resolvedConversationContext
     };
   }
 
@@ -1474,7 +2160,7 @@ async function generateReplyRaw({
     };
   }
 
-  const localizedRuleReply = buildLocalizedRuleReply(intent, userText, messageLanguage, scopeBrand);
+  const localizedRuleReply = buildLocalizedRuleReply(intent, userText, messageLanguage, scopeBrand, customerBrand);
   if (localizedRuleReply) {
     return {
       reply: localizedRuleReply,
@@ -1486,12 +2172,26 @@ async function generateReplyRaw({
   }
 
   if (intent === 'unsupported') {
+    const unsupportedLabel = productQueryLabel(userText) || 'sản phẩm đó';
     return {
-      reply: 'Dạ hiện KingCom chưa kinh doanh laptop/ThinkPad ạ. Bên em chuyên phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod... Anh/chị cần em tư vấn nhóm sản phẩm nào ạ?',
+      reply: `Dạ hiện ${customerBrand} chưa kinh doanh ${unsupportedLabel} ạ. Bên em chuyên phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod... Anh/chị cần em tư vấn nhóm sản phẩm nào ạ?`,
       aiUsed: 0,
       aiError: false,
       aiSource: 'rule',
       ragProducts: []
+    };
+  }
+
+  if (isClearlyOutOfScopeProductRequest(userText, intent)) {
+    const unsupportedLabel = productQueryLabel(userText) || 'sản phẩm đó';
+    return {
+      reply: `Dạ hiện ${customerBrand} chưa kinh doanh ${unsupportedLabel} ạ. Bên em chuyên phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod... Anh/chị cần em tư vấn nhóm sản phẩm nào ạ?`,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_out_of_scope_product',
+      searchQuery: userText,
+      ragProducts: [],
+      conversationContext: resolvedConversationContext
     };
   }
 
@@ -1509,7 +2209,11 @@ async function generateReplyRaw({
       conversationContext: resolvedConversationContext
     };
   }
-  const directPriceReply = buildDirectPriceReply(userText, { sourceKey });
+  const directPriceReply = buildDirectPriceReply(userText, {
+    sourceKey,
+    conversationContext: resolvedConversationContext,
+    requestedCategory: resolvedConversationContext.requested_category || inferRequestedCategory(userText)
+  });
   if (directPriceReply) {
     return {
       reply: directPriceReply.reply,
@@ -1655,13 +2359,34 @@ ${intent === 'greeting'
       }
     }
   }
+  if (
+    !policyQuestion
+    && !products.length
+    && (
+      resolvedConversationContext.current_product_url
+      || resolvedConversationContext.current_product_sku
+      || resolvedConversationContext.customer_intent?.product_url
+      || resolvedConversationContext.customer_intent?.product_sku
+    )
+  ) {
+    const explicitProducts = resolveOpinionProducts({
+      userText,
+      products: [],
+      conversationContext: resolvedConversationContext,
+      sourceKey
+    }).slice(0, 1);
+    if (explicitProducts.length) {
+      products = explicitProducts;
+      context = explicitProducts.map((product, index) => productLine(product, index + 1)).join('\n\n');
+    }
+  }
   const retrievalUncertainty = assessRetrievalUncertainty({
     userText,
     intent,
     conversationContext: resolvedConversationContext,
     products
   });
-  if (retrievalUncertainty && !guidanceQuestion && !policyQuestion) {
+  if (retrievalUncertainty && !guidanceQuestion && !policyQuestion && !opinionQuestion) {
     const clarificationContext = {
       ...resolvedConversationContext,
       needs_clarification: true,
@@ -1716,6 +2441,20 @@ ${intent === 'greeting'
       console.warn('Product guidance web search skipped after error:', webGuidance.error);
     }
   }
+  const compatibilityReply = specsQuestion && products.length
+    ? buildCompatibilityEvidenceReply(products, userText, messageLanguage)
+    : null;
+  if (compatibilityReply) {
+    return {
+      reply: compatibilityReply,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'direct_catalog_compatibility',
+      searchQuery,
+      ragProducts: products.slice(0, 1),
+      conversationContext: resolvedConversationContext
+    };
+  }
   const catalogSpecsReply = specsQuestion && products.length
     ? buildProductSpecsEvidenceReply(products, userText, messageLanguage)
     : null;
@@ -1756,6 +2495,27 @@ ${intent === 'greeting'
       console.warn('Product specs web search skipped after error:', webSpecs.error);
     }
   }
+  if (opinionQuestion) {
+    const opinionReply = buildOpinionReply({
+      userText,
+      products,
+      conversationContext: resolvedConversationContext,
+      sourceKey,
+      lang: messageLanguage,
+      customerBrand
+    });
+    if (opinionReply?.reply) {
+      return {
+        reply: opinionReply.reply,
+        aiUsed: 0,
+        aiError: false,
+        aiSource: opinionReply.aiSource || 'rule_opinion',
+        searchQuery,
+        ragProducts: opinionReply.ragProducts || products.slice(0, 2),
+        conversationContext: resolvedConversationContext
+      };
+    }
+  }
   if (isPreviousAdviceComplaint(userText) && !guidanceQuestion && !policyQuestion) {
     return {
       reply: buildPreviousAdviceCorrectionReply(userText, products, scopeBrand),
@@ -1785,16 +2545,41 @@ ${intent === 'greeting'
     };
   }
   const budgetProductReply = (!guidanceQuestion && !policyQuestion && ['buy', 'price', 'product_search', 'order'].includes(intent))
-    ? buildBudgetProductReply(userText, products, scopeBrand)
+    ? buildBudgetProductReply(userText, products, scopeBrand, customerPhone)
     : null;
   if (budgetProductReply) {
+    const budgetProducts = productsWithinBudget(userText, products);
     return {
       reply: budgetProductReply,
       aiUsed: 0,
       aiError: false,
       aiSource: 'direct_budget_lookup',
       searchQuery,
-      ragProducts: products.slice(0, 3),
+      ragProducts: budgetProducts.slice(0, 3),
+      conversationContext: resolvedConversationContext
+    };
+  }
+  if (
+    !guidanceQuestion
+    && !policyQuestion
+    && ['buy', 'price', 'product_search', 'order'].includes(intent)
+    && extractMaxPrice(userText)
+    && resolvedConversationContext.requested_category
+    && products.length
+    && !productsWithinBudget(userText, products).length
+  ) {
+    return {
+      reply: buildCategoryNoMatchReply(
+        resolvedConversationContext.requested_category,
+        userText,
+        messageLanguage,
+        customerBrand
+      ),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_category_no_match',
+      searchQuery,
+      ragProducts: [],
       conversationContext: resolvedConversationContext
     };
   }
@@ -1905,6 +2690,7 @@ ${intent === 'greeting'
     '',
     'Bat buoc tuan thu:',
     languageInstruction,
+    structuredIntentForPrompt ? `Phan tich tin nhan dang JSON: ${structuredIntentForPrompt}` : '',
     '- Tra loi cung ngon ngu voi tin nhan moi nhat cua khach.',
     '- Chi nhac den san pham co trong muc "San pham lien quan"; khong tu them san pham khac.',
     '- Neu khach chi hoi mot model/san pham cu the, tra loi tap trung dung model do.',

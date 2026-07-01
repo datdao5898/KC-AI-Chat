@@ -11,6 +11,7 @@ const {
 const { judgeAiReply } = require('./replyJudge');
 const { analyzeProductImages } = require('./mediaVision');
 const { resolveConversationContext, updateContextFromReply } = require('./conversationContext');
+const { parseCustomerMessage } = require('./customerIntentParser');
 
 function normalizeForMatch(text) {
   return String(text || '')
@@ -350,6 +351,16 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   const customer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
   const conversation = await getOrCreateConversation(customer.id, channel, source.sourceKey, source.sourceName, source.sourceGroup);
   const { intent, confidence } = classifyIntent(processingText);
+  const parsedCustomerMessage = parseCustomerMessage(processingText, {
+    sourceKey: source.sourceKey,
+    sourceName: source.sourceName,
+    sourceGroup: source.sourceGroup,
+    existingContext: conversation.conversation_context
+  });
+  const rawWithParsedMessage = {
+    ...(rawWithMedia && typeof rawWithMedia === 'object' ? rawWithMedia : (rawWithMedia ? { original: rawWithMedia } : {})),
+    _parsedMessage: parsedCustomerMessage
+  };
   const inbound = await saveMessage({
     conversationId: conversation.id,
     customerId: customer.id,
@@ -358,7 +369,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     direction: 'in',
     senderType: 'customer',
     text: storedText,
-    rawJson: rawWithMedia,
+    rawJson: rawWithParsedMessage,
     intent,
     sourceGroup: source.sourceGroup,
     sourceKey: source.sourceKey,
@@ -375,7 +386,8 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     intent,
     sourceKey: source.sourceKey,
     sourceName: source.sourceName,
-    sourceGroup: source.sourceGroup
+    sourceGroup: source.sourceGroup,
+    parsedMessage: parsedCustomerMessage
   });
   await updateConversationContext(conversation.id, conversationContext);
   const autoReply = process.env.AUTO_REPLY !== 'false' && conversation.auto_reply !== 0;
@@ -391,6 +403,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       imageCount: mediaUrls.length,
       visionRecognized: !!vision?.recognized,
       visionError: vision?.error || '',
+      parsedCustomerMessage,
       skipped: 'auto_reply_off'
     });
     return { ok: true, skipped: 'auto_reply_off', conversationId: conversation.id };
@@ -585,6 +598,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     visionBrand: vision?.brand || '',
     visionModel: vision?.model || '',
     visionError: vision?.error || '',
+    parsedCustomerMessage,
     aiSource: aiSource || (aiUsed ? 'provider' : 'rule_or_fallback'),
     aiUsed: !!aiUsed,
     aiError: !!aiError,

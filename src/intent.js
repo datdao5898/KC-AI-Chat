@@ -58,6 +58,8 @@ function classifyIntent(text) {
   }
 
   if (hasPhrase(msg, [
+    'ban gi', 'shop ban gi', 'ben minh ban gi', 'ben ban gi',
+    'ban nhung gi', 'shop ban nhung gi', 'ben minh ban nhung gi',
     'mat hang gi', 'mat hang nao', 'nhung mat hang gi', 'nhung mat hang nao',
     'ban mat hang gi', 'ban mat hang nao', 'ban nhung mat hang gi', 'ban nhung mat hang nao',
     'bay ban cac san pham gi', 'bay ban san pham gi', 'bay ban nhung san pham gi',
