@@ -192,7 +192,20 @@ function isLandscapeLensCandidate({ nameNorm, descNorm = '' }) {
 }
 
 function parsePriceNumber(v) {
-  const n = Number(String(v || '').replace(/[^0-9]/g, ''));
+  const raw = String(v || '').trim();
+  if (!raw) return 0;
+  const cleaned = raw.replace(/[^\d.,-]/g, '');
+  let normalized = '';
+
+  if (/^-?\d+[.,]\d{1,2}$/.test(cleaned)) {
+    normalized = cleaned.replace(',', '.');
+  } else if (/^-?\d{1,3}(?:[.,]\d{3})+[.,]\d{1,2}$/.test(cleaned)) {
+    normalized = cleaned.replace(/[.,]\d{1,2}$/, '').replace(/[.,]/g, '');
+  } else {
+    normalized = cleaned.replace(/[^\d-]/g, '');
+  }
+
+  const n = Number(normalized);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -217,8 +230,51 @@ function fileRows(file) {
   return rows.slice(1).map(vals => {
     const obj = {};
     headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
-    return obj;
+    return normalizeProductRow(obj);
   });
+}
+
+function firstValue(row, keys = []) {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return String(value).trim();
+    }
+  }
+  return '';
+}
+
+function normalizeProductRow(row = {}) {
+  const normalized = { ...row };
+
+  normalized.sku = firstValue(row, ['sku', 'SKU', 'Mã SKU', 'Ma SKU', 'Mã sản phẩm', 'Ma san pham', 'Mã', 'Ma']) || normalized.sku || '';
+  normalized.name = firstValue(row, ['name', 'Name', 'title', 'Title', 'Tên sản phẩm', 'Ten san pham', 'Tên', 'Ten']) || normalized.name || normalized.title || '';
+  normalized.title = normalized.title || normalized.name || '';
+  normalized.vendor = firstValue(row, ['vendor', 'Vendor', 'brand', 'Brand', 'Thương hiệu', 'Thuong hieu', 'Hãng', 'Hang']) || normalized.vendor || normalized.brand || '';
+  normalized.brand = normalized.brand || normalized.vendor || '';
+  normalized.price = firstValue(row, ['price', 'Price', 'gia', 'Giá', 'Gia', 'Giá bán', 'Gia ban']) || normalized.price || normalized.gia || '';
+  normalized.gia = normalized.gia || normalized.price || '';
+  normalized.url = firstValue(row, ['url', 'URL', 'link', 'Link', 'product_url', 'Product URL', 'Đường dẫn', 'Duong dan']) || normalized.url || normalized.link || normalized.product_url || '';
+  normalized.link = normalized.link || normalized.url || '';
+  normalized.product_url = normalized.product_url || normalized.url || '';
+  normalized.description = firstValue(row, ['description', 'Description', 'Mô tả sản phẩm', 'Mo ta san pham', 'Mô tả', 'Mo ta', 'content', 'Content', 'details', 'Details']) || normalized.description || normalized.content || normalized.details || '';
+  normalized.tags = firstValue(row, ['tags', 'Tags', 'tag', 'Tag', 'Danh mục', 'Danh muc', 'Loại', 'Loai']) || normalized.tags || '';
+  normalized.stock = firstValue(row, ['stock', 'Stock', 'Kho', 'Tồn kho', 'Ton kho']) || normalized.stock || '';
+
+  const normalizedDescription = firstValue(row, ['description', 'Description', 'description_text', 'Description Text', 'content', 'Content', 'details', 'Details']) || normalized.description || '';
+  normalized.ai_summary = firstValue(row, ['ai_summary', 'AI Summary', 'AI_SUMMARY', 'summary', 'Summary', 'Tom tat AI']) || normalized.ai_summary || normalized.summary || '';
+  normalized.description = [normalizedDescription, normalized.ai_summary]
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  normalized.inventory_quantity = firstValue(row, ['inventory_quantity', 'Inventory Quantity', 'inventory', 'Inventory', 'So luong ton']) || normalized.inventory_quantity || normalized.inventory || '';
+  normalized.stock_hcm = firstValue(row, ['stock_hcm', 'Stock HCM', 'stock_hcm_quantity', 'Ton HCM']) || normalized.stock_hcm || normalized.stock_hcm_quantity || '';
+  normalized.stock_hn = firstValue(row, ['stock_hn', 'Stock HN', 'stock_hn_quantity', 'Ton HN']) || normalized.stock_hn || normalized.stock_hn_quantity || '';
+  normalized.stock_total = firstValue(row, ['stock_total', 'Stock Total', 'total_stock', 'Tong ton']) || normalized.stock_total || normalized.total_stock || '';
+  normalized.availability = firstValue(row, ['availability', 'Availability', 'available', 'Available', 'Trang thai']) || normalized.availability || normalized.available || '';
+  normalized.stock = normalized.stock || normalized.stock_total || normalized.inventory_quantity || '';
+
+  return normalized;
 }
 
 function dedupeProducts(products) {
@@ -358,20 +414,21 @@ function matchesRequiredCategory(product = {}, category = '') {
   }
   if (normalizedCategory === 'gimbal') {
     const accessory = /\b(phu kien|case|tui|plate|mount|adapter|khung|ngam|thao lap|doi trong|den|light|protector|bao ve|screen protector)\b/i.test(name)
-      || /\b(danh cho|for)\b.*\b(gimbal|ronin|dji rs)\b/i.test(name)
-      || /\b(tay cam|handle).*\b(danh cho|for)\b.*\b(gimbal|ronin)\b/i.test(name);
+      || /\b(danh cho|cho|for)\b.*\b(gimbal|ronin|dji rs)\b/i.test(name)
+      || /\b(tay cam|handle).*\b(danh cho|cho|for)\b.*\b(gimbal|ronin)\b/i.test(name);
     return !accessory && /\b(gimbal|weebill|crane|smooth)\b/i.test(name);
   }
   const rules = {
-    tripod: /\b(tripod|chan may|chan den|gay selfie|gay chup hinh|monopod)\b/i,
+    tripod: /\b(tripod|tripid|chan may|chan den|gay selfie|gay chup hinh|monopod|bon chan|4 chan)\b/i,
     headphones: /\b(tai nghe|headphone|headphones|headset)\b/i,
     webcam: /\bwebcam\b/i,
     microphone: /\b(micro|mic|microphone|thu am)\b/i,
-    light: /\b(den|light|led|ring light|tube light)\b/i,
+    light: /\b(den|light|led|ring light|tube light|fill light|key light|lighting|anh sang|chieu sang)\b/i,
     lens: /\b(lens|ong kinh)\b/i,
     filter: /\b(filter|kinh loc)\b/i,
     monitor: /\b(man hinh|monitor)\b/i,
-    bag: /\b(balo|backpack|tui)\b/i
+    bag: /\b(balo|backpack|tui)\b/i,
+    fog_machine: /\b(may tao khoi|tao khoi|smoke machine|fog machine|filmog|smoke b)\b/i
   };
   const pattern = rules[normalizedCategory];
   return pattern ? pattern.test(name) : true;
@@ -401,12 +458,13 @@ function searchProducts(query, topK = 8, options = {}) {
     if (!(w.length >= 2 && /[a-z]/.test(w) && /\d/.test(w))) return false;
     return !/^\d+(?:k|m|tr|trieu|nghin|ngan)$/i.test(w);
   });
-  const wantsTripod = /\b(tripod|chan may|chan den|gia do)\b/i.test(normQuery);
+  const wantsTripod = /\b(tripod|tripid|chan may|chan den|gia do|bon chan|4 chan)\b/i.test(normQuery);
   const wantsMicrophone = /\b(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)\b/i.test(normQuery);
   const wantsHeadphones = /\b(tai nghe|headphone|headphones|headset)\b/i.test(normQuery);
+  const wantsFogMachine = /\b(may tao khoi|tao khoi|smoke machine|fog machine|smoke b|filmog)\b/i.test(normQuery);
   const wantsPhone = /\b(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)\b/i.test(normQuery);
   const accentLight = hasAccentWord(accentQuery, 'đèn');
-  const asciiLight = /\b(den|led|light|ring light|rgb|tube light)\b/i.test(normQuery);
+  const asciiLight = /\b(den|led|light|ring light|rgb|tube light|fill light|key light|lighting|anh sang|chieu sang)\b/i.test(normQuery);
   const colorBlackOnly = hasAccentWord(accentQuery, 'đen') && !accentLight && !/\b(led|light|ring light|rgb|tube light)\b/i.test(normQuery);
   const wantsLight = (accentLight || asciiLight)
     && !colorBlackOnly
@@ -452,6 +510,7 @@ function searchProducts(query, topK = 8, options = {}) {
     if (identityWords.length && !urlMatched && !identityWords.some(w => identityText.includes(w))) continue;
     if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
     if (wantsHeadphones && !/\b(tai nghe|headphone|headphones|headset)\b/i.test(name)) continue;
+    if (wantsFogMachine && !/\b(may tao khoi|tao khoi|smoke machine|fog machine|filmog|smoke b)\b/i.test(haystack)) continue;
     if (wantsLight && !isTrueLightProduct(productShape)) continue;
     if (wantsLens && !isTrueLensProduct(productShape)) continue;
     if (wantsLens && !wantsMobileOrActionLens && isMobileOrActionLensProduct(productShape)) continue;
@@ -518,6 +577,7 @@ function searchProducts(query, topK = 8, options = {}) {
     if (wantsTripod && /(tripod|chan may|chan den|gia do)/i.test(name)) score += 8;
     if (wantsMicrophone && /(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)/i.test(`${name} ${vendor}`)) score += 8;
     if (wantsHeadphones && /\b(tai nghe|headphone|headphones|headset)\b/i.test(name)) score += 10;
+    if (wantsFogMachine && /\b(may tao khoi|tao khoi|smoke machine|fog machine|filmog|smoke b)\b/i.test(name)) score += 12;
     if (wantsLight && isTrueLightProduct(productShape)) score += 8;
     if (wantsLens && isTrueLensProduct(productShape)) score += 8;
     if (wantsPortraitLens && /\b(50|56|75|85)\s*mm\b/i.test(name)) score += 12;
@@ -561,7 +621,14 @@ function buildContext(query, options = {}) {
     products.forEach((p, i) => {
       const price = p.price || p.compare_at_price || p.gia || '';
       const url = p.url || p.link || p.product_url || '';
-      ctx += `${i + 1}. SKU: ${p.sku || 'N/A'} | Ten: ${p.name || p.title || 'N/A'} | Hang: ${p.vendor || p.brand || 'N/A'} | Gia: ${price || 'Lien he'} | Link: ${url || 'Chua co link'}\n`;
+      const stockParts = [
+        p.stock_total ? `Tong ${p.stock_total}` : '',
+        p.inventory_quantity ? `SL ${p.inventory_quantity}` : '',
+        p.stock_hcm ? `HCM ${p.stock_hcm}` : '',
+        p.stock_hn ? `HN ${p.stock_hn}` : ''
+      ].filter(Boolean).join(', ');
+      const availability = p.availability || '';
+      ctx += `${i + 1}. SKU: ${p.sku || 'N/A'} | Ten: ${p.name || p.title || 'N/A'} | Hang: ${p.vendor || p.brand || 'N/A'} | Gia: ${price || 'Lien he'} | Trang thai: ${availability || 'N/A'} | Ton kho: ${stockParts || p.stock || 'N/A'} | Link: ${url || 'Chua co link'}\n`;
       if (includeDescriptions) {
         const description = String(p.description || p.content || p.details || '')
           .replace(/\s+/g, ' ')
@@ -601,5 +668,6 @@ module.exports = {
   requestedPriceExtremes,
   extractExactPrice,
   findProductsByExactPrice,
-  productsWithPrice
+  productsWithPrice,
+  normalizeProductRow
 };

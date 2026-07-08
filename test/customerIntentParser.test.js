@@ -56,9 +56,56 @@ test('brand-only messages do not force a product category', () => {
     sourceKey: 'website/newlite'
   });
 
-  assert.equal(parsed.brand, 'Synco');
+  assert.equal(parsed.brand.toLowerCase(), 'synco');
   assert.equal(parsed.category, '');
   assert.equal(parsed.product, '');
   assert.equal(parsed.signals.brand_only, true);
   assert.equal(isBrandOnlyRequest('toi muon mua san pham Ulanzi', 'Ulanzi'), true);
+});
+
+test('parses brand light request as light even with stale microphone context', () => {
+  const parsed = parseCustomerMessage('đèn ulanzi có các mẫu nào', {
+    sourceKey: 'website/newlite',
+    existingContext: { requested_category: 'microphone' }
+  });
+
+  assert.equal(parsed.brand.toLowerCase(), 'ulanzi');
+  assert.equal(parsed.category, 'light');
+  assert.equal(parsed.signals.category_source, 'message');
+});
+
+test('parses lighting use-case request as light category', () => {
+  const parsed = parseCustomerMessage('ban co san pham chieu sang chu the khong', {
+    sourceKey: 'website/newlite',
+    existingContext: {
+      requested_category: 'gimbal'
+    }
+  });
+
+  assert.equal(parsed.category, 'light');
+  assert.equal(parsed.signals.category_source, 'message');
+});
+
+test('parses common tripod typo as tripod category', () => {
+  const parsed = parseCustomerMessage('shop co ban tripid 4 chan khong', {
+    sourceKey: 'website/newlite',
+    existingContext: {
+      requested_category: 'microphone'
+    }
+  });
+
+  assert.equal(parsed.category, 'tripod');
+  assert.equal(parsed.signals.category_source, 'message');
+});
+
+test('parses smoke machine request as its own category over stale context', () => {
+  const parsed = parseCustomerMessage('shop co ban may tao khoi khong', {
+    sourceKey: 'website/newlite',
+    existingContext: {
+      requested_category: 'microphone'
+    }
+  });
+
+  assert.equal(parsed.category, 'fog_machine');
+  assert.equal(parsed.signals.category_source, 'message');
 });

@@ -1,4 +1,4 @@
-const { normalize } = require('./rag');
+const { normalize, parsePriceNumber } = require('./rag');
 
 const CATEGORY_RULES = [
   {
@@ -35,11 +35,6 @@ const CATEGORY_RULES = [
 
 function norm(text) {
   return normalize(text || '').replace(/\s+/g, ' ').trim();
-}
-
-function parsePriceNumber(value) {
-  const n = Number(String(value || '').replace(/[^0-9]/g, ''));
-  return Number.isFinite(n) ? n : 0;
 }
 
 function extractMaxPrice(text) {

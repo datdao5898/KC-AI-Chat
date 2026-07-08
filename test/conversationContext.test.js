@@ -224,6 +224,51 @@ test('reply context remembers recommendations and selects one explicitly named p
   assert.equal(selectedContext.requested_category, 'livestream');
 });
 
+test('reply context replaces stale category with selected product category', () => {
+  const selectedContext = updateContextFromReply({
+    context: {
+      requested_category: 'microphone',
+      current_product_name: 'MAONO PD200X',
+      current_product_sku: 'M221',
+      context_confidence: 0.92
+    },
+    ragProducts: [
+      {
+        sku: 'FVS32',
+        name: 'Ống kính Viltrox AF 28mm F4.5 Full-Frame Lens for Sony FE-Mount',
+        vendor: 'Viltrox',
+        url: 'https://store.kingcom.com.vn/products/viltrox-af-28mm-f4-5-full-frame-lens-for-sony-e-mount'
+      }
+    ],
+    reply: 'KingCom tìm thấy sản phẩm phù hợp: Ống kính Viltrox AF 28mm F4.5 Full-Frame Lens for Sony FE-Mount',
+    sourceKey: 'website/kingcom'
+  });
+
+  assert.equal(selectedContext.current_product_sku, 'FVS32');
+  assert.equal(selectedContext.requested_category, 'lens');
+});
+
+test('availability follow-up searches the current product instead of stale category', () => {
+  const context = resolveConversationContext({
+    userText: 'còn hàng không shop',
+    history: [],
+    existingContext: {
+      requested_category: 'microphone',
+      current_product_name: 'Ống kính Viltrox AF 28mm F4.5 Full-Frame Lens for Sony FE-Mount',
+      current_product_sku: 'FVS32',
+      current_product_url: 'https://store.kingcom.com.vn/products/viltrox-af-28mm-f4-5-full-frame-lens-for-sony-e-mount',
+      context_confidence: 0.92
+    },
+    intent: 'buy',
+    sourceKey: 'website/kingcom'
+  });
+  const query = buildSearchQuery('còn hàng không shop', [], {}, context);
+
+  assert.equal(context.requested_category, 'lens');
+  assert.match(query, /Viltrox AF 28mm F4\.5/i);
+  assert.doesNotMatch(query, /\bmicrophone\b/i);
+});
+
 test('conversation context stores structured customer intent', () => {
   const context = resolveConversationContext({
     userText: 'Dung cho may laptop khong',

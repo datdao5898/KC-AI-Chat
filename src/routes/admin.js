@@ -121,8 +121,50 @@ function knowledgeSourceName(group, sourceId, sourceKey) {
   return config.brand || sourceId;
 }
 
+function envMapKeys(envName) {
+  const raw = String(process.env[envName] || '').trim();
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return Object.keys(parsed).filter(Boolean);
+    }
+  } catch {}
+
+  return raw
+    .split(',')
+    .map(entry => entry.split(':')[0]?.trim())
+    .filter(Boolean);
+}
+
+function configuredFacebookSourceIds() {
+  return [
+    ...envMapKeys('FACEBOOK_PAGE_TOKENS'),
+    ...envMapKeys('FACEBOOK_PAGE_NAMES'),
+    process.env.FACEBOOK_PAGE_ID || ''
+  ]
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+}
+
+function addKnowledgeSource(result, sourceKey, group, sourceId) {
+  const normalized = normalizeKnowledgeSourceKey(sourceKey);
+  if (!normalized || result.some(source => source.sourceKey === normalized)) return;
+  result.push({
+    sourceKey: normalized,
+    group,
+    sourceId,
+    name: knowledgeSourceName(group, sourceId, normalized)
+  });
+}
+
 function listKnowledgeSources() {
   const result = [{ sourceKey: 'common', group: 'common', sourceId: 'common', name: 'Dùng chung' }];
+  for (const pageId of configuredFacebookSourceIds()) {
+    addKnowledgeSource(result, `facebook/${pageId}`, 'facebook', pageId);
+  }
+
   if (!fs.existsSync(SOURCES_DIR)) return result;
 
   for (const groupEntry of fs.readdirSync(SOURCES_DIR, { withFileTypes: true })) {
@@ -130,14 +172,7 @@ function listKnowledgeSources() {
     const groupDir = path.join(SOURCES_DIR, groupEntry.name);
     for (const sourceEntry of fs.readdirSync(groupDir, { withFileTypes: true })) {
       if (!sourceEntry.isDirectory()) continue;
-      const sourceKey = normalizeKnowledgeSourceKey(`${groupEntry.name}/${sourceEntry.name}`);
-      if (!sourceKey) continue;
-      result.push({
-        sourceKey,
-        group: groupEntry.name,
-        sourceId: sourceEntry.name,
-        name: knowledgeSourceName(groupEntry.name, sourceEntry.name, sourceKey)
-      });
+      addKnowledgeSource(result, `${groupEntry.name}/${sourceEntry.name}`, groupEntry.name, sourceEntry.name);
     }
   }
 

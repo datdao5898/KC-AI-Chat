@@ -12,7 +12,8 @@ const {
   extractProductPageUrls,
   parsePriceNumber,
   normalize,
-  matchesRequiredCategory
+  matchesRequiredCategory,
+  searchProducts
 } = require('./rag');
 const {
   readSourceConfig,
@@ -68,7 +69,7 @@ function formatPrice(price) {
       ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       : raw;
   }
-  const n = Number(raw.replace(/[^0-9]/g, ''));
+  const n = parsePriceNumber(raw);
   return n ? `${n.toLocaleString('vi-VN')}đ` : (price || 'liên hệ');
 }
 
@@ -106,7 +107,10 @@ function detectMessageLanguage(text, history = []) {
   const hasStrongSignal = /[\u3400-\u9FFF\uF900-\uFAFF]/.test(raw)
     || /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(raw)
     || /\b(hello|please|looking|price|how much|warranty|invoice)\b/i.test(raw);
-  if (tokens.length > 2 || hasStrongSignal || !Array.isArray(history) || !history.length) return detected;
+  const numberedShortListItem = /^\s*\d{1,2}[\.)]\s+/.test(raw)
+    && tokens.length <= 4
+    && !hasStrongSignal;
+  if ((tokens.length > 2 && !numberedShortListItem) || hasStrongSignal || !Array.isArray(history) || !history.length) return detected;
 
   const previousCustomerMessage = [...history].reverse().find(message => {
     if (message?.sender_type !== 'customer') return false;
@@ -299,6 +303,124 @@ function productLine(product, index = 1) {
   const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
   const url = product.url || product.link || product.product_url || '';
   return `${index}. ${name}\nGiá: ${price}${url ? `\nLink: ${url}` : ''}`;
+}
+
+const MULTI_ITEM_GENERIC_WORDS = new Set([
+  'san', 'pham', 'mat', 'hang', 'loai', 'mau', 'model', 'gia', 'do', 'cua',
+  'cho', 'may', 'anh', 'camera', 'dien', 'thoai', 'phone', 'tripod', 'adapter',
+  'chan', 'gay', 'selfie', 'the', 'nho', 'memory', 'card', 'mic', 'micro',
+  'microphone', 'thu', 'am', 'den', 'light', 'led', 'lens', 'filter', 'arm',
+  'tay', 'bowl', 'mount'
+]);
+
+function extractProductListItems(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  const items = [];
+  const linePattern = /(?:^|\n)\s*(?:[-*]\s+|(\d{1,2})[\.)]\s+)([^\n]+)/g;
+  let match;
+  while ((match = linePattern.exec(raw)) !== null) {
+    const item = String(match[2] || '')
+      .replace(/\s+/g, ' ')
+      .replace(/[;,.]+$/g, '')
+      .trim();
+    if (item.length >= 3) items.push(item);
+  }
+
+  if (!items.length) {
+    const inlinePattern = /(?:^|[\s:])(\d{1,2})[\.)]\s+(.+?)(?=(?:\s+\d{1,2}[\.)]\s+)|$)/g;
+    while ((match = inlinePattern.exec(raw)) !== null) {
+      const item = String(match[2] || '')
+        .replace(/\s+/g, ' ')
+        .replace(/[;,.]+$/g, '')
+        .trim();
+      if (item.length >= 3) items.push(item);
+    }
+  }
+
+  if (!items.length && /\b(cac|nhung)\s+mat\s+hang\b|\bdanh\s+sach\b/i.test(normalize(raw))) {
+    const afterColon = raw.split(':').slice(1).join(':').trim();
+    if (afterColon.length >= 3) items.push(afterColon.replace(/\s+/g, ' '));
+  }
+
+  const normalizedRaw = normalize(raw);
+  const looksLikeProductList = items.length > 1
+    || /^\s*\d{1,2}[\.)]\s+/.test(raw)
+    || /\b(cac|nhung)\s+mat\s+hang\b|\bdanh\s+sach\b|\bcan\s+(?:tim|tu\s+van)\b/i.test(normalizedRaw);
+  if (!looksLikeProductList) return [];
+
+  return [...new Set(items)].slice(0, 8);
+}
+
+function strictTokensForListItem(item = '') {
+  return queryWords(item)
+    .filter(token => token.length >= 5 || /[a-z]+\d|\d+[a-z]+/i.test(token))
+    .filter(token => !MULTI_ITEM_GENERIC_WORDS.has(token));
+}
+
+function productIdentityForListItem(product = {}) {
+  return normalize([
+    product.sku || '',
+    product.vendor || product.brand || '',
+    product.name || product.title || '',
+    product.url || product.link || product.product_url || ''
+  ].join(' '));
+}
+
+function listItemProductIsRelevant(item = '', product = {}) {
+  if (!product) return false;
+  const strictTokens = strictTokensForListItem(item);
+  if (!strictTokens.length) return true;
+  const identity = productIdentityForListItem(product);
+  return strictTokens.every(token => identity.includes(token));
+}
+
+function lookupProductsForListItem(item = '', sourceKey = '') {
+  const strict = searchProducts(item, 5, { sourceKey, requireIdentityMatch: true })
+    .filter(product => listItemProductIsRelevant(item, product));
+  if (strict.length) return strict.slice(0, 2);
+
+  const loose = searchProducts(item, 5, { sourceKey })
+    .filter(product => listItemProductIsRelevant(item, product));
+  return loose.slice(0, 2);
+}
+
+function buildProductListLookupReply(userText, sourceKey = '', lang = 'vi', customerBrand = 'KingCom') {
+  const items = extractProductListItems(userText);
+  if (!items.length) return null;
+
+  const matchedProducts = [];
+  const sections = items.map((item, index) => {
+    const products = lookupProductsForListItem(item, sourceKey);
+    for (const product of products) addUniqueProduct(matchedProducts, product);
+    if (!products.length) {
+      if (lang === 'en') {
+        return `${index + 1}. ${item}\nI have not found a matching product in ${customerBrand}'s current catalog. Staff should check this item manually.`;
+      }
+      if (lang === 'zh') {
+        return `${index + 1}. ${item}\n我暂时未在 ${customerBrand} 当前目录中找到匹配产品，需要工作人员人工确认。`;
+      }
+      return `${index + 1}. ${item}\nEm chưa tìm thấy sản phẩm khớp rõ trong catalog hiện tại của ${customerBrand}. Món này nên để nhân viên kiểm tra lại thủ công.`;
+    }
+    return products.map((product, productIndex) => productLine(product, productIndex + 1)).join('\n');
+  });
+
+  const intro = lang === 'en'
+    ? `I checked each item in ${customerBrand}'s current catalog:`
+    : lang === 'zh'
+      ? `我已按每一项在 ${customerBrand} 当前目录中核对：`
+      : `Dạ em kiểm tra từng mặt hàng trong catalog hiện tại của ${customerBrand}:`;
+  const outro = lang === 'en'
+    ? 'For items that are not clearly matched, staff should confirm manually to avoid advising incorrectly.'
+    : lang === 'zh'
+      ? '未能明确匹配的项目，需要工作人员再确认，避免回复错误。'
+      : 'Món nào em chưa khớp rõ thì em sẽ để nhân viên kiểm tra lại, tránh tư vấn sai cho anh/chị.';
+
+  return {
+    reply: `${intro}\n\n${sections.join('\n\n')}\n\n${outro}`,
+    products: matchedProducts,
+    items
+  };
 }
 
 function isPreviousAdviceComplaint(userText) {
@@ -520,6 +642,40 @@ function hasUnapprovedProductUrl(reply, products) {
 function hasProductCatalogUrl(reply) {
   const replyUrls = String(reply || '').match(/https?:\/\/[^\s<>"')\]]+/gi) || [];
   return replyUrls.some(url => /\/products?\//i.test(url));
+}
+
+function sanitizeProviderReply(reply, fallback = '') {
+  const text = String(reply || '').trim()
+    .replace(/\*\*/g, '')
+    .replace(/^\s*```(?:\w+)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+  if (!text) return fallback;
+
+  const normalized = normalize(text);
+  const leakedPrompt = /\b(thought|analysis|consultant for|system prompt|developer message|final language rule|bat buoc tuan thu|quy tac|du lieu tham khao|lich su gan day|khach hoi|truy van dung de tim san pham)\b/i.test(normalized);
+  const tooMeta = /^(?:thought|analysis|assistant|system|developer)\b/i.test(text);
+  if (leakedPrompt || tooMeta) return fallback || '';
+
+  return text;
+}
+
+function providerFallbackReply({
+  intent,
+  userText,
+  products = [],
+  conversationContext = {},
+  messageLanguage = 'vi',
+  customerBrand = 'KingCom',
+  guidanceQuestion = false,
+  specsQuestion = false
+} = {}) {
+  if (guidanceQuestion) return buildProductGuidanceFallbackReply(products, messageLanguage);
+  if (specsQuestion) return buildProductSpecsFallbackReply(products, messageLanguage);
+  if (conversationContext?.requested_category && products.length) {
+    return buildCategoryProductsReply(products, conversationContext.requested_category, messageLanguage, customerBrand);
+  }
+  return fallbackReply(intent, userText, products);
 }
 
 function buildScopedProductsReply(products, userText, scopeBrand) {
@@ -886,12 +1042,10 @@ function findExactProductMatch(token = '', sourceKey = '') {
   return catalog.find(product => {
     const identity = normalize([
       product.sku || '',
+      product.vendor || product.brand || '',
       product.name || '',
       product.title || '',
-      product.description || '',
-      product.content || '',
-      product.details || '',
-      product.tags || ''
+      product.url || product.link || product.product_url || ''
     ].join(' '));
     return variants.some(variant => identity.includes(variant));
   }) || null;
@@ -1244,7 +1398,7 @@ const PRODUCT_CONTEXT_WORDS = new Set([
   'cach', 'su', 'dung', 'huong', 'dan', 'ket', 'noi', 'cai', 'dat',
   'gui', 'truc', 'tiep', 'qua', 'day', 'cho', 'xem', 'nhe', 'nha', 'giup',
   'san', 'pham', 'mau', 'may', 'nay', 'do', 'vua', 'noi', 'cua', 'gi',
-  'anh', 'chi', 'em', 'minh', 'toi', 'ban', 'ben', 'shop', 'co', 'khong',
+  'anh', 'chi', 'em', 'minh', 'toi', 'ban', 'ben', 'shop', 'co', 'con', 'hang', 'khong',
   'can', 'muon', 'mua', 'tim', 'hieu', 'hoi', 've', 'do', 'you', 'sell',
   'technical', 'specification', 'specifications', 'spec', 'specs',
   'how', 'use', 'using', 'guide', 'instructions', 'setup', 'install',
@@ -1556,7 +1710,7 @@ function fallbackReply(intent, userText, products) {
     if (products && products.length) {
       const rows = products.slice(0, 3).map((p, i) => {
         const name = p.name || p.title || `Product ${i + 1}`;
-        const priceNumber = Number(String(p.price || p.compare_at_price || p.gia || '').replace(/[^0-9]/g, ''));
+        const priceNumber = parsePriceNumber(p.price || p.compare_at_price || p.gia || '');
         const price = priceNumber ? `${priceNumber.toLocaleString('en-US')} VND` : 'contact us';
         const url = p.url || p.link || p.product_url || '';
         return `${i + 1}. ${name}\nPrice: ${price}${url ? `\nLink: ${url}` : ''}`;
@@ -1605,6 +1759,39 @@ function expandMultilingualSearchTerms(text) {
   return terms.join(' ');
 }
 
+const AVAILABILITY_FOLLOWUP_STOPWORDS = new Set([
+  'co', 'con', 'hang', 'khong', 'ko', 'k', 'shop', 'ben', 'em', 'anh', 'chi',
+  'ban', 'dang', 'san', 'pham', 'nay', 'do', 'a', 'nha', 'nhe', 'available',
+  'stock', 'in', 'is', 'the', 'this', 'that'
+]);
+
+function shouldUseCurrentProductForAvailability(userText, conversationContext = {}) {
+  if (!conversationContext?.current_product_name) return false;
+
+  const inferredCategory = inferRequestedCategory(userText);
+  const currentCategory = conversationContext.requested_category || productCategorySearchTerms(conversationContext.current_product_name || '');
+  if (inferredCategory && currentCategory && inferredCategory !== currentCategory) return false;
+  if (inferredCategory && !currentCategory) return false;
+
+  const userNorm = normalize(userText);
+  const currentName = normalize(conversationContext.current_product_name || '');
+  const currentSku = normalize(conversationContext.current_product_sku || '');
+  const currentUrl = normalize(conversationContext.current_product_url || '');
+  const explicitReference = hasExplicitProductReference(userText);
+  if (explicitReference) {
+    return Boolean(
+      (currentSku && userNorm.includes(currentSku))
+      || (currentUrl && userNorm.includes(currentUrl))
+      || (currentName && (userNorm.includes(currentName) || queryWords(userText).filter(w => currentName.includes(w)).length >= 2))
+    );
+  }
+
+  const newWords = queryWords(userText)
+    .filter(word => !AVAILABILITY_FOLLOWUP_STOPWORDS.has(word))
+    .filter(word => !currentName.includes(word) && !currentSku.includes(word) && !currentUrl.includes(word));
+  return newWords.length === 0;
+}
+
 function buildSearchQuery(userText, history, customer, conversationContext = {}) {
   const currentWords = queryWords(userText);
   const expandedTerms = expandMultilingualSearchTerms(userText);
@@ -1621,6 +1808,9 @@ function buildSearchQuery(userText, history, customer, conversationContext = {})
   const structuredText = structuredMessageSearchText(conversationContext?.customer_intent || {});
   const parsedBudgetMax = conversationContext?.customer_intent?.budget?.max || 0;
   const asksContextFollowUp = isContextualProductFollowUp(userText);
+  if (isAvailabilityQuestion(userText) && shouldUseCurrentProductForAvailability(userText, conversationContext)) {
+    return `${conversationContext.current_product_name || ''} ${conversationContext.current_product_sku || ''} ${conversationContext.current_product_url || ''} ${userText} ${expandedTerms}`.trim();
+  }
   const asksBudgetFollowUp = Boolean(parsedBudgetMax || extractMaxPrice(userText))
     && /\b(duoi|toi da|max|nho hon|be hon|ngan sach|tai chinh|re hon|gia re|loai nao|mau nao|cai nao|san pham nao)\b/i.test(normalize(userText));
   if (isAlternativeProductRequest(userText)) {
@@ -1680,7 +1870,8 @@ function productCategorySearchTerms(productName = '') {
     ['lens', /\b(lens|ong kinh)\b/i],
     ['filter', /\b(filter|kinh loc)\b/i],
     ['man hinh', /\b(man hinh|monitor)\b/i],
-    ['balo tui', /\b(balo|backpack|tui)\b/i]
+    ['balo tui', /\b(balo|backpack|tui)\b/i],
+    ['may tao khoi', /\b(may tao khoi|tao khoi|smoke machine|fog machine|filmog|smoke b)\b/i]
   ];
   return categories.find(([, pattern]) => pattern.test(normalized))?.[0] || '';
 }
@@ -1697,7 +1888,8 @@ function categorySearchTerms(category = '') {
     lens: 'lens ong kinh',
     filter: 'filter kinh loc',
     monitor: 'man hinh monitor',
-    bag: 'balo tui may anh'
+    bag: 'balo tui may anh',
+    fog_machine: 'may tao khoi smoke fog machine filmog'
   };
   return terms[normalize(category)] || '';
 }
@@ -1754,6 +1946,7 @@ function buildAlternativeProductsReply(products, lang, customerBrand = 'KingCom'
 }
 
 function categoryLabel(category) {
+  if (category === 'fog_machine') return 'mÃ¡y táº¡o khÃ³i';
   return ({
     livestream: 'thiết bị livestream',
     gimbal: 'thiết bị chống rung',
@@ -2087,9 +2280,17 @@ async function generateReplyRaw({
   const sourceConfig = readSourceConfig(sourceKey);
   const scopeBrand = String(sourceConfig.brand || '').trim();
   const customerBrand = resolveCustomerBrand({ sourceKey, sourceName, sourceGroup });
-  const resolvedConversationContext = Object.keys(normalizeContext(conversationContext)).length
-    ? normalizeContext(conversationContext)
-    : resolveConversationContext({ userText, history, existingContext: {}, intent, sourceKey, sourceName, sourceGroup });
+  const incomingConversationContext = normalizeContext(conversationContext);
+  const resolvedConversationContext = resolveConversationContext({
+    userText,
+    history,
+    existingContext: incomingConversationContext,
+    intent,
+    sourceKey,
+    sourceName,
+    sourceGroup,
+    parsedMessage: incomingConversationContext.customer_intent
+  });
   const scopedProducts = loadProducts({ sourceKey });
   const customerPhone = String(customer?.phone || '').trim();
   const existingContactInstruction = customerPhone
@@ -2148,6 +2349,21 @@ async function generateReplyRaw({
       aiSource: 'rule_policy',
       ragProducts: []
     };
+  }
+
+  if (!policyQuestion && !guidanceQuestion && !specsQuestion) {
+    const listLookup = buildProductListLookupReply(userText, sourceKey, messageLanguage, customerBrand);
+    if (listLookup) {
+      return {
+        reply: listLookup.reply,
+        aiUsed: 0,
+        aiError: false,
+        aiSource: 'direct_product_list_lookup',
+        searchQuery: listLookup.items.join(' | '),
+        ragProducts: listLookup.products,
+        conversationContext: resolvedConversationContext
+      };
+    }
   }
 
   if (intent === 'store_info') {
@@ -2284,10 +2500,11 @@ ${intent === 'greeting'
           : 'Ghi nhận yêu cầu. Hỏi khách để lại số điện thoại để nhân viên liên hệ. KHÔNG liệt kê sản phẩm.'}`;
 
     try {
-      const reply = await callOpenAI(
+      const rawReply = await callOpenAI(
         applyCustomerBranding(greetingPrompt, customerBrand),
         Number(process.env.AI_TIMEOUT_MS || 45000)
       );
+      const reply = sanitizeProviderReply(rawReply, buildLocalizedRuleReply(intent, userText, messageLanguage, scopeBrand, customerBrand));
       return { reply, aiUsed: 1, aiError: false, aiSource: 'provider', ragProducts: [] };
     } catch (e) {
       console.error('OpenAI greeting error:', e.message);
@@ -2762,7 +2979,18 @@ Quy tắc:
         ? '\n\nFINAL LANGUAGE RULE: Reply in Simplified Chinese only. Do not use Vietnamese except product names copied from catalog.'
         : '\n\nFINAL LANGUAGE RULE: Reply in Vietnamese only unless the customer switches language.';
     const brandedPrompt = applyCustomerBranding(`${prompt}${finalLanguageRule}`, customerBrand, products);
-    const reply = await callOpenAI(brandedPrompt, Number(process.env.AI_TIMEOUT_MS || 45000));
+    const rawReply = await callOpenAI(brandedPrompt, Number(process.env.AI_TIMEOUT_MS || 45000));
+    const safeFallback = providerFallbackReply({
+      intent,
+      userText,
+      products,
+      conversationContext: resolvedConversationContext,
+      messageLanguage,
+      customerBrand,
+      guidanceQuestion,
+      specsQuestion
+    });
+    const reply = sanitizeProviderReply(rawReply, safeFallback);
     const hasDisallowedUrl = policyQuestion ? hasProductCatalogUrl(reply) : hasUnapprovedProductUrl(reply, products);
     if (hasDisallowedUrl) {
       console.warn('OpenAI response rejected: unapproved product URL');
@@ -2771,7 +2999,16 @@ Quy tắc:
           ? buildProductGuidanceFallbackReply(products, messageLanguage)
           : specsQuestion
             ? buildProductSpecsFallbackReply(products, messageLanguage)
-            : fallbackReply(intent, userText, products),
+            : providerFallbackReply({
+                intent,
+                userText,
+                products,
+                conversationContext: resolvedConversationContext,
+                messageLanguage,
+                customerBrand,
+                guidanceQuestion,
+                specsQuestion
+              }),
         aiUsed: 1,
         aiError: false,
         aiSource: specsQuestion ? 'guardrail_fallback_product_specs' : 'guardrail_fallback',
@@ -2796,7 +3033,16 @@ Quy tắc:
         ? buildProductGuidanceFallbackReply(products, messageLanguage)
         : specsQuestion
           ? buildProductSpecsFallbackReply(products, messageLanguage)
-          : fallbackReply(intent, userText, products),
+          : providerFallbackReply({
+              intent,
+              userText,
+              products,
+              conversationContext: resolvedConversationContext,
+              messageLanguage,
+              customerBrand,
+              guidanceQuestion,
+              specsQuestion
+            }),
       aiUsed: 0,
       aiError: true,
       aiErrorMessage: e.message,
@@ -2882,6 +3128,7 @@ module.exports = {
   buildSearchQuery,
   buildAlternativeSearchQuery,
   buildBroaderSearchQuery,
+  sanitizeProviderReply,
   isBroadConsultationRequest,
   buildAlternativeProductsReply,
   assessRetrievalUncertainty,

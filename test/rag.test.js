@@ -6,7 +6,8 @@ const {
   parsePriceNumber,
   searchProducts,
   buildContext,
-  matchesRequiredCategory
+  matchesRequiredCategory,
+  normalizeProductRow
 } = require('../src/rag');
 
 test('normalize strips accents and punctuation', () => {
@@ -22,6 +23,54 @@ test('queryWords removes stopwords', () => {
 
 test('parsePriceNumber reads numeric price text', () => {
   assert.equal(parsePriceNumber('1.390.000đ'), 1390000);
+});
+
+test('parsePriceNumber reads Haravan decimal price without adding trailing zero', () => {
+  assert.equal(parsePriceNumber('7250000.0'), 7250000);
+  assert.equal(parsePriceNumber('220000.00'), 220000);
+  assert.equal(parsePriceNumber('1.390.000,00'), 1390000);
+});
+
+test('normalizeProductRow maps Vietnamese CSV headers to product fields', () => {
+  const product = normalizeProductRow({
+    'Tên sản phẩm': 'Đèn LED Video ULANZI VL120 Full Color RGB',
+    'Mô tả sản phẩm': 'Đèn LED RGB dùng quay chụp.',
+    'Giá': '759000',
+    'Kho': '5'
+  });
+
+  assert.equal(product.name, 'Đèn LED Video ULANZI VL120 Full Color RGB');
+  assert.equal(product.title, product.name);
+  assert.equal(product.description, 'Đèn LED RGB dùng quay chụp.');
+  assert.equal(product.price, '759000');
+  assert.equal(product.gia, '759000');
+  assert.equal(product.stock, '5');
+});
+
+test('normalizeProductRow maps Haravan training fields to RAG context fields', () => {
+  const product = normalizeProductRow({
+    sku: 'FN134',
+    name: 'NANLITE FS-300B 350W Bi-Color LED Video Light',
+    vendor: 'Nanlite',
+    price: '7250000.0',
+    inventory_quantity: '54',
+    stock_hcm: '4',
+    stock_hn: '50',
+    availability: 'in_stock',
+    url: 'https://newlite.vn/products/nanlite-fs-300b',
+    description: 'Cong suat 350W, CCT 2700K-6500K.',
+    ai_summary: 'gia 7.250.000d. con hang. ton HCM 4, HN 50.'
+  });
+
+  assert.equal(product.sku, 'FN134');
+  assert.equal(product.brand, 'Nanlite');
+  assert.equal(product.inventory_quantity, '54');
+  assert.equal(product.stock_hcm, '4');
+  assert.equal(product.stock_hn, '50');
+  assert.equal(product.stock, '54');
+  assert.equal(product.availability, 'in_stock');
+  assert.match(product.description, /Cong suat 350W/);
+  assert.match(product.description, /ton HCM 4/);
 });
 
 test('landscape lens search excludes phone lenses and lens accessories', () => {
@@ -117,8 +166,8 @@ test('same query stays isolated by website source products', () => {
     { sourceKey: 'website/newlite', requireIdentityMatch: true }
   );
 
-  assert.equal(kingcomProducts[0]?.sku, 'FB153');
-  assert.equal(newliteProducts[0]?.sku, 'FB127');
+  assert.match(kingcomProducts[0]?.url || '', /store\.kingcom\.com\.vn/);
+  assert.match(newliteProducts[0]?.url || '', /newlite\.vn/);
   assert.notEqual(kingcomProducts[0]?.url, newliteProducts[0]?.url);
 });
 

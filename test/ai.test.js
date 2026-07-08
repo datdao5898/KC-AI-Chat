@@ -6,6 +6,7 @@ const {
   buildSearchQuery,
   detectMessageLanguage,
   generateReply,
+  sanitizeProviderReply,
   isBroadConsultationRequest,
   assessRetrievalUncertainty
 } = require('../src/ai');
@@ -182,6 +183,12 @@ test('short ambiguous message inherits the recent customer language', () => {
   ]), 'vi');
 });
 
+test('short numbered product list item inherits the recent customer language', () => {
+  assert.equal(detectMessageLanguage('3. Tripod adapter', [
+    { sender_type: 'customer', text: 'bên mình còn các mặt hàng nào vậy em' }
+  ]), 'vi');
+});
+
 test('context product leads a follow-up search query', () => {
   const query = buildSearchQuery(
     'có remote không',
@@ -194,6 +201,140 @@ test('context product leads a follow-up search query', () => {
   );
 
   assert.match(query, /^Ulanzi MT85 Automatic Tripod MT85/i);
+});
+
+test('availability follow-up uses the current product instead of stale category context', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'còn hàng không shop',
+    history: [],
+    customer: {},
+    intent: 'buy',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'microphone',
+      current_product_name: 'Ống kính Viltrox AF 28mm F4.5 Full-Frame Lens for Sony FE-Mount',
+      current_product_sku: 'FVS32',
+      current_product_url: 'https://store.kingcom.com.vn/products/viltrox-af-28mm-f4-5-full-frame-lens-for-sony-e-mount',
+      context_confidence: 0.92
+    }
+  });
+
+  assert.equal(result.aiSource, 'direct_availability_lookup');
+  assert.equal(result.ragProducts[0]?.sku, 'FVS32');
+  assert.match(result.reply, /Viltrox AF 28mm F4\.5/i);
+  assert.doesNotMatch(result.reply, /Alvoxcon|TG220|MAONO PD200X/i);
+});
+
+test('availability query with a new product category does not reuse stale current product', () => {
+  const query = buildSearchQuery(
+    'shop co ban tripid 4 chan khong',
+    [],
+    {},
+    {
+      requested_category: 'microphone',
+      current_product_name: 'MAONO PD200X / Mic thu am Dynamic',
+      current_product_sku: 'M221',
+      current_product_url: 'https://newlite.vn/products/maono-pd200x'
+    }
+  );
+
+  assert.match(query, /tripid 4 chan/i);
+  assert.doesNotMatch(query, /MAONO|PD200X|M221/i);
+});
+
+test('generic availability follow-up still reuses the current product', () => {
+  const query = buildSearchQuery(
+    'con hang khong shop',
+    [],
+    {},
+    {
+      requested_category: 'lens',
+      current_product_name: 'Viltrox AF 28mm F4.5 Full-Frame Lens',
+      current_product_sku: 'FVS32'
+    }
+  );
+
+  assert.match(query, /Viltrox AF 28mm/i);
+  assert.match(query, /FVS32/i);
+});
+
+test('new lighting request does not carry stale gimbal context into search', () => {
+  const query = buildSearchQuery(
+    'ban co san pham chieu sang chu the khong',
+    [],
+    {},
+    {
+      requested_category: 'light',
+      new_category_request: true,
+      current_product_name: '',
+      customer_intent: {
+        category: 'light',
+        signals: { category_source: 'message' }
+      }
+    }
+  );
+
+  assert.match(query, /den led light/i);
+  assert.match(query, /chieu sang/i);
+  assert.doesNotMatch(query, /gimbal/i);
+});
+
+test('smoke machine request ignores stale tripod or microphone context', async () => {
+  const tripodContextResult = await generateReply({
+    channel: 'haravan_website',
+    userText: 'minh muon mua may tao khoi shop co ban khong',
+    history: [],
+    customer: {},
+    intent: 'buy',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'tripod',
+      current_product_name: 'Tay Arm Ulanzi TH04 - Gia do Camera',
+      current_product_sku: 'FUMH2',
+      context_confidence: 0.86
+    }
+  });
+
+  assert.equal(tripodContextResult.aiSource, 'rule_need_category_products');
+  assert.match(tripodContextResult.searchQuery, /fog_machine|may tao khoi/i);
+  assert.ok(tripodContextResult.ragProducts.length > 0);
+  assert.ok(tripodContextResult.ragProducts.every(product => /tao khoi|smoke|fog|filmog/i.test(normalize(`${product.name || ''} ${product.title || ''}`))));
+  assert.doesNotMatch(tripodContextResult.reply, /Tay Arm|TH04|Mic thu/i);
+
+  const microphoneContextResult = await generateReply({
+    channel: 'haravan_website',
+    userText: 'shop co ban may tao khoi khong',
+    history: [],
+    customer: {},
+    intent: 'buy',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website',
+    conversationContext: {
+      requested_category: 'microphone',
+      current_product_name: 'Fifine T669 Mic thu am Streaming',
+      current_product_sku: 'K999',
+      context_confidence: 0.86
+    }
+  });
+
+  assert.equal(microphoneContextResult.aiSource, 'rule_need_category_products');
+  assert.ok(microphoneContextResult.ragProducts.length > 0);
+  assert.ok(microphoneContextResult.ragProducts.every(product => /tao khoi|smoke|fog|filmog/i.test(normalize(`${product.name || ''} ${product.title || ''}`))));
+  assert.doesNotMatch(microphoneContextResult.reply, /Fifine|BOYA|Micro Thu/i);
+});
+
+test('provider reply sanitizer blocks leaked reasoning or prompt text', () => {
+  const leaked = 'thought Consultant for NewLite. Khach hoi: ban co san pham chieu sang chu the khong. Quy tac: chi tra loi theo du lieu.';
+  assert.equal(
+    sanitizeProviderReply(leaked, 'Dạ NewLite có các mẫu đèn phù hợp trong catalog ạ.'),
+    'Dạ NewLite có các mẫu đèn phù hợp trong catalog ạ.'
+  );
 });
 
 test('compatibility follow-up reuses category context and recent need', () => {
@@ -670,9 +811,56 @@ test('product URL lookup bypasses mistaken category filter', async () => {
 
   assert.notEqual(result.aiSource, 'rule_no_catalog_match');
   assert.equal(result.ragProducts.length, 1);
-  assert.equal(result.ragProducts[0].sku, 'C321');
+  assert.match(result.ragProducts[0].url || '', /newlite\.vn\/products\/synco-xtalk-master/i);
   assert.match(result.reply, /Synco Xtalk Master/i);
   assert.match(result.reply, /newlite\.vn\/products\/synco-xtalk-master/i);
+});
+
+test('numbered product item resolves TH04 by product identity, not description mention', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'bên mình còn các mặt hàng: 1. Tay Arm Ulanzi TH04 - Giá đỡ Camera',
+    history: [],
+    customer: {},
+    intent: 'price',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {}
+  });
+
+  assert.equal(result.aiSource, 'direct_product_list_lookup');
+  assert.ok(result.ragProducts.some(product => product.sku === 'FUMH2'));
+  assert.match(result.reply, /Tay Arm Ulanzi TH04/i);
+  assert.match(result.reply, /2\.290\.000/);
+  assert.doesNotMatch(result.reply, /MA50|Uka M039/i);
+});
+
+test('numbered product list answers each requested item without drifting to unrelated products', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: [
+      'bên mình còn các mặt hàng:',
+      '1. Tay Arm Ulanzi TH04 - Giá đỡ Camera',
+      '2. thẻ nhớ máy ảnh 128 sandisk',
+      '3. Tripod adapter'
+    ].join('\n'),
+    history: [],
+    customer: {},
+    intent: 'product_search',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website',
+    conversationContext: {}
+  });
+
+  assert.equal(result.aiSource, 'direct_product_list_lookup');
+  assert.ok(result.ragProducts.some(product => product.sku === 'FUMH2'));
+  assert.ok(result.ragProducts.some(product => /Tripod bowl adapter/i.test(product.name || product.title || '')));
+  assert.match(result.reply, /Tay Arm Ulanzi TH04/i);
+  assert.match(result.reply, /Tripod bowl adapter/i);
+  assert.match(result.reply, /sandisk[\s\S]*chưa tìm thấy/i);
+  assert.doesNotMatch(result.reply, /MA50|Uka M039|Saramonic|Ulanzi V6/i);
 });
 
 test('comparison questions are answered from catalog specs instead of handing off early', async () => {

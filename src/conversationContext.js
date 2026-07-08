@@ -61,15 +61,16 @@ function inferRequestedCategory(text) {
   const normalized = normalize(text);
   const rules = [
     ['gimbal', /\b(chong rung|khong bi rung|giam rung|giu on dinh|quay on dinh|gimbal|stabilizer)\b/i],
-    ['tripod', /\b(tripod|chan may|chan chup|phoi sang|ulanzi mt[- ]?\d+)\b/i],
+    ['tripod', /\b(tripod|tripid|chan may|chan chup|phoi sang|bon chan|4 chan|ulanzi mt[- ]?\d+)\b/i],
     ['headphones', /\b(tai nghe|headphone|headphones|headset)\b/i],
     ['webcam', /\b(webcam|hop online|goi video|video call)\b/i],
     ['microphone', /\b(micro|mic|microphone|thu am|ghi am|loc tap am)\b/i],
-    ['light', /\b(den quay|den chup|den led|den livestream|ring light|tube light|bo sung anh sang)\b/i],
+    ['light', /\b(den\s+(?:quay|chup|led|livestream|studio|san pham|chu the|ulanzi|nanlite|colbor)|(?:ulanzi|nanlite|colbor)\s+den|ring light|tube light|fill light|key light|lighting|bo sung anh sang|anh sang|chieu sang)\b/i],
     ['lens', /\b(lens|ong kinh|chup phong canh|chup chan dung|xoa phong)\b/i],
     ['filter', /\b(filter|kinh loc|nd filter|cpl)\b/i],
     ['monitor', /\b(man hinh phu|monitor|man hinh selfie)\b/i],
     ['bag', /\b(balo|backpack|tui may anh|tui dung)\b/i],
+    ['fog_machine', /\b(may tao khoi|tao khoi|smoke machine|fog machine|smoke b|filmog)\b/i],
     ['livestream', /\b(livestream|live stream|thiet bi live|ban hang online|phat song truc tiep|quay phat truc tiep|video switcher|switcher|capture card|console pad|livepro)\b/i]
   ];
   return rules.find(([, pattern]) => pattern.test(normalized))?.[0] || '';
@@ -232,7 +233,10 @@ function resolveConversationContext({
     ? customerIntent.category
     : '';
   const detectedCategory = inferredCategory || structuredMessageCategory || '';
-  const requestedCategory = detectedCategory || previous.requested_category || '';
+  const previousProductCategory = inferRequestedCategory(
+    `${previous.current_product_name || ''} ${previous.current_product_sku || ''} ${previous.current_product_url || ''}`
+  );
+  const requestedCategory = detectedCategory || previousProductCategory || previous.requested_category || '';
   const newCategoryRequest = isNewCategoryRequest(userText, intent, detectedCategory);
   const productSpecific = looksLikeProductSpecificQuestion(userText, intent);
   const base = {
@@ -284,6 +288,15 @@ function resolveConversationContext({
       requested_category: detectedCategory || inferRequestedCategory(snapshot.current_product_name) || '',
       last_explicit_product: snapshot,
       context_confidence: explicit.confidence,
+      needs_clarification: false,
+      clarification_reason: ''
+    };
+  }
+
+  if (productSpecific && previous.current_product_name && !hasExplicitIdentity) {
+    return {
+      ...base,
+      context_confidence: Math.max(Number(previous.context_confidence || 0), 0.76),
       needs_clarification: false,
       clarification_reason: ''
     };
@@ -383,8 +396,8 @@ function updateContextFromReply({
   const productCategory = inferRequestedCategory(
     `${selected?.name || selected?.title || ''} ${selected?.tags || selected?.category || ''}`
   );
-  const requestedCategory = current.requested_category
-    || productCategory
+  const requestedCategory = productCategory
+    || current.requested_category
     || inferRequestedCategory(`${products[0]?.name || products[0]?.title || ''} ${products[0]?.tags || products[0]?.category || ''}`);
   const base = {
     ...current,
