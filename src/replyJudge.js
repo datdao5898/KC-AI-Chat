@@ -6,7 +6,7 @@ const { normalizeContext, isContextualProductFollowUp, isAlternativeProductReque
 
 function getApiConfig() {
   const model = process.env.OPENAI_JUDGE_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini';
-  const maxOutputTokens = Number(process.env.OPENAI_JUDGE_MAX_OUTPUT_TOKENS || 1200);
+  const maxOutputTokens = Math.max(220, Math.min(Number(process.env.OPENAI_JUDGE_MAX_OUTPUT_TOKENS || 420), 600));
   const timeoutMs = Number(process.env.OPENAI_JUDGE_TIMEOUT_MS || process.env.AI_TIMEOUT_MS || 45000);
   return { model, maxOutputTokens, timeoutMs };
 }
@@ -20,7 +20,7 @@ async function callOpenAI(prompt, timeoutMs, attempt = 1) {
     timeoutMs,
     maxOutputTokens: attempt === 1 ? maxOutputTokens : Math.max(maxOutputTokens * 2, 1000),
     maxAttempts: 1,
-    reasoningEffort: process.env.OPENAI_JUDGE_REASONING_EFFORT || 'minimal',
+    reasoningEffort: process.env.OPENAI_JUDGE_REASONING_EFFORT || 'none',
     messages: [
       {
         role: 'system',
@@ -102,14 +102,14 @@ function compactText(text, maxChars = 800) {
 }
 
 function summarizeProducts(ragProducts = [], includeDescriptions = false) {
-  return (ragProducts || []).slice(0, 3).map((product, index) => {
+  return (ragProducts || []).slice(0, 2).map((product, index) => {
     const name = product.name || product.title || product.sku || `Product ${index + 1}`;
     const price = product.price || product.gia || product.compare_at_price || '';
     const url = product.url || product.link || product.product_url || '';
     const sku = product.sku || '';
     const brand = product.brand || product.vendor || product.category || '';
     const description = includeDescriptions
-      ? compactText(product.description || product.content || product.details || '', 600)
+      ? compactText(product.description || product.content || product.details || '', 240)
       : '';
     return [
       `${index + 1}. ${name}`,
@@ -123,10 +123,10 @@ function summarizeProducts(ragProducts = [], includeDescriptions = false) {
 }
 
 function summarizeWebSources(webSources = []) {
-  return (webSources || []).slice(0, 3).map((source, index) => {
+  return (webSources || []).slice(0, 1).map((source, index) => {
     const url = String(source?.url || '').trim();
     const title = String(source?.title || '').trim();
-    const content = compactText(source?.content || '', 280);
+    const content = compactText(source?.content || '', 180);
     return [
       `${index + 1}. ${title || url || 'Official source'}`,
       url ? `URL: ${url}` : '',
@@ -136,9 +136,9 @@ function summarizeWebSources(webSources = []) {
 }
 
 function summarizeHistory(history = []) {
-  return (history || []).slice(-4).map(message => {
+  return (history || []).slice(-2).map(message => {
     const sender = message.sender_type || message.senderType || 'unknown';
-    const text = compactText(message.text || '', 260);
+    const text = compactText(message.text || '', 160);
     const createdAt = message.created_at || message.createdAt || '';
     return `${createdAt ? `[${createdAt}] ` : ''}${sender}: ${text}`;
   }).join('\n');
@@ -167,8 +167,8 @@ function summarizeConversationContext(context = {}) {
 }
 
 function summarizeTrustedKnowledge(sourceKey = '') {
-  const faq = compactText(loadTextFile('faq.md', { sourceKey }), 700);
-  const policies = compactText(loadTextFile('policies.md', { sourceKey }), 900);
+  const faq = compactText(loadTextFile('faq.md', { sourceKey }), 350);
+  const policies = compactText(loadTextFile('policies.md', { sourceKey }), 500);
   return [
     faq ? `FAQ: ${faq}` : '',
     policies ? `Policies: ${policies}` : ''
@@ -345,11 +345,7 @@ function buildJudgePrompt({
     `Search query used for retrieval: ${searchQuery || '(none)'}`,
     'Conversation context state:',
     contextText,
-    `Customer profile: ${JSON.stringify({
-      name: customer?.name || '',
-      phone: customer?.phone || '',
-      external_id: customer?.external_id || customer?.externalUserId || ''
-    })}`,
+    `Customer profile: phone already provided = ${customer?.phone ? 'yes' : 'no'}`,
     '',
     'Latest customer message:',
     String(userText || '').trim(),
@@ -373,21 +369,11 @@ function buildJudgePrompt({
     validationText,
     '',
     'Audit checklist:',
-    '1. The latest customer message has priority. Use recent conversation and Conversation context state only to resolve a genuine follow-up such as "that product", "the previous model", "link for it", "con mau do", or "san pham do".',
-    '1a. If the latest message is self-contained, do not add a camera brand, mount, model, budget, or requirement that the customer did not mention. Never infer those details from an older image or an older topic.',
-    '1b. If alternative_product_request is true, or the customer asks for another/different model, the previous product is an exclusion rather than a required match. Different models or brands are valid when they remain in the requested category, active source scope, and retrieved catalog evidence.',
-    '2. Check whether the draft reply answers that inferred need directly OR politely defers the question to staff. A polite apology and offer to check with staff is an ACCEPTABLE and DIRECT answer. Do NOT reject it.',
-    '3. Check product relevance. Product name/category/brand/model/price/link in the reply MUST EXACTLY MATCH the retrieved catalog or official web sources. Reject IMMEDIATELY if the AI invents a product, link, or price that is not in the evidence. Do not let a generic word match change the category.',
-    '4. Check source scope. If a fanpage/source is scoped to one brand, the reply must not recommend another brand unless recent context clearly asks to switch.',
-    '5. Check support. Product identity, price, SKU, seller link, warranty, VAT, delivery, stock, store address, contact details, or policy claims must be supported by retrieved catalog, recent conversation, trusted FAQ/policy knowledge, or source data shown here. Product usage guidance may also be supported by the official web sources shown here.',
-    '5a. Official web sources may support only usage, setup, pairing, connection, configuration, and troubleshooting. They must not be used as evidence for store price, stock, promotions, VAT, delivery, or seller policy.',
-    `6. Check broad catalog questions separately. If the customer asks what ${expectedBrand} sells in general, the reply should describe product groups, not pretend one random product answers the question.`,
-    '7. Check tone and format. No laughing at customers, no markdown bold, no emoji, no "AI/bot/system" wording to customers.',
-    `7a. The reply must speak as ${expectedBrand}. Reject or correct it if it presents the seller as KingCom, NewLite, or another page name that is not ${expectedBrand}. Product names and URLs may retain their original wording.`,
-    customer?.phone
-      ? '7b. The customer profile already contains a phone number. Reject any draft that asks the customer to provide or leave a phone number again. The reply may say staff will use the phone number already provided.'
-      : '7b. The customer profile does not contain a phone number, so a polite optional request for contact information is allowed when staff follow-up is genuinely needed.',
-    '8. If the draft is polite and safe (e.g. asking staff to confirm, apologizing for lack of info), APPROVE it. Do not reject just because it lacks specific product info if it safely deferred to staff.',
+    '1. Answer the latest customer message. Use old context only for a real follow-up. An alternative-product request may intentionally change model/brand within active source scope.',
+    '2. Every product name, SKU, price, seller link, stock, policy, or store fact must be supported by the evidence pack. Reject invented or mismatched facts immediately.',
+    '3. Reject a reply that changes the active product on a follow-up, changes source/brand, or lists unrelated products.',
+    '4. Official web sources support only usage, setup, connection, configuration, and troubleshooting; never commercial facts.',
+    '5. A brief, polite staff handoff is acceptable when data is insufficient. Check language, tone, and do not ask for a phone again when one is already known.',
     '',
     'Correction rules:',
     '- If wrong but fixable using only supplied context, provide correctedReply in the customer language.',
@@ -487,10 +473,18 @@ function judgeUnavailableResult(reason, payload = {}) {
 
 function isTrustedDeterministicReplySource(aiSource = '') {
   const source = String(aiSource || '').trim();
-  if (source === 'rule_source_store_info') return false;
-  return source === 'rule'
-    || source.startsWith('rule_')
-    || source.startsWith('direct_');
+  return new Set([
+    'rule',
+    'rule_policy',
+    'rule_catalog_overview',
+    'rule_broad_consultation',
+    'rule_retrieval_clarification',
+    'rule_context_clarification',
+    'rule_conversation_stop',
+    'rule_human_handoff',
+    'rule_contact_info',
+    'rule_no_catalog_match'
+  ]).has(source);
 }
 
 async function judgeAiReply(payload) {

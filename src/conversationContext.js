@@ -1,6 +1,7 @@
 const { searchProducts, normalize, queryWords } = require('./rag');
 const { readSourceConfig } = require('./sourceRegistry');
 const { parseCustomerMessage } = require('./customerIntentParser');
+const { inferCategory } = require('./taxonomy');
 
 const CONTEXT_STOPWORDS = new Set([
   'anh', 'chi', 'ban', 'minh', 'toi', 'em', 'shop', 'can', 'muon',
@@ -58,22 +59,7 @@ function isAlternativeProductRequest(text) {
 }
 
 function inferRequestedCategory(text) {
-  const normalized = normalize(text);
-  const rules = [
-    ['gimbal', /\b(chong rung|khong bi rung|giam rung|giu on dinh|quay on dinh|gimbal|stabilizer)\b/i],
-    ['tripod', /\b(tripod|tripid|chan may|chan chup|phoi sang|bon chan|4 chan|ulanzi mt[- ]?\d+)\b/i],
-    ['headphones', /\b(tai nghe|headphone|headphones|headset)\b/i],
-    ['webcam', /\b(webcam|hop online|goi video|video call)\b/i],
-    ['microphone', /\b(micro|mic|microphone|thu am|ghi am|loc tap am)\b/i],
-    ['light', /\b(den\s+(?:quay|chup|led|livestream|studio|san pham|chu the|ulanzi|nanlite|colbor)|(?:ulanzi|nanlite|colbor)\s+den|ring light|tube light|fill light|key light|lighting|bo sung anh sang|anh sang|chieu sang)\b/i],
-    ['lens', /\b(lens|ong kinh|chup phong canh|chup chan dung|xoa phong)\b/i],
-    ['filter', /\b(filter|kinh loc|nd filter|cpl)\b/i],
-    ['monitor', /\b(man hinh phu|monitor|man hinh selfie)\b/i],
-    ['bag', /\b(balo|backpack|tui may anh|tui dung)\b/i],
-    ['fog_machine', /\b(may tao khoi|tao khoi|smoke machine|fog machine|smoke b|filmog)\b/i],
-    ['livestream', /\b(livestream|live stream|thiet bi live|ban hang online|phat song truc tiep|quay phat truc tiep|video switcher|switcher|capture card|console pad|livepro)\b/i]
-  ];
-  return rules.find(([, pattern]) => pattern.test(normalized))?.[0] || '';
+  return inferCategory(text);
 }
 
 function isNewCategoryRequest(text, intent, requestedCategory) {
@@ -228,7 +214,10 @@ function resolveConversationContext({
   const explicit = findExplicitProduct(userText, sourceKey);
   const contextualFollowUp = isContextualProductFollowUp(userText);
   const alternativeRequest = isAlternativeProductRequest(userText);
-  const inferredCategory = inferRequestedCategory(userText);
+  // A bare brand name (for example "mua Synco") is not enough to infer a product type.
+  const inferredCategory = customerIntent?.signals?.brand_only
+    ? ''
+    : inferRequestedCategory(userText);
   const structuredMessageCategory = customerIntent?.signals?.category_source === 'message'
     ? customerIntent.category
     : '';

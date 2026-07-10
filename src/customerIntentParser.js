@@ -10,21 +10,7 @@ const {
   searchProducts
 } = require('./rag');
 const { readSourceConfig } = require('./sourceRegistry');
-
-const CATEGORY_RULES = [
-  ['gimbal', /\b(chong rung|khong bi rung|giam rung|giu on dinh|quay on dinh|gimbal|stabilizer)\b/i],
-  ['tripod', /\b(tripod|tripid|chan may|chan chup|chan den|gay selfie|phoi sang|bon chan|4 chan|ulanzi mt[- ]?\d+)\b/i],
-  ['headphones', /\b(tai nghe|headphone|headphones|headset)\b/i],
-  ['webcam', /\b(webcam|hop online|goi video|video call)\b/i],
-  ['microphone', /\b(micro|mic|microphone|thu am|ghi am|loc tap am|maono|fifine|boya|comica|synco)\b/i],
-  ['light', /\b(den\s+(?:quay|chup|led|livestream|studio|san pham|chu the|ulanzi|nanlite|colbor)|(?:ulanzi|nanlite|colbor)\s+den|ring light|tube light|fill light|key light|lighting|bo sung anh sang|anh sang|chieu sang|nanlite|colbor)\b/i],
-  ['lens', /\b(lens|ong kinh|chup phong canh|chup chan dung|xoa phong|viltrox)\b/i],
-  ['filter', /\b(filter|kinh loc|nd filter|cpl)\b/i],
-  ['monitor', /\b(man hinh phu|monitor|man hinh selfie)\b/i],
-  ['bag', /\b(balo|backpack|tui may anh|tui dung)\b/i],
-  ['fog_machine', /\b(may tao khoi|tao khoi|smoke machine|fog machine|smoke b|filmog)\b/i],
-  ['livestream', /\b(livestream|live stream|thiet bi live|ban hang online|phat song truc tiep|quay phat truc tiep|video switcher|switcher|capture card|console pad|livepro)\b/i]
-];
+const { inferCategory } = require('./taxonomy');
 
 const USE_CASE_RULES = [
   ['livestream', /\b(livestream|live stream|phat song|ban hang online|tiktok live|facebook live)\b/i],
@@ -122,14 +108,23 @@ function extractBudget(text = '') {
   return (budget.min || budget.max || budget.exact) ? budget : null;
 }
 
-function inferCategory(text = '') {
-  const normalized = normalize(text);
-  return CATEGORY_RULES.find(([, pattern]) => pattern.test(normalized))?.[0] || '';
-}
-
 function extractPolicyQuestion(text = '') {
   const normalized = normalize(text);
   return POLICY_RULES.find(([, pattern]) => pattern.test(normalized))?.[0] || '';
+}
+
+function isMultiItemQuoteRequest(text = '') {
+  const raw = String(text || '').toLowerCase();
+  const normalized = normalize(text);
+  const texts = [normalized, raw];
+  const includesAny = pattern => texts.some(value => pattern.test(value));
+  const itemCount = [
+    /\b(micro|mic|microphone)\b/i,
+    /\b(boom arm|gia treo micro|scissor arm|tay arm)\b/i,
+    /\b(pop filter|loc am|luoi doi|double layer)\b/i
+  ].filter(includesAny).length;
+  const asksForQuote = includesAny(/\b(bao gia|báo giá|gia cuoi|giá cuối|tron bo|trọn bộ|bo san pham|bộ sản phẩm|san pham sau|sản phẩm sau|nhung san pham sau|những sản phẩm sau|bao gia giup|báo giá giúp|quote|quotation)\b/i);
+  return asksForQuote && itemCount >= 2;
 }
 
 function extractUseCases(text = '') {
@@ -222,6 +217,7 @@ function parseCustomerMessage(text = '', options = {}) {
   const currentCategory = brandOnlyRequest ? '' : inferCategory(text);
   const budget = extractBudget(text);
   const policyQuestion = extractPolicyQuestion(text);
+  const multiItemQuote = isMultiItemQuoteRequest(text);
   const useCases = extractUseCases(text);
   const compatibilityTargets = extractCompatibilityTargets(text);
   const matchedProducts = !brandOnlyRequest && shouldLookupProduct(text, sourceKey)
@@ -250,6 +246,7 @@ function parseCustomerMessage(text = '', options = {}) {
     use_case: useCases.join(', '),
     compatibility_target: compatibilityTargets.join(', '),
     policy_question: policyQuestion,
+    multi_item_quote: multiItemQuote,
     confidence: product ? Number(Math.min(0.95, Math.max(0.55, Number(product.score || 0) / 60)).toFixed(2)) : 0,
     signals: {
       category_source: currentCategory ? 'message' : (productCategory ? 'product' : (existingContext.requested_category ? 'context' : '')),
@@ -288,6 +285,7 @@ module.exports = {
   extractBudget,
   inferCategory,
   extractPolicyQuestion,
+  isMultiItemQuoteRequest,
   extractUseCases,
   extractCompatibilityTargets,
   isBrandOnlyRequest

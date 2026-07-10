@@ -112,8 +112,8 @@ test('judge unavailable fallback blocks obvious product drift on follow-up quest
   assert.match(result.correctedReply, /chuyển thông tin cho nhân viên/i);
 });
 
-test('deterministic rule and direct reply sources do not call the model judge', async () => {
-  for (const aiSource of ['rule_policy', 'rule_no_catalog_match', 'direct_catalog_product_specs']) {
+test('only low-risk deterministic reply sources skip the model judge', async () => {
+  for (const aiSource of ['rule_policy', 'rule_no_catalog_match']) {
     assert.equal(isTrustedDeterministicReplySource(aiSource), true);
     const result = await judgeAiReply({
       aiSource,
@@ -125,6 +125,9 @@ test('deterministic rule and direct reply sources do not call the model judge', 
     assert.equal(result.needsHandoff, false);
     assert.equal(result.skipped, 'deterministic_reply_source');
   }
+
+  assert.equal(isTrustedDeterministicReplySource('direct_catalog_product_specs'), false);
+  assert.equal(isTrustedDeterministicReplySource('rule_scoped_products'), false);
 });
 
 test('provider and fallback replies still require model or local judge checks', () => {

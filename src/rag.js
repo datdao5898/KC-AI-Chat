@@ -222,16 +222,28 @@ function extractMaxPrice(query) {
   return val > 10000 ? Math.round(val) : Math.round(val * 1000000);
 }
 
+const FILE_ROWS_CACHE = new Map();
+
 function fileRows(file) {
-  if (!fs.existsSync(file)) return [];
+  if (!fs.existsSync(file)) {
+    FILE_ROWS_CACHE.delete(file);
+    return [];
+  }
+  const stat = fs.statSync(file);
+  const cached = FILE_ROWS_CACHE.get(file);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    return cached.rows;
+  }
   const rows = parseCsvText(fs.readFileSync(file, 'utf8'));
   if (rows.length < 2) return [];
   const headers = rows[0].map(h => h.trim());
-  return rows.slice(1).map(vals => {
+  const normalizedRows = rows.slice(1).map(vals => {
     const obj = {};
     headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
     return normalizeProductRow(obj);
   });
+  FILE_ROWS_CACHE.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, rows: normalizedRows });
+  return normalizedRows;
 }
 
 function firstValue(row, keys = []) {
@@ -289,17 +301,13 @@ function dedupeProducts(products) {
   return out;
 }
 
-let knownProductBrandsCache = null;
-
 function getKnownProductBrands() {
-  if (knownProductBrandsCache) return knownProductBrandsCache;
   const legacyFile = path.join(DATA_DIR, 'products.csv');
-  knownProductBrandsCache = [...new Set(
+  return [...new Set(
     fileRows(legacyFile)
       .map(p => normalize(p.vendor || p.brand || ''))
       .filter(Boolean)
   )];
-  return knownProductBrandsCache;
 }
 
 function isScopedFacebookSource(sourceKey) {

@@ -1,37 +1,5 @@
-const { normalize, parsePriceNumber } = require('./rag');
-
-const CATEGORY_RULES = [
-  {
-    id: 'microphone',
-    label: 'micro',
-    ask: /\b(mic|micro|microphone|thu am|micro thu am|maono|fifine|boya|comica|synco)\b/i,
-    product: /\b(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco|xlr|condenser|dynamic|lav|wireless microphone)\b/i
-  },
-  {
-    id: 'light',
-    label: 'den',
-    ask: /\b(den|led|light|ring light|tube|rgb|vijim|vl\d+)\b/i,
-    product: /\b(den|led|light|ring light|tube|rgb|vijim|vl\d+|bang led)\b/i
-  },
-  {
-    id: 'tripod',
-    label: 'tripod',
-    ask: /\b(tripod|chan may|chan den|gia do|kep dien thoai)\b/i,
-    product: /\b(tripod|chan may|chan den|gia do|kep dien thoai)\b/i
-  },
-  {
-    id: 'bag',
-    label: 'balo/tui',
-    ask: /\b(balo|tui|backpack|bag)\b/i,
-    product: /\b(balo|tui|backpack|bag)\b/i
-  },
-  {
-    id: 'gimbal',
-    label: 'gimbal',
-    ask: /\b(gimbal|chong rung|stabilizer|zhiyun|weebill|crane)\b/i,
-    product: /\b(gimbal|chong rung|stabilizer|zhiyun|weebill|crane)\b/i
-  }
-];
+const { normalize, parsePriceNumber, matchesRequiredCategory } = require('./rag');
+const { matchingCategories } = require('./taxonomy');
 
 function norm(text) {
   return normalize(text || '').replace(/\s+/g, ' ').trim();
@@ -43,16 +11,15 @@ function extractMaxPrice(text) {
   const m2 = normalized.match(/(\d+(?:[\.,]\d+)?)\s*(trieu|tr|m|k|nghin|ngan)\s*(?:tro xuong|do lai|do ve|quay dau)/);
   const m = m1 || m2;
   if (!m) return null;
-  const val = Number(m[1].replace(',', '.'));
+  const value = Number(m[1].replace(',', '.'));
   const unit = m[2] || '';
-  if (['trieu', 'tr', 'm'].includes(unit)) return Math.round(val * 1000000);
-  if (['k', 'nghin', 'ngan'].includes(unit)) return Math.round(val * 1000);
-  return val > 10000 ? Math.round(val) : Math.round(val * 1000000);
+  if (['trieu', 'tr', 'm'].includes(unit)) return Math.round(value * 1000000);
+  if (['k', 'nghin', 'ngan'].includes(unit)) return Math.round(value * 1000);
+  return value > 10000 ? Math.round(value) : Math.round(value * 1000000);
 }
 
 function categoriesInText(text) {
-  const normalized = norm(text);
-  return CATEGORY_RULES.filter(rule => rule.ask.test(normalized));
+  return matchingCategories(text);
 }
 
 function isFollowUp(text) {
@@ -89,7 +56,7 @@ function productText(product = {}) {
 }
 
 function productMatchesCategory(product, category) {
-  return category.product.test(productText(product));
+  return matchesRequiredCategory(product, category.id);
 }
 
 function productAppearsInReply(reply, product = {}) {
@@ -104,38 +71,132 @@ function replyMentionsProduct(reply) {
   return /https?:\/\/|link:|gia:|giá:|\d[\d.,]*\s*(d|đ|vnd)|sku/i.test(String(reply || ''));
 }
 
-function buildSafeReply({ categories, maxPrice, reason }) {
-  const categoryLabel = categories.map(item => item.label).join(', ') || 'sản phẩm phù hợp';
-  const priceText = maxPrice ? ` dưới ${maxPrice.toLocaleString('vi-VN')}đ` : '';
-  const reasonText = reason ? ` (${reason})` : '';
-  return `Dạ em kiểm tra lại để tránh tư vấn sai${reasonText}. Hiện KingCom chưa tìm thấy mẫu ${categoryLabel}${priceText} phù hợp trong catalog hiện tại.\n\nEm đã chuyển thông tin này cho nhân viên KingCom kiểm tra thêm để hỗ trợ anh/chị chính xác hơn ạ.`;
+function buildSafeReply({ categories, maxPrice, customerBrand = 'KingCom', expectedLanguage = 'vi' }) {
+  const categoryLabel = categories.map(item => item.label).join(', ') || 'sản phẩm anh/chị quan tâm';
+  const priceText = maxPrice ? ` trong ngân sách dưới ${maxPrice.toLocaleString('vi-VN')}đ` : '';
+  if (expectedLanguage === 'en') {
+    return `I need to verify this again to avoid giving incorrect advice. I have forwarded the details to ${customerBrand} staff for a more accurate check.`;
+  }
+  if (expectedLanguage === 'zh') {
+    return `为避免提供错误建议，我需要再次核实。相关信息已转交 ${customerBrand} 工作人员进一步确认。`;
+  }
+  return `Dạ em cần kiểm tra lại để tránh tư vấn sai về ${categoryLabel}${priceText}. Em đã chuyển thông tin cho nhân viên ${customerBrand} kiểm tra chính xác hơn ạ.`;
 }
 
-function validateAiReply({ userText, history = [], reply, ragProducts = [] }) {
-  // Relaxed regex validation: defer context checking entirely to the AI Judge
-  return { ok: true };
-  const maxPrice = extractMaxPrice(userText) || extractMaxPrice((history || []).map(m => m.text).slice(-4).join(' '));
+function normalizeUrl(value = '') {
+  return String(value || '').trim().replace(/[.,;:!?]+$/g, '').replace(/\/+$/g, '');
+}
+
+function extractUrls(text = '') {
+  return (String(text || '').match(/https?:\/\/[^\s<>"')\]]+/gi) || [])
+    .map(normalizeUrl)
+    .filter(Boolean);
+}
+
+function productUrl(product = {}) {
+  return normalizeUrl(product.url || product.link || product.product_url || '');
+}
+
+function isAlternativeRequest(text = '', context = {}) {
+  return Boolean(context?.alternative_product_request)
+    || /\b(mau khac|model khac|san pham khac|sp khac|loai khac|phuong an khac|tuong tu|another|other)\b/i.test(norm(text));
+}
+
+function isContextualQuestion(text = '') {
+  return /\b(no|nay|do|san pham nay|san pham do|mau nay|mau do|model nay|model do|thong so|cau hinh|chi tiet|cach su dung|huong dan|ket noi|setup|remote|kem .* khong|dung .* khong|con hang)\b/i.test(norm(text));
+}
+
+function hasPromptLeak(reply = '') {
+  const raw = String(reply || '').trim();
+  const normalized = norm(raw);
+  return /^(?:thought|analysis|assistant|system|developer)\b/i.test(raw)
+    || /\b(system prompt|developer message|final language rule|bat buoc tuan thu|du lieu tham khao|lich su gan day|truy van dung de tim san pham|consultant for)\b/i.test(normalized)
+    || /<\/?(?:think|analysis)>/i.test(raw);
+}
+
+function hasObviousLanguageMismatch(reply = '', expectedLanguage = 'vi') {
+  const text = String(reply || '');
+  if (expectedLanguage === 'vi') {
+    return /\b(i found|please tell|how can i|thank you|could you|which product|share your phone)\b/i.test(text)
+      && !/\b(dạ|anh\/chị|bạn|hiện|sản phẩm|giá|để em)\b/i.test(text);
+  }
+  if (expectedLanguage === 'en') {
+    return /\b(dạ|anh\/chị|hiện tại|sản phẩm|giá|để em|chưa có)\b/i.test(text);
+  }
+  return false;
+}
+
+function contextProductMismatch({ userText, reply, conversationContext = {} }) {
+  if (!isContextualQuestion(userText) || isAlternativeRequest(userText, conversationContext)) return false;
+  const currentUrl = normalizeUrl(conversationContext.current_product_url || '');
+  const currentSku = norm(conversationContext.current_product_sku || '');
+  if (!currentUrl && !currentSku) return false;
+
+  const replyUrls = extractUrls(reply).filter(url => /\/products?\//i.test(url));
+  if (currentUrl && replyUrls.length && replyUrls.some(url => url !== currentUrl)) return true;
+  if (currentSku && /\bsku\s*:/i.test(String(reply || ''))) {
+    const replySku = norm(String(reply || '').match(/\bsku\s*:\s*([^\s,|)]+)/i)?.[1] || '');
+    return Boolean(replySku && replySku !== currentSku);
+  }
+  return false;
+}
+
+function invalidProductUrl(reply = '', ragProducts = [], webSources = [], conversationContext = {}) {
+  const replyUrls = extractUrls(reply).filter(url => /\/products?\//i.test(url));
+  if (!replyUrls.length) return false;
+  const allowed = new Set([
+    ...ragProducts.map(productUrl),
+    ...webSources.map(source => normalizeUrl(source?.url || '')),
+    normalizeUrl(conversationContext.current_product_url || '')
+  ].filter(Boolean));
+  return replyUrls.some(url => !allowed.has(url));
+}
+
+function validationFailure(reason, options) {
+  return {
+    ok: false,
+    reason,
+    reply: buildSafeReply(options)
+  };
+}
+
+function validateAiReply({
+  userText,
+  history = [],
+  reply,
+  ragProducts = [],
+  webSources = [],
+  conversationContext = {},
+  customerBrand = 'KingCom',
+  expectedLanguage = 'vi',
+  multiItemQuote = false
+} = {}) {
+  const maxPrice = extractMaxPrice(userText) || extractMaxPrice((history || []).map(message => message.text).slice(-4).join(' '));
+  const categories = inferRequestedCategories(userText, history);
+  const safeOptions = { categories, maxPrice, customerBrand, expectedLanguage };
+
+  if (hasPromptLeak(reply)) {
+    return validationFailure('Câu trả lời có dấu hiệu lộ prompt hoặc reasoning nội bộ', safeOptions);
+  }
+  if (hasObviousLanguageMismatch(reply, expectedLanguage)) {
+    return validationFailure('Câu trả lời dùng sai ngôn ngữ so với khách', safeOptions);
+  }
+  if (invalidProductUrl(reply, ragProducts, webSources, conversationContext)) {
+    return validationFailure('Link sản phẩm trong câu trả lời không thuộc dữ liệu đã tìm được', safeOptions);
+  }
+  if (contextProductMismatch({ userText, reply, conversationContext })) {
+    return validationFailure('Câu trả lời đổi sang sản phẩm khác với ngữ cảnh đang hỏi', safeOptions);
+  }
   if (!categories.length && !maxPrice) return { ok: true };
   if (!replyMentionsProduct(reply)) return { ok: true };
 
   const productsInReply = (ragProducts || []).filter(product => productAppearsInReply(reply, product));
   const candidateProducts = productsInReply.length ? productsInReply : (ragProducts || []);
 
-  if (categories.length && candidateProducts.length) {
+  if (!multiItemQuote && categories.length && candidateProducts.length) {
     const matching = candidateProducts.filter(product => categories.some(category => productMatchesCategory(product, category)));
-    if (!matching.length) {
-      return {
-        ok: false,
-        reason: 'Câu trả lời lệch nhóm sản phẩm khách hỏi',
-        reply: buildSafeReply({ categories, maxPrice, reason: 'sản phẩm tìm được đang lệch nhóm khách hỏi' })
-      };
-    }
-    if (productsInReply.length && productsInReply.some(product => !categories.some(category => productMatchesCategory(product, category)))) {
-      return {
-        ok: false,
-        reason: 'Câu trả lời có sản phẩm lệch nhóm',
-        reply: buildSafeReply({ categories, maxPrice, reason: 'câu trả lời có sản phẩm không đúng nhóm khách hỏi' })
-      };
+    if (!matching.length || (productsInReply.length && productsInReply.some(product => !categories.some(category => productMatchesCategory(product, category))))) {
+      return validationFailure('Câu trả lời có sản phẩm lệch nhóm khách hỏi', safeOptions);
     }
   }
 
@@ -145,11 +206,7 @@ function validateAiReply({ userText, history = [], reply, ragProducts = [] }) {
       return price > 0 && price > maxPrice && productAppearsInReply(reply, product);
     });
     if (overBudgetProducts.length) {
-      return {
-        ok: false,
-        reason: 'Câu trả lời vượt ngân sách khách hỏi',
-        reply: buildSafeReply({ categories, maxPrice, reason: 'sản phẩm tìm được đang vượt ngân sách khách hỏi' })
-      };
+      return validationFailure('Câu trả lời vượt ngân sách khách hỏi', safeOptions);
     }
   }
 
@@ -159,5 +216,9 @@ function validateAiReply({ userText, history = [], reply, ragProducts = [] }) {
 module.exports = {
   validateAiReply,
   inferRequestedCategories,
-  extractMaxPrice
+  extractMaxPrice,
+  hasPromptLeak,
+  hasObviousLanguageMismatch,
+  contextProductMismatch,
+  invalidProductUrl
 };

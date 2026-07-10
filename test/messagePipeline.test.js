@@ -108,6 +108,18 @@ test('detectHandoff does not escalate a web-supported specs reply without RAG ro
   assert.equal(result.needed, false);
 });
 
+test('detectHandoff does not escalate a useful catalog fallback only because provider failed', () => {
+  const result = detectHandoff({
+    text: 'micro maono arm la gi',
+    intent: 'product_search',
+    aiError: true,
+    aiSource: 'fallback',
+    ragProducts: [{ sku: 'MA03', name: 'Maono BA91 Boom Arm' }]
+  });
+
+  assert.equal(result.needed, false);
+});
+
 test('normalizeCustomerReply only performs format and decoration cleanup', () => {
   const reply = 'Ha ha, khách hỏi nhầm lẫn gì đây 😊\n\n\nNội dung tiếp theo.';
   const result = normalizeCustomerReply(reply);

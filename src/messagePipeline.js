@@ -12,6 +12,7 @@ const { judgeAiReply } = require('./replyJudge');
 const { analyzeProductImages } = require('./mediaVision');
 const { resolveConversationContext, updateContextFromReply } = require('./conversationContext');
 const { parseCustomerMessage } = require('./customerIntentParser');
+const { validateAiReply } = require('./replyValidator');
 
 function normalizeForMatch(text) {
   return String(text || '')
@@ -74,7 +75,11 @@ function detectHandoff({ text, intent, aiError, ragProducts, aiSource = '' }) {
   if (/\b(hoi|hỏi).{0,30}(tu van|tư vấn|gioi thieu|giới thiệu)|\b(tu van|tư vấn).{0,30}(sai|nham|nhầm|lac de|lạc đề)|\b(dang hoi|đang hỏi).{0,50}(tu van|tư vấn)/i.test(normalized)) {
     return { needed: true, reason: 'Khách phản hồi AI tư vấn sai/lạc đề' };
   }
-  if (aiError) return { needed: true, reason: 'AI lỗi hoặc hết quota, cần nhân viên kiểm tra' };
+  // A deterministic catalog fallback can still be useful when the provider fails.
+  // Escalate only when the failure also leaves us without product evidence.
+  if (aiError && (!ragProducts || ragProducts.length === 0)) {
+    return { needed: true, reason: 'AI lỗi và chưa có dữ liệu đủ chắc chắn để trả lời' };
+  }
   if (isVatInvoiceFollowUpText(text)) {
     return { needed: false };
   }
@@ -442,16 +447,18 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     ragProducts,
     webSources = [],
     webSearchRequests = 0,
-    conversationContext: replyConversationContext
+    conversationContext: replyConversationContext,
+    handoff: replyHandoff
   } = replyResult;
   const effectiveConversationContext = replyConversationContext && typeof replyConversationContext === 'object'
     ? replyConversationContext
     : conversationContext;
-  const validation = { ok: true, skipped: 'single_ai_judge_final_check' };
   const generatedReply = rawReply;
   const baseHandoff = mediaRecognitionFailed
     ? { needed: true, reason: `Không nhận dạng được hình ảnh sản phẩm ${channel === 'facebook' ? 'Facebook' : 'website'}` }
-    : detectHandoff({ text: processingText, intent, aiError, ragProducts, aiSource });
+    : (replyHandoff?.needed
+      ? replyHandoff
+      : detectHandoff({ text: processingText, intent, aiError, ragProducts, aiSource }));
   let handoff = baseHandoff;
   let reply = applyCustomerBranding(
     normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, originalText || processingText)),
@@ -459,6 +466,29 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     ragProducts
   );
   reply = avoidRepeatedContactRequest(reply, freshCustomer, originalText || processingText);
+  const validation = validateAiReply({
+    userText: processingText,
+    history,
+    reply,
+    ragProducts,
+    webSources,
+    conversationContext: effectiveConversationContext,
+    customerBrand,
+    expectedLanguage: detectMessageLanguage(processingText, history),
+    multiItemQuote: Boolean(effectiveConversationContext.customer_intent?.multi_item_quote)
+  });
+  if (!validation.ok) {
+    handoff = {
+      needed: true,
+      reason: validation.reason || 'Validator chặn câu trả lời có dữ liệu không khớp'
+    };
+    reply = applyCustomerBranding(
+      normalizeCustomerReply(validation.reply),
+      customerBrand,
+      ragProducts
+    );
+    reply = avoidRepeatedContactRequest(reply, freshCustomer, originalText || processingText);
+  }
   const judge = await judgeAiReply({
     channel,
     userText: processingText,
@@ -472,7 +502,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceGroup: source.sourceGroup,
     customerBrand,
     customer: freshCustomer,
-    aiSource,
+    aiSource: validation.ok ? aiSource : 'validator_safe_fallback',
     searchQuery,
     webSources,
     conversationContext: effectiveConversationContext

@@ -33,7 +33,7 @@ const {
   inferRequestedCategory,
   findExplicitProduct
 } = require('./conversationContext');
-const { structuredMessageSearchText } = require('./customerIntentParser');
+const { structuredMessageSearchText, isMultiItemQuoteRequest } = require('./customerIntentParser');
 
 async function callOpenAI(prompt, timeoutMs) {
   const model = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
@@ -228,7 +228,8 @@ function buildContactInfoReply(userText, lang = 'vi') {
 }
 
 function productDisplayName(product, fallback = 'product') {
-  return product.name || product.title || product.sku || fallback;
+  const name = product.name || product.title || product.sku || fallback;
+  return String(name).replace(/\s*-\s*default title\s*$/i, '').trim() || fallback;
 }
 
 function isConversationStopRequest(text = '') {
@@ -303,6 +304,131 @@ function productLine(product, index = 1) {
   const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
   const url = product.url || product.link || product.product_url || '';
   return `${index}. ${name}\nGiá: ${price}${url ? `\nLink: ${url}` : ''}`;
+}
+
+function quoteAvailabilityText(product = {}) {
+  const availability = normalize(product.availability || '');
+  const stock = String(product.stock_total || product.inventory_quantity || product.stock || '').trim();
+  if (availability === 'in stock' || availability === 'in_stock') return stock ? `còn hàng theo catalog (tồn ${stock})` : 'còn hàng theo catalog';
+  if (availability === 'low stock' || availability === 'low_stock') return stock ? `sắp hết theo catalog (tồn ${stock})` : 'sắp hết theo catalog';
+  if (availability === 'out of stock' || availability === 'out_of_stock' || stock === '0' || /^-/.test(stock)) return 'đang hết hàng theo catalog';
+  return 'cần nhân viên xác nhận tồn kho';
+}
+
+function sourceWarrantyOverview(sourceKey = '') {
+  const normalizedPolicy = normalize(loadTextFile('policies.md', { sourceKey }));
+  const hasGeneralTerms = /than may.*12 thang\s*(?:\+\s*)?1 thang/.test(normalizedPolicy)
+    && /phu kien.*3 thang\s*(?:\+\s*)?1 thang/.test(normalizedPolicy);
+  if (!hasGeneralTerms) return '';
+  return 'Theo chính sách chung đang lưu: thân máy thường bảo hành 12 tháng + 1 tháng, phụ kiện 3 tháng + 1 tháng, tùy loại sản phẩm. Catalog chưa ghi thời hạn riêng của AM8 nên nhân viên cần xác nhận chính xác theo model/đơn hàng.';
+}
+
+function findQuoteProduct(query, sourceKey, predicate = () => true) {
+  const catalogMatches = loadProducts({ sourceKey }).filter(predicate);
+  if (!catalogMatches.length) return null;
+  const keys = new Set(catalogMatches.map(product => product.sku || product.url || product.name));
+  return searchProducts(query, 20, { sourceKey, requireIdentityMatch: false })
+    .find(product => keys.has(product.sku || product.url || product.name))
+    || catalogMatches[0];
+}
+
+function buildMultiItemQuoteReply({ userText, sourceKey, customerBrand, conversationContext = {} }) {
+  const parsed = conversationContext.customer_intent || {};
+  const items = [];
+  const productQuery = parsed.product_sku || parsed.product || '';
+  const requestedProduct = productQuery
+    ? searchProducts(productQuery, 1, { sourceKey, requireIdentityMatch: true })[0] || null
+    : null;
+  if (requestedProduct) items.push({ id: 'primary_product', label: productDisplayName(requestedProduct), product: requestedProduct });
+
+  const normalized = normalize(userText);
+  if (/\b(boom arm|gia treo micro|scissor arm|tay arm)\b/i.test(normalized)) {
+    const boomArm = findQuoteProduct('boom arm', sourceKey, product => {
+      const name = normalize(product.name || product.title || '');
+      const bundledMic = /\b(mic|micro|microphone)\b.{0,90}\b(boom arm|arm stand|scissor arm)\b/i.test(name);
+      return /\b(boom arm|arm stand|gia treo micro|scissor arm)\b/i.test(name)
+        && !bundledMic
+        && !/\b(kem boom arm|boom arm kem)\b/i.test(name);
+    });
+    const catalog = loadProducts({ sourceKey });
+    const loadRatedBoomArm = catalog.find(product => {
+      const name = normalize(product.name || product.title || '');
+      const text = normalize(`${name} ${product.description || ''}`);
+      const bundledMic = /\b(mic|micro|microphone)\b.{0,90}\b(boom arm|arm stand|scissor arm)\b/i.test(name);
+      return /\b(boom arm|arm stand|gia treo micro|scissor arm)\b/i.test(name)
+        && /\b(?:1|2|3|4|5)\s*kg\b/i.test(text)
+        && !bundledMic
+        && !/\b(kem boom arm|boom arm kem)\b/i.test(name);
+    });
+    items.push({ id: 'boom_arm', label: 'Boom Arm', product: loadRatedBoomArm || boomArm });
+  }
+
+  if (/\b(pop filter|loc am|luoi doi|double layer)\b/i.test(normalized)) {
+    const popFilter = findQuoteProduct('pop filter', sourceKey, product => {
+      const name = normalize(product.name || product.title || '');
+      return /\bpop filter\b/i.test(name) && !/\b(mic|micro|microphone|kit|bo|bundle)\b/i.test(name);
+    });
+    items.push({ id: 'pop_filter', label: 'Pop Filter lưới đôi', product: popFilter });
+  }
+
+  const lines = ['Dạ em đã kiểm tra các hạng mục anh/chị cần theo catalog hiện tại:'];
+  const evidenceProducts = [];
+  let referenceSubtotal = 0;
+  for (const item of items) {
+    if (!item.product) {
+      lines.push(`- ${item.label}: em chưa tìm thấy mẫu bán rời khớp chính xác trong catalog hiện tại.`);
+      continue;
+    }
+    const product = item.product;
+    evidenceProducts.push(product);
+    const numericPrice = parsePriceNumber(product.price || product.compare_at_price || product.gia || '');
+    if (numericPrice) referenceSubtotal += numericPrice;
+    const productName = productDisplayName(product);
+    const itemHeading = item.id === 'primary_product' ? productName : item.label;
+    const price = formatPrice(product.price || product.compare_at_price || product.gia || '');
+    const url = product.url || product.link || product.product_url || '';
+    lines.push(`- ${itemHeading}: ${item.id === 'primary_product' ? '' : `${productName}. `}Giá catalog: ${price}. Tình trạng: ${quoteAvailabilityText(product)}.${url ? ` Link: ${url}` : ''}`);
+  }
+
+  if (referenceSubtotal > 0) {
+    lines.push(`- Tạm tính các món đã tìm thấy: ${formatPrice(referenceSubtotal)}. Mức này chưa gồm Pop Filter và chưa phải báo giá chốt vì cả hai sản phẩm đang hết hàng theo catalog.`);
+  }
+
+  const mic = items.find(item => item.id === 'primary_product')?.product;
+  if (mic && /\busb\b/i.test(normalize(mic.description || mic.name || ''))) {
+    lines.push(`- Dùng với laptop Dell: catalog của ${productDisplayName(mic)} ghi hỗ trợ USB/XLR và có thể cắm trực tiếp vào PC qua USB. Với nhu cầu học phát âm và họp online cơ bản, không cần mixer; mixer/soundcard chỉ cần khi anh/chị muốn dùng ngõ XLR hoặc mở rộng setup.`);
+  }
+
+  const boomArm = items.find(item => item.id === 'boom_arm')?.product;
+  if (boomArm) {
+    const boomText = normalize(`${boomArm.name || ''} ${boomArm.description || ''} ${boomArm.tags || ''}`);
+    const confirmsAdapter = /\b(screw adapter 5 8|adapter 5 8|dau chuyen ren 5 8)\b/i.test(boomText);
+    const confirmsClamp = /\b(kep.*ban|thanh kep canh ban|kep gan)\b/i.test(boomText);
+    const confirmsCableManagement = /\b(quan ly day|day an|hidden cable|cable management)\b/i.test(boomText);
+    const loadMatch = boomText.match(/(?:tai trong[^\d]{0,20}|len den)\s*(\d+(?:[.,]\d+)?)\s*kg/i);
+    const details = [
+      loadMatch ? `tải trọng ghi nhận ${loadMatch[1]}kg` : '',
+      confirmsClamp ? 'có thông tin kẹp cạnh bàn' : '',
+      confirmsAdapter ? 'có screw adapter 5/8' : '',
+      confirmsCableManagement ? 'có thông tin quản lý dây' : ''
+    ].filter(Boolean).join(', ');
+    lines.push(`- Boom Arm: ${details || 'catalog chưa ghi đủ thông số lắp đặt'}. ${confirmsCableManagement ? '' : 'Catalog chưa ghi tính năng quản lý dây. '}Catalog chưa xác nhận riêng ren/ngàm của AM8 có khớp trọn bộ hay không, nên nhân viên cần kiểm tra trước khi chốt.`);
+  }
+
+  const warranty = sourceWarrantyOverview(sourceKey);
+  if (warranty) lines.push(`- Bảo hành: ${warranty}`);
+  else lines.push('- Bảo hành: catalog/policy hiện chưa có thời hạn đủ để xác nhận riêng cho AM8.');
+  lines.push('- Ưu đãi trọn bộ, ảnh thực tế và giá cuối cùng: catalog hiện chưa có dữ liệu để xác nhận.');
+  lines.push(`Em đã chuyển yêu cầu cho nhân viên ${customerBrand} kiểm tra tồn kho, phụ kiện đi kèm, hình thực tế và báo giá cuối cùng trước khi phản hồi anh/chị.`);
+
+  return {
+    reply: lines.join('\n\n'),
+    products: [...new Map(evidenceProducts.map(product => [product.sku || product.url || product.name, product])).values()],
+    handoff: {
+      needed: true,
+      reason: 'Yêu cầu báo giá bộ nhiều hạng mục cần xác nhận tồn kho, phụ kiện, ưu đãi hoặc hình thực tế'
+    }
+  };
 }
 
 const MULTI_ITEM_GENERIC_WORDS = new Set([
@@ -2154,8 +2280,11 @@ function productQueryLabel(userText) {
     .trim();
 }
 
-function isClearlyOutOfScopeProductRequest(userText, intent = '') {
+function isClearlyOutOfScopeProductRequest(userText, intent = '', sourceKey = '') {
   if (!['buy', 'price', 'product_search', 'product_specs', 'order', 'unsupported'].includes(intent)) return false;
+  // A laptop/phone can be a compatibility target, not the item being purchased.
+  // Do not let an out-of-scope keyword override an exact catalog model in the same message.
+  if (searchProducts(userText, 1, { sourceKey, requireIdentityMatch: true }).length) return false;
   const normalized = normalize(userText);
   if (isCompatibilityFollowUp(userText)) return false;
   return /\b(bop da bo|ca phe|nuoc uong|laptop|thinkpad|my pham|son moi|kem duong|thuc pham|do an|quan ao|giay dep)\b/i.test(normalized);
@@ -2275,7 +2404,8 @@ async function generateReplyRaw({
   const guidanceQuestion = isProductGuidanceQuery(userText);
   const specsQuestion = intent === 'product_specs' || isProductSpecsRequest(userText, history);
   const opinionQuestion = isComparisonQuestion(userText) || isSubjectiveAssessmentQuestion(userText);
-  const policyQuestion = isCommercialPolicyQuestion(userText, intent);
+  const multiItemQuoteRequest = isMultiItemQuoteRequest(userText);
+  const policyQuestion = isCommercialPolicyQuestion(userText, intent) && !multiItemQuoteRequest;
   const productUrlQuestion = extractProductPageUrls(userText).length > 0;
   const sourceConfig = readSourceConfig(sourceKey);
   const scopeBrand = String(sourceConfig.brand || '').trim();
@@ -2340,6 +2470,26 @@ async function generateReplyRaw({
     };
   }
 
+  const resolvedMultiItemQuote = multiItemQuoteRequest || Boolean(resolvedConversationContext.customer_intent?.multi_item_quote);
+  if (resolvedMultiItemQuote) {
+    const quote = buildMultiItemQuoteReply({
+      userText,
+      sourceKey,
+      customerBrand,
+      conversationContext: resolvedConversationContext
+    });
+    return {
+      reply: quote.reply,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_multi_item_quote_handoff',
+      searchQuery: userText,
+      ragProducts: quote.products,
+      handoff: quote.handoff,
+      conversationContext: resolvedConversationContext
+    };
+  }
+
   const policyRuleReply = buildPolicyRuleReply(userText, messageLanguage, scopeBrand, sourceKey, customerBrand);
   if (policyRuleReply) {
     return {
@@ -2398,7 +2548,7 @@ async function generateReplyRaw({
     };
   }
 
-  if (isClearlyOutOfScopeProductRequest(userText, intent)) {
+  if (isClearlyOutOfScopeProductRequest(userText, intent, sourceKey)) {
     const unsupportedLabel = productQueryLabel(userText) || 'sản phẩm đó';
     return {
       reply: `Dạ hiện ${customerBrand} chưa kinh doanh ${unsupportedLabel} ạ. Bên em chuyên phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod... Anh/chị cần em tư vấn nhóm sản phẩm nào ạ?`,

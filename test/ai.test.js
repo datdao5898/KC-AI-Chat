@@ -994,3 +994,49 @@ test('clear category or exact model bypasses the uncertainty gate', () => {
   assert.equal(categorized, null);
   assert.equal(exactModel, null);
 });
+
+test('multi-item quote request answers catalog items before handing off commercial details', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'Bao gia bo micro FIFINE AM8 USB XLR, boom arm tai tren 1kg va pop filter luoi doi. Dung voi laptop Dell duoc khong? Boom arm co kep ban va dau chuyen ren khong? Bao hanh bao lau, co uu dai tron bo va hinh thuc te khong?',
+    history: [],
+    customer: {},
+    intent: 'product_specs',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_multi_item_quote_handoff');
+  assert.deepEqual(result.ragProducts.map(product => product.sku), ['FEK36', 'FETA1']);
+  assert.match(result.reply, /FIFINE AmpliGame AM8/i);
+  assert.match(result.reply, /BM63 Boom Arm/i);
+  assert.match(result.reply, /Pop Filter lưới đôi: em chưa tìm thấy mẫu bán rời/i);
+  assert.match(result.reply, /Tạm tính các món đã tìm thấy: 2\.089\.000đ/i);
+  assert.match(result.reply, /cắm trực tiếp vào PC qua USB/i);
+  assert.match(result.reply, /screw adapter 5\/8/i);
+  assert.match(result.reply, /thân máy thường bảo hành 12 tháng \+ 1 tháng/i);
+  assert.doesNotMatch(result.reply, /Default Title/i);
+  assert.equal(result.handoff?.needed, true);
+});
+
+test('full Vietnamese multi-item quote is not rejected because laptop is a compatibility target', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'Chào shop, mình cần mua bộ micro để học phát âm và họp online trên laptop Dell Inspiron 15 3520. Nhờ shop báo giá giúp các sản phẩm sau: Micro FIFINE AM8 (USB/XLR). Boom Arm kim loại chịu tải từ 1kg trở lên, có quản lý dây, tương thích với AM8. Pop Filter lưới đôi (Double Layer). Nhờ shop xác nhận: Boom Arm có đầy đủ kẹp bàn và đầu chuyển ren để lắp AM8 không? Micro bảo hành bao lâu? Nếu mua trọn bộ có ưu đãi gì không? Shop vui lòng gửi giúp hình ảnh thực tế và báo giá cuối cùng.',
+    history: [],
+    customer: {},
+    intent: 'product_specs',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_multi_item_quote_handoff');
+  assert.deepEqual(result.ragProducts.map(product => product.sku), ['FEK36', 'FETA1']);
+  assert.match(result.reply, /FIFINE AmpliGame AM8/i);
+  assert.match(result.reply, /BM63 Boom Arm/i);
+  assert.match(result.reply, /Tạm tính các món đã tìm thấy: 2\.089\.000đ/i);
+  assert.match(result.reply, /cắm trực tiếp vào PC qua USB/i);
+  assert.equal(result.handoff?.needed, true);
+});

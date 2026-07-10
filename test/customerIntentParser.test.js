@@ -109,3 +109,28 @@ test('parses smoke machine request as its own category over stale context', () =
   assert.equal(parsed.category, 'fog_machine');
   assert.equal(parsed.signals.category_source, 'message');
 });
+
+test('parses a multi-item quote without treating online meetings as a webcam request', () => {
+  const parsed = parseCustomerMessage(
+    'Can bao gia bo micro FIFINE AM8, boom arm tai 1kg va pop filter luoi doi de hop online tren laptop Dell. Bao hanh bao lau?',
+    { sourceKey: 'website/newlite' }
+  );
+
+  assert.equal(parsed.product_sku, 'FEK36');
+  assert.equal(parsed.category, 'microphone');
+  assert.equal(parsed.multi_item_quote, true);
+  assert.equal(parsed.policy_question, 'warranty');
+});
+
+test('parses the full Vietnamese multi-item quote wording from a customer', () => {
+  const parsed = parseCustomerMessage(
+    'Chào shop, mình cần mua bộ micro để học phát âm và họp online trên laptop Dell Inspiron 15 3520. Nhờ shop báo giá giúp các sản phẩm sau: Micro FIFINE AM8 (USB/XLR). Boom Arm kim loại chịu tải từ 1kg trở lên, có quản lý dây, tương thích với AM8. Pop Filter lưới đôi (Double Layer). Nhờ shop xác nhận: Boom Arm có đầy đủ kẹp bàn và đầu chuyển ren để lắp AM8 không? Micro bảo hành bao lâu? Nếu mua trọn bộ có ưu đãi gì không? Shop vui lòng gửi giúp hình ảnh thực tế và báo giá cuối cùng.',
+    { sourceKey: 'website/newlite' }
+  );
+
+  assert.equal(parsed.product_sku, 'FEK36');
+  assert.equal(parsed.category, 'microphone');
+  assert.equal(parsed.compatibility_target, 'laptop');
+  assert.equal(parsed.multi_item_quote, true);
+  assert.equal(parsed.policy_question, 'warranty');
+});
