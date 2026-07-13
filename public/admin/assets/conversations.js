@@ -401,6 +401,19 @@
     `;
   }
 
+  function renderStaffReplyComposer(conv) {
+    if (groupKey(conv) !== 'website') return '';
+    return `
+      <form class="staff-reply" id="staffReplyForm">
+        <label for="staffReplyText">${KC.esc(KC.t('staffReply'))}</label>
+        <textarea id="staffReplyText" placeholder="${KC.esc(KC.t('replyPlaceholder'))}">${KC.esc(data.staffDraft || '')}</textarea>
+        <div class="row end">
+          <button class="btn" id="staffReplyBtn" type="submit">${KC.esc(KC.t('sendCustomer'))}</button>
+        </div>
+      </form>
+    `;
+  }
+
   function selectedPanel() {
     const selected = data.selected;
     if (!selected?.conversation) {
@@ -446,6 +459,7 @@
         <div class="conversation-messages" id="messageScroll">
           ${(selected.messages || []).map(messageItem).join('')}
         </div>
+        ${renderStaffReplyComposer(conv)}
         ${renderDetailsDrawer(conv, alerts, customerPageUrl)}
       </section>
     `;
@@ -697,7 +711,12 @@
     if (KC.$('#resolveBtn')) KC.$('#resolveBtn').onclick = resolveHandoff;
     if (KC.$('#saveSummaryBtn')) KC.$('#saveSummaryBtn').onclick = saveSummary;
     if (KC.$('#summarizeBtn')) KC.$('#summarizeBtn').onclick = summarize;
-    if (KC.$('#staffReplyBtn')) KC.$('#staffReplyBtn').onclick = sendStaffReply;
+    if (KC.$('#staffReplyForm')) {
+      KC.$('#staffReplyForm').onsubmit = event => {
+        event.preventDefault();
+        sendStaffReply();
+      };
+    }
     if (KC.$('#deleteConvBtn')) KC.$('#deleteConvBtn').onclick = deleteConversation;
     if (KC.$('#summaryText')) KC.$('#summaryText').oninput = event => { data.summaryDraft = event.target.value; };
     if (KC.$('#staffReplyText')) {
