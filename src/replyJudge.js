@@ -483,7 +483,9 @@ function isTrustedDeterministicReplySource(aiSource = '') {
     'rule_conversation_stop',
     'rule_human_handoff',
     'rule_contact_info',
-    'rule_no_catalog_match'
+    'rule_no_catalog_match',
+    'rule_technical_support',
+    'rule_replacement_part'
   ]).has(source);
 }
 

@@ -243,6 +243,109 @@ function buildConversationStopReply(lang = 'vi', customerBrand = 'KingCom') {
   return `Dạ vâng ạ. Em sẽ dừng tại đây. Khi nào cần hỗ trợ thêm, anh/chị cứ nhắn ${customerBrand} nhé.`;
 }
 
+function isStaffContactFollowUp(text = '') {
+  const normalized = normalize(text);
+  return /\b(sao (?:khong|ko|chua) ai lien he|chua ai lien he|khong ai lien he|ko ai lien he|chua thay ai goi|khong thay ai goi|ko thay ai goi|chua duoc goi lai|chua duoc lien he|da de so dien thoai|da de sdt)\b/i.test(normalized);
+}
+
+function buildStaffContactFollowUpReply(lang = 'vi', customerBrand = 'KingCom', hasSavedPhone = false, isWebsiteChat = false) {
+  const brand = String(customerBrand || 'KingCom').trim() || 'KingCom';
+  if (lang === 'en') {
+    return `I am sorry that ${brand} staff have not contacted you yet. I have escalated the follow-up${hasSavedPhone ? ' using the contact information you already provided' : ''}.${isWebsiteChat ? ' You can also continue messaging here, and staff will reply in this chat when available.' : ''}`;
+  }
+  if (lang === 'zh') {
+    return `\u5f88\u62b1\u6b49 ${brand} \u7684\u5de5\u4f5c\u4eba\u5458\u5c1a\u672a\u8054\u7cfb\u60a8\u3002\u6211\u5df2\u518d\u6b21\u4f18\u5148\u8f6c\u4ea4\u8ddf\u8fdb${hasSavedPhone ? '\uff0c\u5e76\u4f1a\u4f7f\u7528\u60a8\u4e4b\u524d\u63d0\u4f9b\u7684\u8054\u7cfb\u65b9\u5f0f' : ''}\u3002${isWebsiteChat ? '\u60a8\u4e5f\u53ef\u4ee5\u7ee7\u7eed\u5728\u6b64\u7559\u8a00\uff0c\u5de5\u4f5c\u4eba\u5458\u5728\u7ebf\u540e\u4f1a\u5728\u8fd9\u91cc\u56de\u590d\u3002' : ''}`;
+  }
+  return `D\u1ea1 em xin l\u1ed7i v\u00ec nh\u00e2n vi\u00ean ${brand} ch\u01b0a li\u00ean h\u1ec7 l\u1ea1i anh/ch\u1ecb. Em \u0111\u00e3 nh\u1eafc l\u1ea1i y\u00eau c\u1ea7u n\u00e0y \u0111\u1ec3 b\u1ed9 ph\u1eadn ph\u1ee5 tr\u00e1ch \u01b0u ti\u00ean ki\u1ec3m tra${hasSavedPhone ? ' v\u00e0 s\u1ebd d\u00f9ng th\u00f4ng tin li\u00ean h\u1ec7 anh/ch\u1ecb \u0111\u00e3 cung c\u1ea5p' : ''}.${isWebsiteChat ? ' Anh/ch\u1ecb c\u0169ng c\u00f3 th\u1ec3 ti\u1ebfp t\u1ee5c nh\u1eafn t\u1ea1i \u0111\u00e2y, nh\u00e2n vi\u00ean s\u1ebd ph\u1ea3n h\u1ed3i trong khung chat khi c\u00f3 m\u1eb7t.' : ''}`;
+}
+
+function isTechnicalSupportIssue(text = '') {
+  const normalized = normalize(text);
+  const deviceSignal = /\b(sac|pin|battery|charge|charging)\b/i.test(normalized);
+  const symptomSignal = /\b(sac cham|sac lau|khong vao pin|khong len pin|khong day pin|pin khong day|pin tut nhanh|hao pin|sac bi nong|sac ngat|khong nhan sac|charging slowly|not charging)\b/i.test(normalized)
+    || /\b\d+\s*(?:phut|tieng|gio|minutes?|hours?)\b.*\b\d{1,3}\b/i.test(normalized);
+  return deviceSignal && symptomSignal;
+}
+
+function buildTechnicalSupportReply(userText = '', lang = 'vi', customerBrand = 'KingCom', conversationContext = {}) {
+  if (!isTechnicalSupportIssue(userText)) return null;
+  const brand = String(customerBrand || 'KingCom').trim() || 'KingCom';
+  const productName = String(conversationContext.current_product_name || '').trim();
+  const subject = productName ? ` c\u1ee7a ${productName}` : '';
+  if (lang === 'en') {
+    return `I understand the issue is slow or incomplete charging${subject}, not a price question. Please check the charger's output rating and cable, try another compatible charger/cable, and note the starting battery percentage and the percentage after 30 minutes. Stop using the device if it becomes unusually hot, swells, smells burnt, or repeatedly disconnects; ${brand} staff should then inspect it directly.`;
+  }
+  if (lang === 'zh') {
+    return `\u6211\u7406\u89e3\u60a8\u53cd\u9988\u7684\u662f${subject || '\u8bbe\u5907'}\u5145\u7535\u6162\u6216\u65e0\u6cd5\u5145\u6ee1\uff0c\u5e76\u4e0d\u662f\u8be2\u95ee\u4ef7\u683c\u3002\u8bf7\u5148\u6838\u5bf9\u5145\u7535\u5668\u8f93\u51fa\u529f\u7387\u548c\u7ebf\u6750\uff0c\u5c1d\u8bd5\u53e6\u4e00\u5957\u517c\u5bb9\u7684\u5145\u7535\u5668/\u7ebf\u6750\uff0c\u5e76\u8bb0\u5f55\u5f00\u59cb\u7535\u91cf\u53ca 30 \u5206\u949f\u540e\u7684\u7535\u91cf\u3002\u5982\u51fa\u73b0\u5f02\u5e38\u53d1\u70ed\u3001\u9f13\u5305\u3001\u7126\u5473\u6216\u53cd\u590d\u65ad\u5145\uff0c\u8bf7\u7acb\u5373\u505c\u6b62\u4f7f\u7528\uff0c\u5e76\u4ea4\u7531 ${brand} \u5de5\u4f5c\u4eba\u5458\u68c0\u67e5\u3002`;
+  }
+  return `D\u1ea1 em hi\u1ec3u v\u1ea5n \u0111\u1ec1 anh/ch\u1ecb \u0111ang h\u1ecfi l\u00e0 s\u1ea1c ch\u1eadm ho\u1eb7c ch\u01b0a \u0111\u1ea7y pin${subject}, kh\u00f4ng ph\u1ea3i h\u1ecfi gi\u00e1 \u1ea1. Anh/ch\u1ecb gi\u00fap em ki\u1ec3m tra c\u00f4ng su\u1ea5t \u0111\u1ea7u ra c\u1ee7a c\u1ee7 s\u1ea1c v\u00e0 d\u00e2y c\u00e1p, th\u1eed m\u1ed9t b\u1ed9 s\u1ea1c/c\u00e1p t\u01b0\u01a1ng th\u00edch kh\u00e1c, \u0111\u1ed3ng th\u1eddi ghi l\u1ea1i ph\u1ea7n tr\u0103m pin l\u00fac b\u1eaft \u0111\u1ea7u v\u00e0 sau 30 ph\u00fat. N\u1ebfu thi\u1ebft b\u1ecb n\u00f3ng b\u1ea5t th\u01b0\u1eddng, ph\u1ed3ng, c\u00f3 m\u00f9i kh\u00e9t ho\u1eb7c li\u00ean t\u1ee5c ng\u1eaft s\u1ea1c th\u00ec m\u00ecnh ng\u1eebng s\u1eed d\u1ee5ng v\u00e0 \u0111\u1ec3 nh\u00e2n vi\u00ean ${brand} ki\u1ec3m tra tr\u1ef1c ti\u1ebfp \u1ea1.`;
+}
+
+const REPLACEMENT_PART_RULES = [
+  { key: 'receiver', label: 'receiver/RX r\u1eddi', pattern: /\b(receiver|rx|bo nhan|dau thu)\b/i },
+  { key: 'transmitter', label: 'transmitter/TX r\u1eddi', pattern: /\b(transmitter|tx|bo phat|dau phat)\b/i },
+  { key: 'cable', label: 'd\u00e2y c\u00e1p thay th\u1ebf', pattern: /\b(cap|cable|day cap)\b/i },
+  { key: 'battery', label: 'pin thay th\u1ebf', pattern: /\b(pin|battery)\b/i }
+];
+
+function replacementPartRequest(text = '') {
+  const normalized = normalize(text);
+  const replacementSignal = /\b(roi|rieng|thay the|mua them|mua bo sung|bi mat|lam mat|bi hong|hong|replacement|spare|separate)\b/i.test(normalized);
+  if (!replacementSignal) return null;
+  return REPLACEMENT_PART_RULES.find(rule => rule.pattern.test(normalized)) || null;
+}
+
+const REPLACEMENT_QUERY_STOPWORDS = new Set([
+  'anh', 'chi', 'em', 'minh', 'toi', 'shop', 'ben', 'co', 'khong', 'can', 'muon',
+  'mua', 'tim', 'cho', 'hoi', 'roi', 'rieng', 'thay', 'the', 'them', 'bo', 'sung',
+  'bi', 'mat', 'hong', 'replacement', 'spare', 'separate', 'receiver', 'rx',
+  'transmitter', 'tx', 'cap', 'cable', 'day', 'pin', 'battery', 'dau', 'thu', 'phat'
+]);
+
+function replacementModelTokens(text = '') {
+  return queryWords(text)
+    .filter(token => token.length >= 3)
+    .filter(token => !REPLACEMENT_QUERY_STOPWORDS.has(token));
+}
+
+function buildReplacementPartReply(userText = '', sourceKey = '', lang = 'vi', customerBrand = 'KingCom') {
+  const part = replacementPartRequest(userText);
+  if (!part) return null;
+  const modelTokens = replacementModelTokens(userText);
+  const candidates = loadProducts({ sourceKey }).filter(product => {
+    const title = normalize(`${product.name || product.title || ''} ${product.category || ''}`);
+    if (!part.pattern.test(title)) return false;
+    if (!modelTokens.length) return true;
+    const tokenMatches = modelTokens.filter(token => title.includes(token)).length;
+    return tokenMatches >= Math.min(2, modelTokens.length);
+  });
+
+  if (candidates.length) {
+    const product = candidates[0];
+    const name = productDisplayName(product);
+    const price = formatPrice(product._price || product.price || product.compare_at_price || product.gia || '');
+    const url = product.url || product.link || product.product_url || '';
+    const reply = lang === 'en'
+      ? `I found this separately listed replacement part in ${customerBrand}'s catalog:\n\n${name}\nPrice: ${price}${url ? `\nLink: ${url}` : ''}`
+      : lang === 'zh'
+        ? `\u6211\u5728 ${customerBrand} \u76ee\u5f55\u4e2d\u627e\u5230\u4ee5\u4e0b\u5355\u72ec\u5217\u51fa\u7684\u66ff\u6362\u914d\u4ef6\uff1a\n\n${name}\n\u4ef7\u683c: ${price}${url ? `\n\u94fe\u63a5: ${url}` : ''}`
+        : `D\u1ea1 em t\u00ecm th\u1ea5y linh ki\u1ec7n thay th\u1ebf \u0111\u01b0\u1ee3c ni\u00eam y\u1ebft ri\u00eang trong catalog ${customerBrand}:\n\n${name}\nGi\u00e1: ${price}${url ? `\nLink: ${url}` : ''}`;
+    return { reply, products: [product], handoff: { needed: false } };
+  }
+
+  const modelLabel = modelTokens.join(' ').trim();
+  const reply = lang === 'en'
+    ? `I have not found an exact separately listed ${part.label}${modelLabel ? ` for ${modelLabel}` : ''} in ${customerBrand}'s current catalog. This does not mean the manufacturer has no replacement part or that it is out of stock; staff need to verify the exact part code and compatibility. I have forwarded the request for checking.`
+    : lang === 'zh'
+      ? `\u6211\u6682\u65f6\u672a\u5728 ${customerBrand} \u5f53\u524d\u76ee\u5f55\u4e2d\u627e\u5230${modelLabel ? `\u9002\u7528\u4e8e ${modelLabel} \u7684` : ''}\u72ec\u7acb ${part.label} \u5546\u54c1\u3002\u8fd9\u4e0d\u4ee3\u8868\u5382\u5bb6\u6ca1\u6709\u8be5\u914d\u4ef6\u6216\u5df2\u7ecf\u7f3a\u8d27\uff1b\u9700\u8981\u5de5\u4f5c\u4eba\u5458\u6838\u5bf9\u51c6\u786e\u914d\u4ef6\u7f16\u53f7\u548c\u517c\u5bb9\u6027\u3002\u6211\u5df2\u8f6c\u4ea4\u8fdb\u4e00\u6b65\u786e\u8ba4\u3002`
+      : `D\u1ea1 em ch\u01b0a t\u00ecm th\u1ea5y \u0111\u00fang ${part.label}${modelLabel ? ` cho ${modelLabel}` : ''} \u0111\u01b0\u1ee3c ni\u00eam y\u1ebft ri\u00eang trong catalog hi\u1ec7n t\u1ea1i c\u1ee7a ${customerBrand}. \u0110i\u1ec1u n\u00e0y kh\u00f4ng c\u00f3 ngh\u0129a l\u00e0 h\u00e3ng kh\u00f4ng c\u00f3 linh ki\u1ec7n ho\u1eb7c s\u1ea3n ph\u1ea9m \u0111ang h\u1ebft h\u00e0ng; nh\u00e2n vi\u00ean c\u1ea7n ki\u1ec3m tra \u0111\u00fang m\u00e3 linh ki\u1ec7n v\u00e0 kh\u1ea3 n\u0103ng t\u01b0\u01a1ng th\u00edch. Em \u0111\u00e3 chuy\u1ec3n y\u00eau c\u1ea7u \u0111\u1ec3 ki\u1ec3m tra \u1ea1.`;
+  return {
+    reply,
+    products: [],
+    handoff: { needed: true, reason: `C\u1ea7n x\u00e1c minh linh ki\u1ec7n thay th\u1ebf ${part.label} theo \u0111\u00fang model` }
+  };
+}
+
 function buildAvailabilityReply(userText, products) {
   if (!isAvailabilityQuestion(userText) || !products?.length) return null;
 
@@ -840,7 +943,7 @@ function isProductGuidanceQuery(userText) {
 
 function isCompatibilityFollowUp(userText) {
   const normalized = normalize(userText);
-  const asksCompatibility = /\b(tuong thich|dung cho|danh cho|dung voi|dung duoc voi|dung duoc cho|cho laptop|cho may tinh|ket noi|ho tro|compatible|compatibility)\b/i.test(normalized);
+  const asksCompatibility = /\b(tuong thich|dung cho|danh cho|dung voi|dung duoc voi|dung duoc cho|cho laptop|cho may tinh|ket noi|cam may tinh|cam vao may tinh|cam laptop|cam vao laptop|co dung cap|co dung cable|ho tro|compatible|compatibility)\b/i.test(normalized);
   const targetDevice = /\b(laptop|may tinh|pc|windows|mac|macbook|iphone|android|dien thoai|smartphone|camera|may anh)\b/i.test(normalized);
   return asksCompatibility && targetDevice;
 }
@@ -848,7 +951,7 @@ function isCompatibilityFollowUp(userText) {
 function isDirectProductSpecsQuery(userText) {
   const raw = String(userText || '');
   const normalized = normalize(userText);
-  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|cao bao nhieu|cao toi da|chieu cao|dai bao nhieu|rong bao nhieu|nang bao nhieu|luc hut|tai trong|tuong thich|dung cho|danh cho|dung voi|dung duoc voi|dung duoc cho|cho laptop|cho may tinh|ket noi laptop|ket noi may tinh|ho tro laptop|ho tro may tinh|ho tro iphone|ho tro android|co remote|kem remote|remote khong|phu kien kem theo|kem theo gi|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?|height|weight|dimensions|compatible with|compatibility|include remote|come with remote|included accessories)\b/i.test(normalized)
+  return /\b(thong so|thong so ky thuat|cau hinh|chi tiet ky thuat|chi tiet san pham|kich thuoc|trong luong|cong suat|do phan giai|cam bien|khau do|tieu cu|dung luong pin|thoi luong pin|pin bao lau|cao bao nhieu|cao toi da|chieu cao|dai bao nhieu|rong bao nhieu|nang bao nhieu|luc hut|tai trong|tuong thich|dung cho|danh cho|dung voi|dung duoc voi|dung duoc cho|cho laptop|cho may tinh|ket noi laptop|ket noi may tinh|cam may tinh|cam vao may tinh|cam laptop|cam vao laptop|co dung cap|co dung cable|usb c|usb-c|usb a|usb-a|ho tro laptop|ho tro may tinh|ho tro iphone|ho tro android|co remote|kem remote|remote khong|phu kien kem theo|kem theo gi|ram|bo nho|technical specifications?|product specifications?|specs?|specifications?|height|weight|dimensions|compatible with|compatibility|include remote|come with remote|included accessories)\b/i.test(normalized)
     || /(\u53c2\u6570|\u89c4\u683c|\u6280\u672f\u53c2\u6570|\u914d\u7f6e|\u5c3a\u5bf8|\u91cd\u91cf|\u529f\u7387|\u5206\u8fa8\u7387|\u4f20\u611f\u5668|\u5149\u5708)/.test(raw);
 }
 
@@ -1004,6 +1107,17 @@ function productCompatibilityHints(product = {}) {
   return [...new Set(hints)].slice(0, 4);
 }
 
+function requestedConnectorLabels(text = '') {
+  const normalized = normalize(text);
+  const connectors = [];
+  if (/\b(usb c|usb-c|type c|type-c)\b/i.test(normalized)) connectors.push({ label: 'USB-C', pattern: /\b(usb c|usb-c|type c|type-c)\b/i });
+  if (/\b(usb a|usb-a)\b/i.test(normalized)) connectors.push({ label: 'USB-A', pattern: /\b(usb a|usb-a)\b/i });
+  if (/\b(lightning)\b/i.test(normalized)) connectors.push({ label: 'Lightning', pattern: /\b(lightning)\b/i });
+  if (/\b(xlr)\b/i.test(normalized)) connectors.push({ label: 'XLR', pattern: /\b(xlr)\b/i });
+  if (/\b(3 5mm|3\.5mm|jack 3 5)\b/i.test(normalized)) connectors.push({ label: '3.5 mm', pattern: /\b(3 5mm|3\.5mm|jack 3 5)\b/i });
+  return connectors;
+}
+
 function buildCompatibilityEvidenceReply(products, userText, lang = 'vi') {
   if (!isCompatibilityFollowUp(userText)) return null;
   const product = products?.[0];
@@ -1011,23 +1125,27 @@ function buildCompatibilityEvidenceReply(products, userText, lang = 'vi') {
   const target = compatibilityTargetFromText(userText);
   if (!product || !name || !target) return null;
   const url = product.url || product.link || product.product_url || '';
-  const supported = compatibilityMentionedInProduct(product, target);
+  const connectors = requestedConnectorLabels(userText);
+  const evidenceText = normalize(`${product.name || product.title || ''} ${product.description || ''} ${product.tags || ''} ${product.category || ''}`);
+  const connectorEvidence = connectors.length > 0 && connectors.every(connector => connector.pattern.test(evidenceText));
+  const supported = connectors.length ? connectorEvidence : compatibilityMentionedInProduct(product, target);
   const hints = productCompatibilityHints(product).filter(hint => hint !== target.label);
-  const hintText = hints.length ? ` Catalog đang ghi/nhắc tới: ${hints.join(', ')}.` : '';
+  const hintText = hints.length ? ` Catalog \u0111ang ghi/nh\u1eafc t\u1edbi: ${hints.join(', ')}.` : '';
+  const connectorText = connectors.map(connector => connector.label).join(' \u2192 ');
 
   if (lang === 'en') {
     return supported
-      ? `Yes, the catalog indicates ${name} supports ${target.label}.${url ? `\nProduct link: ${url}` : ''}`
-      : `I have not found confirmed ${target.label} compatibility for ${name} in the catalog.${hintText}${url ? `\nProduct link: ${url}` : ''}`;
+      ? `Yes, the catalog indicates ${name} supports ${connectorText || target.label}.${url ? `\nProduct link: ${url}` : ''}`
+      : `I have not found confirmed ${connectorText || target.label} compatibility for ${name} in the catalog.${hintText}${url ? `\nProduct link: ${url}` : ''}`;
   }
   if (lang === 'zh') {
     return supported
-      ? `可以，目录信息显示 ${name} 支持 ${target.label}。${url ? `\n产品链接: ${url}` : ''}`
-      : `我在目录中还没有找到 ${name} 支持 ${target.label} 的确认信息。${hintText}${url ? `\n产品链接: ${url}` : ''}`;
+      ? `\u53ef\u4ee5\uff0c\u76ee\u5f55\u4fe1\u606f\u663e\u793a ${name} \u652f\u6301 ${connectorText || target.label}\u3002${url ? `\n\u4ea7\u54c1\u94fe\u63a5: ${url}` : ''}`
+      : `\u6211\u5728\u76ee\u5f55\u4e2d\u8fd8\u6ca1\u6709\u627e\u5230 ${name} \u652f\u6301 ${connectorText || target.label} \u7684\u786e\u8ba4\u4fe1\u606f\u3002${hintText}${url ? `\n\u4ea7\u54c1\u94fe\u63a5: ${url}` : ''}`;
   }
   return supported
-    ? `Dạ có ạ, catalog đang ghi ${name} hỗ trợ ${target.label}.${url ? `\nLink sản phẩm: ${url}` : ''}`
-    : `Dạ, với ${name}, em chưa thấy catalog xác nhận hỗ trợ ${target.label}.${hintText}${url ? `\nLink sản phẩm: ${url}` : ''}`;
+    ? `D\u1ea1 c\u00f3 \u1ea1, catalog \u0111ang ghi ${name} h\u1ed7 tr\u1ee3 k\u1ebft n\u1ed1i ${connectorText || target.label}.${url ? `\nLink s\u1ea3n ph\u1ea9m: ${url}` : ''}`
+    : `D\u1ea1, v\u1edbi ${name}, em ch\u01b0a th\u1ea5y catalog x\u00e1c nh\u1eadn k\u1ebft n\u1ed1i ${connectorText || target.label}.${hintText}${url ? `\nLink s\u1ea3n ph\u1ea9m: ${url}` : ''}`;
 }
 
 function buildProductSpecsEvidenceReply(products, userText, lang = 'vi') {
@@ -2362,9 +2480,12 @@ function buildLocalizedRuleReply(intent, userText, lang, scopeBrand = '', custom
   return null;
 }
 
-function buildHumanRequestReply(userText, lang, channel) {
+function buildHumanRequestReply(userText, lang, channel, customerBrand = 'KingCom', customerPhone = '') {
   const contact = extractContactInfo(userText);
   const isWebsiteChat = ['haravan_website', 'website'].includes(channel);
+  if (isStaffContactFollowUp(userText)) {
+    return buildStaffContactFollowUpReply(lang, customerBrand, Boolean(customerPhone || contact.phone), isWebsiteChat);
+  }
   if (lang === 'en') {
     if (contact.phone) {
       return `Thank you, I have received your phone number ${contact.phone}. I have forwarded your request to KingCom staff for follow-up.`;
@@ -2452,7 +2573,7 @@ async function generateReplyRaw({
 
   if (intent === 'human') {
     return {
-      reply: buildHumanRequestReply(userText, messageLanguage, channel),
+      reply: buildHumanRequestReply(userText, messageLanguage, channel, customerBrand, customerPhone),
       aiUsed: 0,
       aiError: false,
       aiSource: 'rule_human_handoff',
@@ -2498,6 +2619,43 @@ async function generateReplyRaw({
       aiError: false,
       aiSource: 'rule_policy',
       ragProducts: []
+    };
+  }
+
+  const technicalSupportReply = buildTechnicalSupportReply(
+    userText,
+    messageLanguage,
+    customerBrand,
+    resolvedConversationContext
+  );
+  if (technicalSupportReply) {
+    return {
+      reply: technicalSupportReply,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_technical_support',
+      searchQuery: userText,
+      ragProducts: [],
+      conversationContext: resolvedConversationContext
+    };
+  }
+
+  const replacementPartReply = buildReplacementPartReply(
+    userText,
+    sourceKey,
+    messageLanguage,
+    customerBrand
+  );
+  if (replacementPartReply) {
+    return {
+      reply: replacementPartReply.reply,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_replacement_part',
+      searchQuery: userText,
+      ragProducts: replacementPartReply.products,
+      handoff: replacementPartReply.handoff,
+      conversationContext: resolvedConversationContext
     };
   }
 
@@ -3283,5 +3441,8 @@ module.exports = {
   buildAlternativeProductsReply,
   assessRetrievalUncertainty,
   buildRetrievalClarificationReply,
-  buildProductSpecsFallbackReply
+  buildProductSpecsFallbackReply,
+  buildCompatibilityEvidenceReply,
+  buildReplacementPartReply,
+  buildTechnicalSupportReply
 };

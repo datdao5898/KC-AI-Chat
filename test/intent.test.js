@@ -46,3 +46,21 @@ test('classifyIntent handles product specification questions', () => {
 test('classifyIntent keeps laptop store questions unsupported', () => {
   assert.equal(classifyIntent('shop c\u00f3 b\u00e1n laptop kh\u00f4ng').intent, 'unsupported');
 });
+
+
+test('classifyIntent recognizes overdue staff contact follow-up', () => {
+  assert.equal(classifyIntent('sao ko ai lien he minh v shop?').intent, 'human');
+  assert.equal(classifyIntent('em da de sdt ma chua thay ai goi').intent, 'human');
+});
+
+test('classifyIntent recognizes charging trouble as technical support', () => {
+  assert.equal(classifyIntent('sac 1 tieng ma pin van con 68%').intent, 'technical_support');
+  assert.equal(classifyIntent('pin sac cham va bi nong').intent, 'technical_support');
+});
+
+test('classifyIntent treats a desktop USB cable question as product specs', () => {
+  assert.equal(
+    classifyIntent('co dung cap USB-C sang USB-A de cam may tinh ban khong').intent,
+    'product_specs'
+  );
+});

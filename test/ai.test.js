@@ -8,7 +8,10 @@ const {
   generateReply,
   sanitizeProviderReply,
   isBroadConsultationRequest,
-  assessRetrievalUncertainty
+  assessRetrievalUncertainty,
+  buildCompatibilityEvidenceReply,
+  buildReplacementPartReply,
+  buildTechnicalSupportReply
 } = require('../src/ai');
 const { normalize, parsePriceNumber } = require('../src/rag');
 
@@ -1039,4 +1042,87 @@ test('full Vietnamese multi-item quote is not rejected because laptop is a compa
   assert.match(result.reply, /Tạm tính các món đã tìm thấy: 2\.089\.000đ/i);
   assert.match(result.reply, /cắm trực tiếp vào PC qua USB/i);
   assert.equal(result.handoff?.needed, true);
+});
+
+
+test('generateReply apologizes and escalates when staff have not contacted the customer', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'sao ko ai lien he minh v shop?',
+    history: [],
+    customer: { phone: '0900000000' },
+    intent: 'human',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_human_handoff');
+  assert.match(result.reply, /xin l\u1ed7i/i);
+  assert.match(result.reply, /ch\u01b0a li\u00ean h\u1ec7/i);
+  assert.match(result.reply, /NewLite/);
+  assert.doesNotMatch(result.reply, /nh\u00f3m s\u1ea3n ph\u1ea9m|s\u1ea3n ph\u1ea9m n\u00e0o/i);
+});
+
+test('technical charging issue stays on troubleshooting instead of price', () => {
+  const reply = buildTechnicalSupportReply(
+    's\u1ea1c 1 ti\u1ebfng m\u00e0 pin v\u1eabn 68%',
+    'vi',
+    'NewLite',
+    { current_product_name: 'Pin d\u1ef1 ph\u00f2ng Gutek 50000mAh' }
+  );
+
+  assert.match(reply, /s\u1ea1c ch\u1eadm|ch\u01b0a \u0111\u1ea7y pin/i);
+  assert.match(reply, /c\u00f4ng su\u1ea5t.*c\u1ee7 s\u1ea1c|d\u00e2y c\u00e1p/i);
+  assert.doesNotMatch(reply, /Gi\u00e1:|Link:/i);
+});
+
+test('cable compatibility requires evidence for every requested connector', () => {
+  const product = {
+    name: 'Micro USB cho m\u00e1y t\u00ednh',
+    description: 'Ph\u1ee5 ki\u1ec7n k\u00e8m theo c\u00f3 c\u00e1p USB-C to USB-A \u0111\u1ec3 k\u1ebft n\u1ed1i PC.',
+    url: 'https://example.com/products/micro-usb'
+  };
+  const reply = buildCompatibilityEvidenceReply(
+    [product],
+    'C\u00f3 \u0111\u00fang c\u00e1p USB-C sang USB-A \u0111\u1ec3 c\u1eafm m\u00e1y t\u00ednh b\u00e0n kh\u00f4ng?',
+    'vi'
+  );
+
+  assert.match(reply, /D\u1ea1 c\u00f3/i);
+  assert.match(reply, /USB-C.*USB-A/i);
+});
+
+test('replacement receiver request never falls back to unrelated microphone systems', () => {
+  const result = buildReplacementPartReply(
+    'mua receiver RX r\u1eddi thay th\u1ebf cho Comica EJoy Uni Pro',
+    'website/newlite',
+    'vi',
+    'NewLite'
+  );
+
+  assert.ok(result);
+  assert.doesNotMatch(result.reply, /LARK MAX|VIMO S-UC|BOYA Mini/i);
+  if (!result.products.length) {
+    assert.equal(result.handoff.needed, true);
+    assert.match(result.reply, /kh\u00f4ng c\u00f3 ngh\u0129a.*h\u1ebft h\u00e0ng/i);
+  }
+});
+
+test('product warranty wording always routes to policy instead of product description', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'ch\u00ednh s\u00e1ch b\u1ea3o h\u00e0nh c\u1ee7a s\u1ea3n ph\u1ea9m n\u00e0y nh\u01b0 th\u1ebf n\u00e0o?',
+    history: [],
+    customer: {},
+    intent: 'warranty',
+    sourceKey: 'website/newlite',
+    sourceName: 'NewLite',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_policy');
+  assert.match(result.reply, /b\u1ea3o h\u00e0nh/i);
+  assert.equal(result.ragProducts.length, 0);
+  assert.doesNotMatch(result.reply, /Link:/i);
 });

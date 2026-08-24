@@ -36,6 +36,35 @@ function classifyIntent(text) {
   const msg = normalize(text);
   const hasPhoneNumber = /(?:\+?84|0)(?:[\s.-]?\d){8,10}\b/.test(raw);
   if (hasPhrase(msg, [
+    'sao khong ai lien he', 'sao ko ai lien he', 'sao chua ai lien he',
+    'chua ai lien he', 'khong ai lien he', 'ko ai lien he',
+    'chua thay ai goi', 'khong thay ai goi', 'ko thay ai goi',
+    'chua duoc goi lai', 'chua duoc lien he', 'da de so dien thoai', 'da de sdt'
+  ])) {
+    return { intent: 'human', confidence: 0.95 };
+  }
+
+  const mentionsChargingOrBattery = hasWord(msg, ['sac', 'pin', 'battery', 'charge', 'charging']);
+  const mentionsTechnicalSymptom = hasPhrase(msg, [
+    'sac cham', 'sac lau', 'khong vao pin', 'khong len pin', 'khong day pin',
+    'pin khong day', 'pin tut nhanh', 'hao pin', 'sac bi nong', 'sac ngat',
+    'khong nhan sac', 'van con', 'van moi', 'charging slowly', 'not charging'
+  ]) || /\b\d+\s*(?:phut|tieng|gio|minutes?|hours?)\b.*\b\d{1,3}\b/i.test(msg);
+  if (mentionsChargingOrBattery && mentionsTechnicalSymptom) {
+    return { intent: 'technical_support', confidence: 0.92 };
+  }
+
+  const asksCableCompatibility = hasWord(msg, ['cap', 'cable'])
+    && hasPhrase(msg, [
+      'usb c', 'usb-c', 'usb a', 'usb-a', 'type c', 'type-c',
+      'cam may tinh', 'cam vao may tinh', 'cam laptop', 'cam vao laptop',
+      'dung voi may tinh', 'dung cho may tinh', 'ket noi may tinh'
+    ]);
+  if (asksCableCompatibility) {
+    return { intent: 'product_specs', confidence: 0.92 };
+  }
+
+  if (hasPhrase(msg, [
     'thong so', 'thong so ky thuat', 'cau hinh', 'chi tiet ky thuat',
     'chi tiet san pham', 'kich thuoc', 'trong luong', 'cong suat',
     'do phan giai', 'cam bien', 'khau do', 'tieu cu',

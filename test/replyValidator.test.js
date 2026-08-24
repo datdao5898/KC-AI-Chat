@@ -112,3 +112,74 @@ test('validator allows separate accessory categories in a multi-item quote', () 
 
   assert.equal(result.ok, true);
 });
+
+
+test('validator blocks a price claim without retrieval evidence', () => {
+  const result = validateAiReply({
+    userText: 'MT-33 gia bao nhieu',
+    reply: 'Gi\u00e1: 259.000\u0111',
+    ragProducts: [],
+    customerBrand: 'KingCom'
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /Gi\u00e1.*b\u1eb1ng ch\u1ee9ng/i);
+});
+
+test('validator blocks a price that differs from catalog evidence', () => {
+  const result = validateAiReply({
+    userText: 'MT-33 gia bao nhieu',
+    reply: 'Gi\u00e1: 259.000\u0111',
+    ragProducts: [{ name: 'ULANZI MT-33', price: '399000' }],
+    customerBrand: 'KingCom'
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /Gi\u00e1.*b\u1eb1ng ch\u1ee9ng/i);
+});
+
+test('validator allows a price that exactly matches catalog evidence', () => {
+  const result = validateAiReply({
+    userText: 'MT-33 gia bao nhieu',
+    reply: 'ULANZI MT-33 - Gi\u00e1: 259.000\u0111',
+    ragProducts: [{ name: 'ULANZI MT-33', price: '259000' }],
+    customerBrand: 'KingCom'
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test('validator blocks stock claims when catalog has no stock evidence', () => {
+  const result = validateAiReply({
+    userText: 'MT-33 con hang khong',
+    reply: 'D\u1ea1 MT-33 c\u00f2n h\u00e0ng \u1ea1.',
+    ragProducts: [{ name: 'ULANZI MT-33', price: '259000' }],
+    customerBrand: 'KingCom'
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /t\u1ed3n kho.*b\u1eb1ng ch\u1ee9ng/i);
+});
+
+test('validator allows stock claims backed by inventory data', () => {
+  const result = validateAiReply({
+    userText: 'MT-33 con hang khong',
+    reply: 'D\u1ea1 MT-33 c\u00f2n h\u00e0ng \u1ea1.',
+    ragProducts: [{ name: 'ULANZI MT-33', price: '259000', stock_total: '4', availability: 'in_stock' }],
+    customerBrand: 'KingCom'
+  });
+
+  assert.equal(result.ok, true);
+});
+
+
+test('validator allows an explicit refusal to infer out-of-stock status', () => {
+  const result = validateAiReply({
+    userText: 'co receiver RX roi khong',
+    reply: 'Em chua tim thay ma linh kien rieng. Dieu nay khong co nghia la san pham het hang.',
+    ragProducts: [],
+    customerBrand: 'KingCom'
+  });
+
+  assert.equal(result.ok, true);
+});

@@ -71,6 +71,63 @@ function replyMentionsProduct(reply) {
   return /https?:\/\/|link:|gia:|giá:|\d[\d.,]*\s*(d|đ|vnd)|sku/i.test(String(reply || ''));
 }
 
+function extractClaimedPrices(reply = '') {
+  const claims = [];
+  const text = String(reply || '');
+  const patterns = [
+    /(?:gi\u00e1|gia|price)\s*:?\s*(\d[\d.,]*)\s*(?:\u0111|\u20ab|vnd)?/gi,
+    /(\d[\d.,]*)\s*(?:\u0111|\u20ab|vnd)\b/gi
+  ];
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const value = parsePriceNumber(match[1] || '');
+      if (value > 0) claims.push(value);
+    }
+  }
+  return [...new Set(claims)];
+}
+
+function productEvidencePrices(products = []) {
+  const values = [];
+  for (const product of products || []) {
+    for (const field of ['_price', 'price', 'compare_at_price', 'gia']) {
+      const value = parsePriceNumber(product?.[field] || '');
+      if (value > 0) values.push(value);
+    }
+  }
+  return new Set(values);
+}
+
+function hasUnsupportedPriceClaim(reply = '', ragProducts = []) {
+  const claims = extractClaimedPrices(reply);
+  if (!claims.length) return false;
+  const evidence = productEvidencePrices(ragProducts);
+  if (!evidence.size) return true;
+  return claims.some(claim => !evidence.has(claim));
+}
+
+function stockEvidenceState(product = {}) {
+  const availability = norm(product.availability || product.inventory_status || '');
+  const stockRaw = String(product.stock_total ?? product.inventory_quantity ?? product.stock ?? '').trim();
+  const stock = stockRaw === '' ? null : Number(stockRaw);
+  if (/\b(out of stock|out_of_stock|het hang|unavailable)\b/i.test(availability) || stock === 0) return 'out';
+  if (/\b(in stock|in_stock|low stock|low_stock|con hang|available)\b/i.test(availability) || (Number.isFinite(stock) && stock > 0)) return 'in';
+  return 'unknown';
+}
+
+function unsupportedAvailabilityClaim(reply = '', ragProducts = []) {
+  const normalized = norm(reply);
+  if (/\b(khong co nghia.{0,100}het hang|khong ket luan.{0,100}het hang|does not mean.{0,100}out of stock)\b/i.test(normalized)) return false;
+  const claimsInStock = /\b(con hang|co san|dang co hang|in stock)\b/i.test(normalized);
+  const claimsOutOfStock = /\b(het hang|out of stock)\b/i.test(normalized);
+  if (!claimsInStock && !claimsOutOfStock) return false;
+  const states = (ragProducts || []).map(stockEvidenceState);
+  if (!states.length) return true;
+  if (claimsInStock && !states.includes('in')) return true;
+  if (claimsOutOfStock && !states.includes('out')) return true;
+  return false;
+}
+
 function buildSafeReply({ categories, maxPrice, customerBrand = 'KingCom', expectedLanguage = 'vi' }) {
   const categoryLabel = categories.map(item => item.label).join(', ') || 'sản phẩm anh/chị quan tâm';
   const priceText = maxPrice ? ` trong ngân sách dưới ${maxPrice.toLocaleString('vi-VN')}đ` : '';
@@ -186,6 +243,12 @@ function validateAiReply({
   }
   if (contextProductMismatch({ userText, reply, conversationContext })) {
     return validationFailure('Câu trả lời đổi sang sản phẩm khác với ngữ cảnh đang hỏi', safeOptions);
+  }
+  if (hasUnsupportedPriceClaim(reply, ragProducts)) {
+    return validationFailure('Gi\u00e1 trong c\u00e2u tr\u1ea3 l\u1eddi kh\u00f4ng c\u00f3 b\u1eb1ng ch\u1ee9ng kh\u1edbp t\u1eeb catalog/retrieval', safeOptions);
+  }
+  if (unsupportedAvailabilityClaim(reply, ragProducts)) {
+    return validationFailure('Kh\u1eb3ng \u0111\u1ecbnh t\u1ed3n kho trong c\u00e2u tr\u1ea3 l\u1eddi ch\u01b0a c\u00f3 b\u1eb1ng ch\u1ee9ng t\u1eeb catalog/retrieval', safeOptions);
   }
   if (!categories.length && !maxPrice) return { ok: true };
   if (!replyMentionsProduct(reply)) return { ok: true };
