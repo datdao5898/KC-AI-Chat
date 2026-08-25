@@ -472,7 +472,9 @@ function searchProducts(query, topK = 8, options = {}) {
   const wantsFogMachine = /\b(may tao khoi|tao khoi|smoke machine|fog machine|smoke b|filmog)\b/i.test(normQuery);
   const wantsPhone = /\b(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)\b/i.test(normQuery);
   const accentLight = hasAccentWord(accentQuery, 'đèn');
-  const asciiLight = /\b(den|led|light|ring light|rgb|tube light|fill light|key light|lighting|anh sang|chieu sang)\b/i.test(normQuery);
+  // RGB describes a color feature across microphones and other products too.
+  // Require an actual lighting term before applying the strict light filter.
+  const asciiLight = /\b(den|led|light|ring light|tube light|fill light|key light|lighting|anh sang|chieu sang)\b/i.test(normQuery);
   const colorBlackOnly = hasAccentWord(accentQuery, 'đen') && !accentLight && !/\b(led|light|ring light|rgb|tube light)\b/i.test(normQuery);
   const wantsLight = (accentLight || asciiLight)
     && !colorBlackOnly

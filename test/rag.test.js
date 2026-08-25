@@ -104,6 +104,30 @@ test('short exact model code boosts the matching microphone product', () => {
   assert.match(products[0].name, /Fifine A6 \/ A6V/i);
 });
 
+test('RGB microphone query is not misclassified as a lighting product', () => {
+  const products = searchProducts(
+    'mua Fifine Ampligame AM8 RGB mic thu am',
+    5,
+    { sourceKey: 'website/newlite', requireIdentityMatch: true }
+  );
+
+  assert.ok(products.length > 0);
+  assert.equal(products[0].sku, 'FEK36');
+  assert.match(products[0].name, /FIFINE AmpliGame AM8/i);
+});
+
+test('explicit RGB lighting query still returns only true light products', () => {
+  const products = searchProducts(
+    'den LED RGB quay phim',
+    5,
+    { sourceKey: 'website/newlite', requireIdentityMatch: true }
+  );
+
+  assert.ok(products.length > 0);
+  assert.ok(products.every(product => /\b(den|led|light)\b/i.test(normalize(product.name || ''))));
+  assert.ok(products.every(product => !/\b(mic|micro|microphone|thu am)\b/i.test(normalize(product.name || ''))));
+});
+
 test('product specification context includes the matched catalog description', () => {
   const result = buildContext(
     'thong so Cadothy AMAZE 5Pro',
