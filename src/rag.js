@@ -162,9 +162,9 @@ function hasAnyWord(text, words) {
 
 function isTrueLightProduct({ nameNorm, nameAccent }) {
   const accessoryName = /\b(tai nghe|headphone|headset|microphone|micro|mic|audio interface|adapter|tui|bag|case|pin|battery|cap|cable|sac|charger|chan den|light stand|stand|diffuser|softbox|op tan sang|tan sang)\b/i.test(nameNorm);
-  const explicitLightName = /\b(led light|video light|fill light|ring light|tube light|panel light|den led)\b/i.test(nameNorm)
+  const explicitLightName = /\b(led light|video light|fill light|ring light|tube light|panel light|den led|monolight|mono light|led panel|video panel)\b/i.test(nameNorm)
     || hasAccentWord(nameAccent, 'đèn');
-  return explicitLightName && (!accessoryName || /\b(led light|video light|fill light|ring light|tube light|panel light)\b/i.test(nameNorm));
+  return explicitLightName && (!accessoryName || /\b(led light|video light|fill light|ring light|tube light|panel light|monolight|mono light|led panel|video panel)\b/i.test(nameNorm));
 }
 
 function isLensAccessory({ nameNorm, nameAccent }) {
