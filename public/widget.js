@@ -2,6 +2,7 @@
   const currentScript = document.currentScript;
   const apiBase = currentScript && currentScript.src ? new URL(currentScript.src).origin : window.location.origin;
   const siteName = String(currentScript?.dataset?.siteName || '').trim();
+  const siteHostOverride = String(currentScript?.dataset?.siteHost || '').trim();
   const siteBrandNames = {
     newlite: 'NewLite',
     kingcom: 'KingCom'
@@ -721,7 +722,7 @@
           name: customerName,
           phone: customerPhone,
           siteName,
-          siteHost: window.location.hostname,
+          siteHost: siteHostOverride || window.location.hostname,
           siteUrl: window.location.href,
           origin: window.location.origin,
           referrer: document.referrer || ''

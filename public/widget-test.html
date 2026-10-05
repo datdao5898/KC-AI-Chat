@@ -36,10 +36,17 @@
       const params = new URLSearchParams(window.location.search);
       const site = (params.get('site') || 'kingcom').toLowerCase();
       const allowed = new Set(['kingcom', 'newlite']);
+      const resolvedSite = allowed.has(site) ? site : 'kingcom';
+      // Trang nay chay tren domain backend (vd ai.kingcom.com.vn), khong phai
+      // domain storefront that, nen phai gia lap dung hostname cua site dang
+      // test. Neu khong, server se uu tien hostname backend (khop pattern
+      // *.kingcom.com.vn) va luon tra ve KingCom bat ke ?site=newlite.
+      const siteHostBySite = { newlite: 'newlite.vn', kingcom: 'store.kingcom.com.vn' };
       const script = document.createElement('script');
       script.src = '/widget.js';
-      script.dataset.siteName = allowed.has(site) ? site : 'kingcom';
-      if (allowed.has(site)) document.title = `${site === 'newlite' ? 'NewLite' : 'KingCom'} Widget Test`;
+      script.dataset.siteName = resolvedSite;
+      script.dataset.siteHost = siteHostBySite[resolvedSite];
+      document.title = `${resolvedSite === 'newlite' ? 'NewLite' : 'KingCom'} Widget Test`;
       document.body.appendChild(script);
     })();
   </script>
