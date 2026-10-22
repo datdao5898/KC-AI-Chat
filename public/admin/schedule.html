@@ -5,6 +5,55 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KingCom Admin - Lịch AI</title>
   <link rel="stylesheet" href="/admin/assets/admin.css">
+  <style>
+    .sch-hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .sch-now { display: flex; align-items: center; gap: 14px; }
+    .sch-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; box-shadow: 0 0 0 5px var(--kc-line-2); }
+    .sch-dot.ai { background: var(--kc-primary); box-shadow: 0 0 0 5px var(--kc-primary-soft); }
+    .sch-dot.staff { background: var(--kc-warn); box-shadow: 0 0 0 5px #fef3c7; }
+    .sch-dot.off { background: var(--kc-muted); }
+    .sch-now-title { font-size: 18px; font-weight: 800; color: var(--kc-text); }
+    .sch-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 700; }
+    .sch-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .sch-switch .track { width: 44px; height: 24px; border-radius: 999px; background: var(--kc-line); position: relative; transition: background .15s; flex: none; }
+    .sch-switch .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+    .sch-switch input:checked + .track { background: var(--kc-primary); }
+    .sch-switch input:checked + .track::after { transform: translateX(20px); }
+    .sch-switch input:focus-visible + .track { outline: 2px solid var(--kc-primary); outline-offset: 2px; }
+    .sch-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--kc-muted); }
+    .sch-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+    .sch-legend .ai, .sch-bar .ai { background: var(--kc-primary); }
+    .sch-legend .staff, .sch-bar .staff { background: var(--kc-warn); }
+    .sch-week { display: grid; gap: 4px; }
+    .sch-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) 360px; gap: 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--kc-line-2); }
+    .sch-row:last-child { border-bottom: 0; }
+    .sch-row.head { padding: 0; border: 0; color: var(--kc-muted); font-size: 12px; }
+    .sch-day { font-weight: 800; }
+    .sch-day.today::after { content: 'Hôm nay'; display: block; font-size: 11px; font-weight: 700; color: var(--kc-primary); }
+    .sch-bar { position: relative; height: 22px; border-radius: 6px; overflow: hidden; display: flex; }
+    .sch-bar span { height: 100%; }
+    .sch-ticks { display: flex; justify-content: space-between; }
+    .sch-summary { font-size: 12px; color: var(--kc-muted); margin-top: 4px; }
+    .sch-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .sch-controls input[type="time"] { width: 132px; }
+    .sch-controls input[type="time"]:disabled { opacity: .45; }
+    .sch-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .sch-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--kc-line); border-radius: 999px; background: var(--kc-surface-2); font-weight: 700; font-size: 13px; }
+    .sch-chip button { border: 0; background: transparent; color: var(--kc-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
+    .sch-chip button:hover { color: var(--kc-danger); }
+    .sch-help { font-size: 13px; color: var(--kc-muted); line-height: 1.5; }
+    .sch-savebar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1px solid var(--kc-line); border-radius: var(--kc-radius); background: var(--kc-surface); box-shadow: var(--kc-shadow); }
+    .sch-savebar.dirty { border-color: var(--kc-warn); }
+    .sch-savebar .btn:disabled { opacity: .5; cursor: default; }
+    [data-theme="dark"] .sch-page input[type="time"],
+    [data-theme="dark"] .sch-page input[type="date"] { color-scheme: dark; }
+    @media (max-width: 900px) {
+      .sch-row { grid-template-columns: 1fr; gap: 8px; }
+      .sch-row.head { display: none; }
+      .sch-controls { flex-wrap: nowrap; }
+      .sch-controls input[type="time"] { width: auto; flex: 1 1 0; min-width: 0; }
+    }
+  </style>
 </head>
 <body>
   <script src="/admin/assets/common.js"></script>
