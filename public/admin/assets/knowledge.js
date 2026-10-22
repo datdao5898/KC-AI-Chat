@@ -4,6 +4,8 @@
     sourceKey: 'common',
     knowledge: {},
     files: { files: [] },
+    catalogSync: [],
+    syncing: false,
     viewer: null
   };
 
@@ -16,12 +18,14 @@
   async function load() {
     data.sources = await KC.api(KC.API + '/knowledge-sources');
     if (!data.sources.some(source => source.sourceKey === data.sourceKey)) data.sourceKey = data.sources[0]?.sourceKey || 'common';
-    const [knowledge, files] = await Promise.all([
+    const [knowledge, files, catalogSync] = await Promise.all([
       KC.api(KC.API + '/knowledge?sourceKey=' + encodeURIComponent(data.sourceKey)),
-      KC.api(KC.API + '/knowledge-files?sourceKey=' + encodeURIComponent(data.sourceKey))
+      KC.api(KC.API + '/knowledge-files?sourceKey=' + encodeURIComponent(data.sourceKey)),
+      KC.api(KC.API + '/catalog-sync')
     ]);
     data.knowledge = knowledge || {};
     data.files = files || { files: [] };
+    data.catalogSync = catalogSync?.sources || [];
   }
 
   function formatBytes(bytes) {
@@ -56,6 +60,55 @@
         </div>
       </div>
     `;
+  }
+
+  function catalogSyncCard() {
+    const sync = data.catalogSync.find(item => item.sourceKey === data.sourceKey);
+    if (!sync) return '';
+    const status = sync.enabled ? KC.statusBadge('Tự động mỗi giờ', 'on') : KC.statusBadge('Đang tắt', 'off');
+    return `
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Đồng bộ catalog từ website</h3>
+            <div class="muted">${KC.esc(sync.storeUrl)}</div>
+          </div>
+          ${status}
+        </div>
+        <div class="card-body">
+          <div class="list">
+            <div class="muted">Lần đồng bộ thành công: ${sync.lastSuccessAt ? KC.esc(KC.formatDate(sync.lastSuccessAt)) : 'chưa có'}${sync.productCount ? ` · ${KC.esc(sync.productCount)} sản phẩm` : ''}</div>
+            <div class="muted">Danh mục: ${sync.collectionCount ? `${KC.esc(sync.collectionCount)} danh mục, cập nhật ${KC.esc(KC.formatDate(sync.collectionsFetchedAt))}` : 'chưa tải'}</div>
+            ${sync.lastError ? `<div class="login-error">Lỗi lần chạy gần nhất: ${KC.esc(sync.lastError)}</div>` : ''}
+            <div class="muted">Khi đã đồng bộ, bot dùng catalog lấy từ website (products.synced.csv) thay cho file products.csv upload tay của nguồn này.</div>
+            <div class="row">
+              <button class="btn" id="catalogSyncBtn" type="button" ${!sync.enabled || data.syncing || sync.running ? 'disabled' : ''}>${data.syncing || sync.running ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function runCatalogSync() {
+    data.syncing = true;
+    KC.setContent(render());
+    bind();
+    try {
+      const result = await KC.api(KC.API + '/catalog-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceKey: data.sourceKey })
+      });
+      KC.toast(`Đã đồng bộ ${result.productCount} sản phẩm`);
+    } catch (e) {
+      KC.toast(`Đồng bộ lỗi: ${e.message}`);
+    } finally {
+      data.syncing = false;
+      await load();
+      KC.setContent(render());
+      bind();
+    }
   }
 
   function textEditor(type, label) {
@@ -95,6 +148,7 @@
             <select id="sourceKey" style="max-width:420px">${sourceOptions()}</select>
           </div>
         </div>
+        ${catalogSyncCard()}
         <div class="card">
           <div class="card-head"><h3>Upload file training</h3></div>
           <div class="card-body">
@@ -151,7 +205,8 @@
       KC.setContent(render());
       bind();
     };
-    KC.$$('[data-save]').forEach(btn => {
+    if (KC.$('#catalogSyncBtn')) KC.$('#catalogSyncBtn').onclick = runCatalogSync;
+    KC.$('[data-save]').forEach(btn => {
       btn.onclick = () => save(btn.dataset.save);
     });
     KC.$$('[data-upload]').forEach(btn => {

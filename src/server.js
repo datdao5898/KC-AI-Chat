@@ -9,6 +9,7 @@ const { initDb } = require('./db');
 const { backfillFacebookCustomerNames } = require('./channels/facebook');
 const webhooks = require('./routes/webhooks');
 const admin = require('./routes/admin');
+const { startCatalogSyncScheduler } = require('./catalogSync');
 const packageJson = require('../package.json');
 const {
   getAdminUsername,
@@ -211,6 +212,7 @@ async function startServer() {
     console.log(`📌 Zalo webhook: /webhooks/zalo`);
     console.log(`📌 Haravan webhook: /webhooks/haravan`);
     console.log(`📌 Website chat API: /webhooks/website-chat`);
+    startCatalogSyncScheduler();
     setTimeout(() => {
       backfillFacebookCustomerNames()
         .then(result => console.log('[FB PROFILE] backfill_done', JSON.stringify(result)))

@@ -5,6 +5,7 @@ const router = express.Router();
 const { listConversations, getConversation, updateConversationSummary, db, flagHandoff, resolveHandoff, listStaffAlerts, softDeleteMessage, hardDeleteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews, deleteTestConversations } = require('../db');
 const { processIncoming } = require('../messagePipeline');
 const { buildSourceContext } = require('../sourceRegistry');
+const { catalogSyncStatus, syncSourceCatalog } = require('../catalogSync');
 const { searchProducts, loadProducts } = require('../rag');
 const { summarizeConversation, summarizeConversationFast } = require('../ai');
 const { notifyStaff } = require('../staffAlert');
@@ -502,6 +503,17 @@ router.post('/test-chat', async (req, res) => {
     console.error('Admin test chat error:', e);
     res.status(500).json({ error: e.message });
   }
+});
+
+router.get('/catalog-sync', (req, res) => res.json({ sources: catalogSyncStatus() }));
+
+router.post('/catalog-sync', async (req, res) => {
+  const sourceKey = String(req.body?.sourceKey || '').trim();
+  const source = catalogSyncStatus().find(item => item.sourceKey === sourceKey);
+  if (!source) return res.status(400).json({ error: 'catalog_sync_not_configured' });
+  if (!source.enabled) return res.status(400).json({ error: 'catalog_sync_disabled' });
+  const result = await syncSourceCatalog(sourceKey, { force: req.body?.force === true });
+  res.status(result.ok ? 200 : 502).json(result);
 });
 
 router.delete('/test-chat', async (req, res) => {

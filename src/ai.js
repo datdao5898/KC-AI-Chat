@@ -8,6 +8,7 @@ const {
   extractExactPrice,
   findProductsByExactPrice,
   loadProducts,
+  stockStatus,
   loadTextFile,
   extractProductPageUrls,
   parsePriceNumber,
@@ -418,6 +419,7 @@ function buildAvailabilityReply(userText, products) {
       '',
       name,
       `价格: ${price}`,
+      `库存: ${quoteAvailabilityText(product, 'zh')}`,
       url ? `链接: ${url}` : '',
       '',
       '我可以请 KingCom 员工为您确认当前库存。请留下电话号码，或告诉我您想确认哪一个型号。'
@@ -430,6 +432,7 @@ function buildAvailabilityReply(userText, products) {
       '',
       name,
       `Price: ${price}`,
+      `Stock: ${quoteAvailabilityText(product, 'en')}`,
       url ? `Link: ${url}` : '',
       '',
       'I can help check current stock before you order. May I have your phone number, or would you like our staff to confirm availability?'
@@ -441,6 +444,7 @@ function buildAvailabilityReply(userText, products) {
     '',
     name,
     `Giá: ${price}`,
+    `Tình trạng: ${quoteAvailabilityText(product)}`,
     url ? `Link: ${url}` : '',
     '',
     'Em có thể chuyển nhân viên kiểm tra tồn kho hiện tại trước khi mình đặt hàng. Anh/chị cho em xin số điện thoại để hỗ trợ nhanh hơn ạ.'
@@ -454,13 +458,11 @@ function productLine(product, index = 1) {
   return `${index}. ${name}\nGiá: ${price}${url ? `\nLink: ${url}` : ''}`;
 }
 
-function quoteAvailabilityText(product = {}) {
-  const availability = normalize(product.availability || '');
-  const stock = String(product.stock_total || product.inventory_quantity || product.stock || '').trim();
-  if (availability === 'in stock' || availability === 'in_stock') return stock ? `còn hàng theo catalog (tồn ${stock})` : 'còn hàng theo catalog';
-  if (availability === 'low stock' || availability === 'low_stock') return stock ? `sắp hết theo catalog (tồn ${stock})` : 'sắp hết theo catalog';
-  if (availability === 'out of stock' || availability === 'out_of_stock' || stock === '0' || /^-/.test(stock)) return 'đang hết hàng theo catalog';
-  return 'cần nhân viên xác nhận tồn kho';
+function quoteAvailabilityText(product = {}, lang = 'vi') {
+  const { status } = stockStatus(product);
+  if (lang === 'en') return status === 'in_stock' ? 'in stock' : status === 'out_of_stock' ? 'out of stock' : 'staff will confirm stock';
+  if (lang === 'zh') return status === 'in_stock' ? '有货' : status === 'out_of_stock' ? '缺货' : '需由工作人员确认库存';
+  return status === 'in_stock' ? 'còn hàng' : status === 'out_of_stock' ? 'hết hàng' : 'cần nhân viên xác nhận tồn kho';
 }
 
 function findQuoteProduct(query, sourceKey, predicate = () => true) {
@@ -3157,6 +3159,7 @@ ${intent === 'greeting'
     '- Chi nhac den san pham co trong muc "San pham lien quan"; khong tu them san pham khac.',
     '- Neu khach chi hoi mot model/san pham cu the, tra loi tap trung dung model do.',
     '- Khong khang dinh con hang/co san/in stock neu du lieu khong co ton kho; chi noi san pham co trong catalog va de nghi nhan vien kiem tra ton kho.',
+    '- Tuyet doi khong noi so luong ton kho cu the; chi noi "con hang" hoac "het hang" theo muc Tinh trang hang.',
     policyQuestion
       ? '- Khach dang hoi VAT/hoa don/bao hanh/doi tra/chinh sach. Chi tra loi theo FAQ va Chinh sach trong du lieu tham khao. Khong liet ke san pham moi, khong dinh link san pham, khong doi sang mau san pham khac. Neu can xac nhan theo model/don hang, noi da chuyen nhan vien KingCom kiem tra.'
       : '',

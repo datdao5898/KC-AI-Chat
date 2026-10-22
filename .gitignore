@@ -34,3 +34,8 @@ ssh/
 Thumbs.db
 .vscode/
 .idea/
+
+# Catalog synced from store APIs at runtime
+data/sources/**/products.synced.csv
+data/sources/**/products.synced.csv.tmp
+data/sources/**/catalog_sync.json

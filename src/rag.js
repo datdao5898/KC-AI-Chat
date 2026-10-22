@@ -314,10 +314,45 @@ function isScopedFacebookSource(sourceKey) {
   return /^facebook\/(?!default$)[a-z0-9-]+$/i.test(String(sourceKey || '').trim());
 }
 
+// A catalog synced from the store API (products.synced.csv, untracked by git) takes
+// precedence over the manually maintained products.csv of the same source.
+function sourceCatalogFile(dir) {
+  const synced = path.join(dir, 'products.synced.csv');
+  return fs.existsSync(synced) && fileRows(synced).length ? synced : path.join(dir, 'products.csv');
+}
+
+// Stock is exposed as a status only (in stock / out of stock, per branch when known):
+// exact quantities must never reach customers or the model context.
+function quantityStatus(value) {
+  const text = String(value ?? '').trim();
+  if (!text || !Number.isFinite(Number(text))) return '';
+  return Number(text) > 0 ? 'in_stock' : 'out_of_stock';
+}
+
+function stockStatus(product = {}) {
+  const availability = normalize(product.availability || '').replace(/\s+/g, '_');
+  const total = quantityStatus(product.stock_total || product.inventory_quantity || product.stock);
+  let status = '';
+  if (['in_stock', 'low_stock', 'available'].includes(availability)) status = 'in_stock';
+  else if (['out_of_stock', 'sold_out', 'unavailable'].includes(availability)) status = 'out_of_stock';
+  else status = total;
+  const hcm = quantityStatus(product.stock_hcm);
+  const hn = quantityStatus(product.stock_hn);
+  if (!status && (hcm || hn)) status = hcm === 'in_stock' || hn === 'in_stock' ? 'in_stock' : 'out_of_stock';
+  return { status, hcm, hn };
+}
+
+function stockStatusText(product = {}) {
+  const { status, hcm, hn } = stockStatus(product);
+  const label = value => (value === 'in_stock' ? 'con hang' : value === 'out_of_stock' ? 'het hang' : '');
+  const branches = [hcm ? `HCM ${label(hcm)}` : '', hn ? `HN ${label(hn)}` : ''].filter(Boolean).join(', ');
+  return [label(status), branches ? `(${branches})` : ''].filter(Boolean).join(' ') || 'chua ro, can nhan vien kiem tra';
+}
+
 function loadProducts(options = {}) {
   const sourceKey = options.sourceKey || '';
   if (isScopedFacebookSource(sourceKey)) {
-    const file = path.join(SOURCES_DIR, ...String(sourceKey).split('/'), 'products.csv');
+    const file = sourceCatalogFile(path.join(SOURCES_DIR, ...String(sourceKey).split('/')));
     return fs.existsSync(file) ? dedupeProducts(fileRows(file)) : [];
   }
 
@@ -328,7 +363,7 @@ function loadProducts(options = {}) {
     const file = candidate === 'common'
       ? path.join(SOURCES_DIR, 'common', 'products.csv')
       : candidate
-        ? path.join(SOURCES_DIR, ...candidate.split('/'), 'products.csv')
+        ? sourceCatalogFile(path.join(SOURCES_DIR, ...candidate.split('/')))
         : '';
     if (!file) continue;
     const rows = fileRows(file);
@@ -632,14 +667,7 @@ function buildContext(query, options = {}) {
     products.forEach((p, i) => {
       const price = p.price || p.compare_at_price || p.gia || '';
       const url = p.url || p.link || p.product_url || '';
-      const stockParts = [
-        p.stock_total ? `Tong ${p.stock_total}` : '',
-        p.inventory_quantity ? `SL ${p.inventory_quantity}` : '',
-        p.stock_hcm ? `HCM ${p.stock_hcm}` : '',
-        p.stock_hn ? `HN ${p.stock_hn}` : ''
-      ].filter(Boolean).join(', ');
-      const availability = p.availability || '';
-      ctx += `${i + 1}. SKU: ${p.sku || 'N/A'} | Ten: ${p.name || p.title || 'N/A'} | Hang: ${p.vendor || p.brand || 'N/A'} | Gia: ${price || 'Lien he'} | Trang thai: ${availability || 'N/A'} | Ton kho: ${stockParts || p.stock || 'N/A'} | Link: ${url || 'Chua co link'}\n`;
+      ctx += `${i + 1}. SKU: ${p.sku || 'N/A'} | Ten: ${p.name || p.title || 'N/A'} | Hang: ${p.vendor || p.brand || 'N/A'} | Gia: ${price || 'Lien he'} | Tinh trang hang: ${stockStatusText(p)} | Link: ${url || 'Chua co link'}\n`;
       if (includeDescriptions) {
         const description = String(p.description || p.content || p.details || '')
           .replace(/\s+/g, ' ')
@@ -666,6 +694,9 @@ module.exports = {
   buildContext,
   searchProducts,
   loadProducts,
+  stockStatus,
+  sourceCatalogFile,
+  fileRows,
   loadTextFile,
   extractProductPageUrls,
   productSlugFromUrl,

@@ -1,5 +1,9 @@
 {
   "displayName": "KingCom",
+  "catalogSync": {
+    "enabled": true,
+    "storeUrl": "https://store.kingcom.com.vn"
+  },
   "webGuidance": {
     "enabled": true,
     "allowedDomains": [
@@ -21,21 +25,51 @@
     ],
     "restrictByProductBrand": true,
     "brandDomains": {
-      "Ulanzi": ["ulanzi.com"],
-      "Zhiyun": ["zhiyun-tech.com"],
-      "Boya": ["boyamic.com"],
-      "Viltrox": ["viltrox.com"],
-      "DJI": ["dji.com"],
-      "Colbor": ["colborlight.com"],
-      "Synco": ["syncoaudio.com"],
-      "Comica": ["comica-audio.com"],
-      "Accsoon": ["accsoon.com"],
-      "Maono": ["maono.com"],
-      "Rode": ["rode.com"],
-      "SmallRig": ["smallrig.com"],
-      "Godox": ["godox.com"],
-      "Hollyland": ["hollyland.com"],
-      "Nanlite": ["nanlite.com"]
+      "Ulanzi": [
+        "ulanzi.com"
+      ],
+      "Zhiyun": [
+        "zhiyun-tech.com"
+      ],
+      "Boya": [
+        "boyamic.com"
+      ],
+      "Viltrox": [
+        "viltrox.com"
+      ],
+      "DJI": [
+        "dji.com"
+      ],
+      "Colbor": [
+        "colborlight.com"
+      ],
+      "Synco": [
+        "syncoaudio.com"
+      ],
+      "Comica": [
+        "comica-audio.com"
+      ],
+      "Accsoon": [
+        "accsoon.com"
+      ],
+      "Maono": [
+        "maono.com"
+      ],
+      "Rode": [
+        "rode.com"
+      ],
+      "SmallRig": [
+        "smallrig.com"
+      ],
+      "Godox": [
+        "godox.com"
+      ],
+      "Hollyland": [
+        "hollyland.com"
+      ],
+      "Nanlite": [
+        "nanlite.com"
+      ]
     },
     "maxResults": 3
   }
