@@ -206,7 +206,7 @@
       bind();
     };
     if (KC.$('#catalogSyncBtn')) KC.$('#catalogSyncBtn').onclick = runCatalogSync;
-    KC.$('[data-save]').forEach(btn => {
+    KC.$$('[data-save]').forEach(btn => {
       btn.onclick = () => save(btn.dataset.save);
     });
     KC.$$('[data-upload]').forEach(btn => {
