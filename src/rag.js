@@ -114,33 +114,6 @@ function significantQueryWords(query) {
     .filter(w => !QUERY_UTILITY_WORDS.has(w));
 }
 
-function wordSet(text) {
-  return new Set(normalize(text).split(/\s+/).filter(Boolean));
-}
-
-function orderedMatchScore(words, text) {
-  const textWords = normalize(text).split(/\s+/).filter(Boolean);
-  if (!words.length || !textWords.length) return 0;
-  let bestRun = 0;
-  for (let start = 0; start < textWords.length; start++) {
-    let run = 0;
-    let cursor = start;
-    for (const word of words) {
-      while (cursor < textWords.length && textWords[cursor] !== word) cursor++;
-      if (cursor >= textWords.length) break;
-      run++;
-      cursor++;
-    }
-    bestRun = Math.max(bestRun, run);
-  }
-  return bestRun;
-}
-
-function looksAccessoryProduct(nameNorm) {
-  const words = wordSet(nameNorm);
-  return [...ACCESSORY_WORDS].some(word => words.has(word));
-}
-
 function queryLooksForMainProduct(queryWordsList) {
   if (!queryWordsList.length) return false;
   return !queryWordsList.some(word => ACCESSORY_WORDS.has(word));
@@ -301,13 +274,14 @@ function dedupeProducts(products) {
   return out;
 }
 
+const BRANDS_CACHE = new WeakMap();
+
 function getKnownProductBrands() {
-  const legacyFile = path.join(DATA_DIR, 'products.csv');
-  return [...new Set(
-    fileRows(legacyFile)
-      .map(p => normalize(p.vendor || p.brand || ''))
-      .filter(Boolean)
-  )];
+  const rows = fileRows(path.join(DATA_DIR, 'products.csv'));
+  if (!BRANDS_CACHE.has(rows)) {
+    BRANDS_CACHE.set(rows, [...new Set(rows.map(p => normalize(p.vendor || p.brand || '')).filter(Boolean))]);
+  }
+  return BRANDS_CACHE.get(rows);
 }
 
 function isScopedFacebookSource(sourceKey) {
@@ -477,11 +451,116 @@ function matchesRequiredCategory(product = {}, category = '') {
   return pattern ? pattern.test(name) : true;
 }
 
+// Quantities and units are not model codes ("4800mah", "2kg", "1tr", "4k").
+const UNIT_TOKEN = /^\d+(?:k|m|tr|trieu|nghin|ngan|mah|w|kw|kg|g|cm|mm|v|hz|khz|ghz|mp|inch|in|gb|tb|p|fps|x)$/i;
+
+// Words describing the customer's device or the kind of help asked for. They help
+// for broad questions ("mic cho iphone") but must not outrank an exact model code.
+const LOW_WEIGHT_WORDS = new Set([
+  ...QUERY_UTILITY_WORDS,
+  'iphone', 'ipad', 'ios', 'android', 'samsung', 'xiaomi', 'oppo', 'macbook', 'laptop', 'pc', 'windows', 'mac',
+  'dien', 'thoai', 'phone', 'smartphone', 'tinh'
+]);
+
+function compactCode(token) {
+  return String(token || '').replace(/-/g, '');
+}
+
+function isModelToken(token) {
+  const compact = compactCode(token);
+  return /[a-z]/.test(compact) && /\d/.test(compact) && compact.length >= 2 && !UNIT_TOKEN.test(compact);
+}
+
+// Model codes compared without separators: "MT-44B", "mt44b" and "MT 44B" -> "mt44b".
+// A short word followed by a number joins too ("Mini 2" -> "mini2", "BG 2" -> "bg2").
+// Joined codes are soft: they boost ranking but never exclude products.
+function modelCodes(text) {
+  const tokens = normalize(text).split(/\s+/).filter(Boolean);
+  const hard = new Set();
+  const soft = new Set();
+  tokens.forEach((token, index) => {
+    if (isModelToken(token)) hard.add(compactCode(token));
+    const next = tokens[index + 1] || '';
+    const joined = `${token}${compactCode(next)}`;
+    if (/^[a-z]{1,6}$/.test(token) && !STOPWORDS.has(token) && /^\d[a-z0-9]{0,4}$/.test(compactCode(next)) && isModelToken(joined)) {
+      soft.add(joined);
+    }
+  });
+  return { hard: [...hard], soft: [...soft].filter(code => !hard.has(code)) };
+}
+
+function tokenSet(text) {
+  return new Set(String(text || '').split(/\s+/).filter(Boolean));
+}
+
+// Everything searchProducts needs per product, computed once per catalog row.
+const PRODUCT_INDEX = new WeakMap();
+
+function productIndex(p) {
+  let index = PRODUCT_INDEX.get(p);
+  if (index) return index;
+  const rawName = p.name || p.title || '';
+  const name = normalize(rawName);
+  const nameAccent = normalizeAccent(rawName);
+  const sku = normalize(p.sku || '');
+  const vendor = normalize(p.vendor || p.brand || '');
+  const rawProductUrl = p.url || p.link || p.product_url || '';
+  const desc = normalize(`${p.description || ''} ${p.tags || ''}`);
+  const descAccent = normalizeAccent(`${p.description || ''} ${p.tags || ''}`);
+  const nameTokens = name.split(/\s+/).filter(Boolean);
+  const models = modelCodes(`${rawName} ${p.sku || ''}`);
+  const productShape = { nameNorm: name, nameAccent, descNorm: desc };
+  index = {
+    price: parsePriceNumber(p.price || p.compare_at_price || p.gia || ''),
+    name,
+    nameAccent,
+    nameAccentWords: tokenSet(nameAccent),
+    descAccentWords: tokenSet(descAccent),
+    sku,
+    vendor,
+    productUrl: normalize(rawProductUrl),
+    canonicalUrl: canonicalProductUrl(rawProductUrl),
+    productSlug: productSlugFromUrl(rawProductUrl),
+    desc,
+    haystack: `${name} ${desc}`,
+    identityText: `${name} ${sku} ${vendor} ${normalize(rawProductUrl)}`,
+    nameTokens,
+    nameWords: new Set(nameTokens),
+    models: new Set([...models.hard, ...models.soft]),
+    compact: `${name} ${sku}`.replace(/[\s-]+/g, ''),
+    accessoryProduct: nameTokens.some(word => ACCESSORY_WORDS.has(word)),
+    isLight: isTrueLightProduct(productShape),
+    isLens: isTrueLensProduct(productShape),
+    isMobileOrActionLens: isMobileOrActionLensProduct(productShape),
+    isLandscapeLens: isLandscapeLensCandidate(productShape),
+    isLensAccessory: isLensAccessory(productShape)
+  };
+  PRODUCT_INDEX.set(p, index);
+  return index;
+}
+
+function orderedTokenMatchScore(words, textWords) {
+  if (!words.length || !textWords.length) return 0;
+  let bestRun = 0;
+  for (let start = 0; start < textWords.length; start++) {
+    let run = 0;
+    let cursor = start;
+    for (const word of words) {
+      while (cursor < textWords.length && textWords[cursor] !== word) cursor++;
+      if (cursor >= textWords.length) break;
+      run++;
+      cursor++;
+    }
+    bestRun = Math.max(bestRun, run);
+  }
+  return bestRun;
+}
+
 function searchProducts(query, topK = 8, options = {}) {
   const products = loadProducts(options);
   const words = queryWords(query);
   const significantWords = significantQueryWords(query);
-  const accentedWords = accentQueryWords(query);
+  const accentedWords = accentQueryWords(query).filter(w => normalize(w) !== w);
   const normQuery = normalize(query);
   const accentQuery = normalizeAccent(query);
   const identityWords = options.requireIdentityMatch
@@ -497,10 +576,10 @@ function searchProducts(query, topK = 8, options = {}) {
     .filter(Boolean);
   if (scopeBrand && mentionedBrands.some(brand => brand !== scopeBrand)) return [];
   const maxPrice = extractMaxPrice(query);
-  const codeWords = words.filter(w => {
-    if (!(w.length >= 2 && /[a-z]/.test(w) && /\d/.test(w))) return false;
-    return !/^\d+(?:k|m|tr|trieu|nghin|ngan)$/i.test(w);
-  });
+  // A pasted product URL is matched by URL; its slug words are not model codes.
+  const codeQuery = requestedProductUrls.length ? query.replace(/https?:\/\/\S+/gi, ' ') : query;
+  const { hard: hardCodes, soft: softCodes } = modelCodes(codeQuery);
+  const hasModelCode = hardCodes.length > 0 || softCodes.length > 0;
   const wantsTripod = /\b(tripod|tripid|chan may|chan den|gia do|bon chan|4 chan)\b/i.test(normQuery);
   const wantsMicrophone = /\b(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)\b/i.test(normQuery);
   const wantsHeadphones = /\b(tai nghe|headphone|headphones|headset)\b/i.test(normQuery);
@@ -521,59 +600,49 @@ function searchProducts(query, topK = 8, options = {}) {
   const wantsLandscapeLens = wantsLens && /\b(phong canh|landscape|goc rong|wide angle|sieu rong|kien truc|thien van)\b/i.test(normQuery);
   const wantsMobileOrActionLens = wantsPhone || /\b(osmo|dji pocket|action camera)\b/i.test(normQuery);
   const wantsMainProduct = queryLooksForMainProduct(significantWords);
-  if (!words.length) return [];
+  if (!words.length && !requestedProductUrls.length) return [];
 
   const scored = [];
   for (const p of products) {
-    const price = parsePriceNumber(p.price || p.compare_at_price || p.gia || '');
-    if (maxPrice && price && price > maxPrice) continue;
+    const idx = productIndex(p);
+    if (maxPrice && idx.price && idx.price > maxPrice) continue;
 
-    const name = normalize(p.name || p.title || '');
-    const nameAccent = normalizeAccent(p.name || p.title || '');
-    const sku = normalize(p.sku || '');
-    const vendor = normalize(p.vendor || p.brand || '');
-    const rawProductUrl = p.url || p.link || p.product_url || '';
-    const productUrl = normalize(rawProductUrl);
-    const canonicalUrl = canonicalProductUrl(rawProductUrl);
-    const productSlug = productSlugFromUrl(rawProductUrl);
-    const urlMatched = requestedProductUrls.includes(canonicalUrl)
-      || (productSlug && requestedProductSlugs.includes(productSlug));
-    const desc = normalize(`${p.description || ''} ${p.tags || ''}`);
-    const descAccent = normalizeAccent(`${p.description || ''} ${p.tags || ''}`);
-    const haystack = `${name} ${desc}`;
-    const identityText = `${name} ${sku} ${vendor} ${normalize(p.url || p.link || p.product_url || '')}`;
-    const productShape = { nameNorm: name, nameAccent, descNorm: desc };
-    const nameWords = wordSet(name);
-    const significantNameMatches = significantWords.filter(w => nameWords.has(w));
-    const exactCodeNameMatches = codeWords.filter(w => nameWords.has(w));
-    const orderedNameMatches = orderedMatchScore(significantWords, name);
-    const accessoryProduct = looksAccessoryProduct(name);
+    const { name, sku, vendor, desc, haystack } = idx;
+    const urlMatched = requestedProductUrls.includes(idx.canonicalUrl)
+      || (idx.productSlug && requestedProductSlugs.includes(idx.productSlug));
+    const significantNameMatches = significantWords.filter(w => idx.nameWords.has(w));
+    const orderedNameMatches = orderedTokenMatchScore(significantWords, idx.nameTokens);
 
     if (scopeBrand && vendor && vendor !== scopeBrand && !vendor.includes(scopeBrand) && !scopeBrand.includes(vendor)) continue;
     if (!matchesRequiredCategory(p, options.requiredCategory)) continue;
     if (requestedProductUrls.length && !urlMatched) continue;
-    if (identityWords.length && !urlMatched && !identityWords.some(w => identityText.includes(w))) continue;
-    if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
-    if (wantsHeadphones && !/\b(tai nghe|headphone|headphones|headset)\b/i.test(name)) continue;
-    if (wantsFogMachine && !/\b(may tao khoi|tao khoi|smoke machine|fog machine|filmog|smoke b)\b/i.test(haystack)) continue;
-    if (wantsLight && !isTrueLightProduct(productShape)) continue;
-    if (wantsLens && !isTrueLensProduct(productShape)) continue;
-    if (wantsLens && !wantsMobileOrActionLens && isMobileOrActionLensProduct(productShape)) continue;
-    if (wantsLandscapeLens && !isLandscapeLensCandidate(productShape)) continue;
-    if (wantsAdapter && !isLensAccessory(productShape)) continue;
-    if (wantsMicrophone) {
-      const microphoneText = `${name} ${vendor} ${desc}`;
-      const nameVendorText = `${name} ${vendor}`;
-      const nameLooksAccessory = /\b(hdmi|cable|cap|adapter|dau chuyen|mount adapter|usb hub|the nho|memory card)\b/i.test(nameVendorText)
-        && !/\b(thu am|maono|fifine|boya|comica|synco|xlr|condenser|dynamic|lavalier|wireless)\b/i.test(nameVendorText);
-      if (nameLooksAccessory) continue;
-      const audioMic = /(\bmic\b|\bmicrophone\b|\bthu am\b|\bmaono\b|\bfifine\b|\bboya\b|\bcomica\b|\bsynco\b|\bxlr\b|\bcondenser\b|\bdynamic\b|\blavalier\b|\bwireless\b)/i.test(microphoneText);
-      const connectorOnly = /\b(hdmi|cable|cap|adapter|dau chuyen|mount adapter|usb hub|the nho|memory card)\b/i.test(microphoneText)
-        && !/\b(thu am|maono|fifine|boya|comica|synco|xlr|condenser|dynamic|lavalier|wireless)\b/i.test(microphoneText);
-      if (!audioMic || connectorOnly) continue;
+    if (identityWords.length && !urlMatched && !identityWords.some(w => idx.identityText.includes(w))) continue;
+    // A product the customer linked to is never dropped by category heuristics.
+    if (!urlMatched) {
+      if (wantsTripod && !/(tripod|chan may|chan den|gia do)/i.test(haystack)) continue;
+      if (wantsHeadphones && !/\b(tai nghe|headphone|headphones|headset)\b/i.test(name)) continue;
+      if (wantsFogMachine && !/\b(may tao khoi|tao khoi|smoke machine|fog machine|filmog|smoke b)\b/i.test(haystack)) continue;
+      if (wantsLight && !idx.isLight) continue;
+      if (wantsLens && !idx.isLens) continue;
+      if (wantsLens && !wantsMobileOrActionLens && idx.isMobileOrActionLens) continue;
+      if (wantsLandscapeLens && !idx.isLandscapeLens) continue;
+      if (wantsAdapter && !idx.isLensAccessory) continue;
+      if (wantsMicrophone) {
+        const microphoneText = `${name} ${vendor} ${desc}`;
+        const nameVendorText = `${name} ${vendor}`;
+        const nameLooksAccessory = /\b(hdmi|cable|cap|adapter|dau chuyen|mount adapter|usb hub|the nho|memory card)\b/i.test(nameVendorText)
+          && !/\b(thu am|maono|fifine|boya|comica|synco|xlr|condenser|dynamic|lavalier|wireless)\b/i.test(nameVendorText);
+        if (nameLooksAccessory) continue;
+        const audioMic = /(\bmic\b|\bmicrophone\b|\bthu am\b|\bmaono\b|\bfifine\b|\bboya\b|\bcomica\b|\bsynco\b|\bxlr\b|\bcondenser\b|\bdynamic\b|\blavalier\b|\bwireless\b)/i.test(microphoneText);
+        const connectorOnly = /\b(hdmi|cable|cap|adapter|dau chuyen|mount adapter|usb hub|the nho|memory card)\b/i.test(microphoneText)
+          && !/\b(thu am|maono|fifine|boya|comica|synco|xlr|condenser|dynamic|lavalier|wireless)\b/i.test(microphoneText);
+        if (!audioMic || connectorOnly) continue;
+      }
     }
 
-    if (!urlMatched && codeWords.length && !codeWords.some(w => sku.includes(w) || name.includes(w))) continue;
+    // A model code typed as one token ("mt44b", "BY-PM500") must appear in the product,
+    // compared without spaces/hyphens so "MT-44B" matches "mt44b".
+    if (!urlMatched && hardCodes.length && !hardCodes.some(code => idx.models.has(code) || idx.compact.includes(code))) continue;
 
     let score = 0;
     let strongMatches = 0;
@@ -582,25 +651,28 @@ function searchProducts(query, topK = 8, options = {}) {
       strongMatches += 1;
     }
     for (const w of words) {
+      const lowWeight = hasModelCode && LOW_WEIGHT_WORDS.has(w);
       if (sku === w || sku.includes(w)) { score += 8; strongMatches++; }
       if (vendor === w) { score += 7; strongMatches++; }
       else if (vendor.includes(w)) { score += 4; strongMatches++; }
-      if (name.includes(w)) { score += 5; strongMatches++; }
-      if (productUrl.includes(w)) { score += 8; strongMatches++; }
+      if (name.includes(w)) {
+        score += lowWeight ? 1 : 5;
+        if (!lowWeight) strongMatches++;
+      }
+      if (idx.productUrl.includes(w) && !lowWeight) { score += 8; strongMatches++; }
       if (desc.includes(w)) score += 1;
     }
-    for (const w of codeWords) {
-      if (sku === w || nameWords.has(w)) {
-        score += 26;
+    for (const code of [...hardCodes, ...softCodes]) {
+      if (idx.models.has(code)) {
+        score += 60;
         strongMatches += 2;
-      } else if (sku.includes(w) || name.includes(w)) {
+      } else if (idx.compact.includes(code)) {
         score += 14;
         strongMatches += 1;
       }
     }
     if (significantWords.length) {
       score += significantNameMatches.length * 5;
-      score += exactCodeNameMatches.length * 10;
       if (orderedNameMatches >= Math.min(significantWords.length, 3)) {
         score += orderedNameMatches * 4;
         strongMatches += 1;
@@ -609,29 +681,31 @@ function searchProducts(query, topK = 8, options = {}) {
         score += 20;
         strongMatches += 1;
       }
-      if (wantsMainProduct && accessoryProduct && significantNameMatches.length < significantWords.length) {
+      if (wantsMainProduct && idx.accessoryProduct && significantNameMatches.length < significantWords.length) {
         score -= 18;
       }
     }
     for (const w of accentedWords) {
-      if (normalize(w) === w) continue;
-      if (hasAccentWord(nameAccent, w)) { score += 3; strongMatches++; }
-      if (hasAccentWord(descAccent, w)) score += 1;
+      if (idx.nameAccentWords.has(w)) { score += 3; strongMatches++; }
+      if (idx.descAccentWords.has(w)) score += 1;
     }
 
     if (wantsTripod && /(tripod|chan may|chan den|gia do)/i.test(name)) score += 8;
     if (wantsMicrophone && /(mic|micro|microphone|thu am|maono|fifine|boya|comica|synco)/i.test(`${name} ${vendor}`)) score += 8;
     if (wantsHeadphones && /\b(tai nghe|headphone|headphones|headset)\b/i.test(name)) score += 10;
     if (wantsFogMachine && /\b(may tao khoi|tao khoi|smoke machine|fog machine|filmog|smoke b)\b/i.test(name)) score += 12;
-    if (wantsLight && isTrueLightProduct(productShape)) score += 8;
-    if (wantsLens && isTrueLensProduct(productShape)) score += 8;
+    if (wantsLight && idx.isLight) score += 8;
+    if (wantsLens && idx.isLens) score += 8;
     if (wantsPortraitLens && /\b(50|56|75|85)\s*mm\b/i.test(name)) score += 12;
     if (wantsPortraitLens && /\b(13|16|20|23|24)\s*mm\b/i.test(name)) score -= 6;
-    if (wantsLandscapeLens && isLandscapeLensCandidate(productShape)) score += 12;
+    if (wantsLandscapeLens && idx.isLandscapeLens) score += 12;
     if (wantsLandscapeLens && /\b(?:9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28)\s*mm\b/i.test(name)) score += 4;
-    if (wantsAdapter && isLensAccessory(productShape)) score += 8;
-    if (wantsPhone && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 6;
-    if (wantsTripod && wantsPhone && /(tripod|chan may|chan den|gia do)/i.test(haystack) && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 10;
+    if (wantsAdapter && idx.isLensAccessory) score += 8;
+    // Device words only help a broad question, not one naming a model.
+    if (!hasModelCode) {
+      if (wantsPhone && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 6;
+      if (wantsTripod && wantsPhone && /(tripod|chan may|chan den|gia do)/i.test(haystack) && /(mobile|phone|smartphone|cellphone|iphone|android|dien thoai)/i.test(haystack)) score += 10;
+    }
 
     if (score >= 4 && strongMatches > 0) scored.push({ ...p, score });
   }
@@ -693,6 +767,7 @@ function buildContext(query, options = {}) {
 module.exports = {
   buildContext,
   searchProducts,
+  modelCodes,
   loadProducts,
   stockStatus,
   sourceCatalogFile,
