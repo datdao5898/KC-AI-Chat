@@ -1108,7 +1108,7 @@ test('technical charging issue quotes the FAQ technical section instead of price
     conversationContext: {}
   });
 
-  assert.match(result.reply, /Kh\u00f4ng l\u00ean ngu\u1ed3n: anh\/ch\u1ecb ki\u1ec3m tra ngu\u1ed3n \u0111i\u1ec7n, d\u00e2y v\u00e0 pin/);
+  assert.match(result.reply, /kh\u00f4ng l\u00ean ngu\u1ed3n: anh\/ch\u1ecb th\u1eed ki\u1ec3m tra ngu\u1ed3n \u0111i\u1ec7n, d\u00e2y k\u1ebft n\u1ed1i ho\u1eb7c pin/);
   assert.equal(result.handoff.needed, true);
   assert.doesNotMatch(result.reply, /Gi\u00e1:|Link:|30 ph\u00fat/i);
 });

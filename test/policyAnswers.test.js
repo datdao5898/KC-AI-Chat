@@ -34,7 +34,25 @@ test('real log questions route to the right policy section', () => {
   assert.equal(detectPolicyTopic('kiểm tra hàng tồn'), null);
 
   const lostInvoice = buildPolicyAnswer({ userText: 'Anh không còn hoá đơn, hoá đơn bị thất lạc đâu rồi', sourceKey: 'website/kingcom', lang: 'vi' });
-  assert.match(lostInvoice.reply, /mất hóa đơn, bên em vẫn kiểm tra được qua số điện thoại, mã đơn hoặc serial/);
+  assert.match(lostInvoice.reply, /mất hóa đơn, shop vẫn kiểm tra thông tin mua hàng trên hệ thống qua số điện thoại, mã đơn hoặc serial/);
+});
+
+test('order process questions quote the FAQ order section', () => {
+  for (const question of ['giờ mình đặt hàng như thế nào', 'đặt thẳng trên shop không có đăng ký thì check đơn hàng ở đâu', 'ý là em đặt r nma ko bt check ở đâu ý', 'tôi muốn hủy đơn']) {
+    assert.equal(detectPolicyTopic(question)?.id, 'order', question);
+  }
+  assert.equal(detectPolicyTopic('cần đặt hàng'), null);
+
+  const result = buildPolicyAnswer({ userText: 'tôi muốn hủy đơn', sourceKey: 'website/kingcom', lang: 'vi' });
+  assert.match(result.reply, /Hủy đơn: anh\/chị gửi mã đơn hoặc số điện thoại đặt hàng/);
+  assert.match(result.reply, /kiểm tra đơn hàng đang ở đâu/);
+});
+
+test('VAT answer confirms per product instead of claiming prices include VAT', () => {
+  const result = buildPolicyAnswer({ userText: 'giá đã bao gồm VAT chưa', sourceKey: 'website/kingcom', lang: 'vi' });
+
+  assert.match(result.reply, /shop sẽ xác nhận rõ giá bán và thông tin VAT trước khi đặt hàng/);
+  assert.doesNotMatch(result.reply, /đã bao gồm VAT/);
 });
 
 test('source without a policy section hands off instead of borrowing another brand policy', () => {
@@ -76,7 +94,7 @@ test('generateReply answers policy and unsupported product from markdown', async
 
   const payment = await generateReply({ ...payload, userText: 'tôi muốn thanh toán khi nhận hàng', intent: 'general' });
   assert.equal(payment.aiSource, 'rule_policy');
-  assert.match(payment.reply, /thanh toán khi nhận hàng \(COD\), chuyển khoản và thanh toán online \(VNPay\)/);
+  assert.match(payment.reply, /thanh toán khi nhận hàng \(COD\), chuyển khoản và các phương thức thanh toán trực tuyến như VNPay/);
 
   const unsupported = await generateReply({ ...payload, userText: 'shop có bán laptop thinkpad không', intent: 'unsupported' });
   assert.match(unsupported.reply, /chưa kinh doanh laptop\/ThinkPad/);

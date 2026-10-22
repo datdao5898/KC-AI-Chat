@@ -5,6 +5,12 @@ const { normalizeText, findSection, sectionText } = require('./knowledgeSections
 // question, not a VAT one.
 const POLICY_TOPICS = [
   {
+    id: 'order',
+    label: 'đặt hàng',
+    heading: /^(huong dan )?dat hang/,
+    question: /\b(dat hang (nhu the nao|the nao|ra sao|o dau|qua (zalo|facebook|fb|web|website))|(lam sao|cach) (de )?dat hang|huy don|sua don|dat nham|doi (thong tin|dia chi) (don|nhan hang)|(kiem tra|check|theo doi|tra cuu) (lai )?don|(kiem tra|check) (o|tai) dau|don hang (dang )?(o dau|den dau|toi dau))\b/
+  },
+  {
     id: 'warranty',
     label: 'bảo hành',
     heading: /^(chinh sach )?bao hanh/,

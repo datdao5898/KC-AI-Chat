@@ -24,6 +24,7 @@ test('generateReply answers VAT policy without product clarification or links', 
   assert.equal(result.aiSource, 'rule_policy');
   assert.equal(result.ragProducts.length, 0);
   assert.match(result.reply, /VAT/);
-  assert.match(result.reply, /\u0111\u00e3 bao g\u1ed3m VAT/i);
+  assert.match(result.reply, /x\u00e1c nh\u1eadn r\u00f5 gi\u00e1 b\u00e1n v\u00e0 th\u00f4ng tin VAT/i);
+  assert.doesNotMatch(result.reply, /\u0111\u00e3 bao g\u1ed3m VAT/i);
   assert.doesNotMatch(result.reply, /Miliboo|ULANZI|https?:\/\//i);
 });
