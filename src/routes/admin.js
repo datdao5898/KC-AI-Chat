@@ -507,6 +507,18 @@ router.post('/test-chat', async (req, res) => {
 
 router.get('/catalog-sync', (req, res) => res.json({ sources: catalogSyncStatus() }));
 
+// Download the synced catalog; the BOM makes Excel open the UTF-8 Vietnamese text correctly.
+router.get('/catalog-sync/file', (req, res) => {
+  const sourceKey = String(req.query.sourceKey || '').trim();
+  if (!catalogSyncStatus().some(item => item.sourceKey === sourceKey)) return res.status(400).json({ error: 'catalog_sync_not_configured' });
+  const file = path.join(SOURCES_DIR, ...sourceKey.split('/'), 'products.synced.csv');
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'catalog_not_synced_yet' });
+  const name = `catalog-${sourceKey.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+  res.send('﻿' + fs.readFileSync(file, 'utf8'));
+});
+
 router.post('/catalog-sync', async (req, res) => {
   const sourceKey = String(req.body?.sourceKey || '').trim();
   const source = catalogSyncStatus().find(item => item.sourceKey === sourceKey);

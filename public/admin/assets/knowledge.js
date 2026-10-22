@@ -83,6 +83,7 @@
             <div class="muted">Khi đã đồng bộ, bot dùng catalog lấy từ website (products.synced.csv) thay cho file products.csv upload tay của nguồn này.</div>
             <div class="row">
               <button class="btn" id="catalogSyncBtn" type="button" ${!sync.enabled || data.syncing || sync.running ? 'disabled' : ''}>${data.syncing || sync.running ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}</button>
+              ${sync.lastSuccessAt ? `<a class="btn ghost" href="${KC.API}/catalog-sync/file?sourceKey=${encodeURIComponent(sync.sourceKey)}" download>Tải file CSV</a>` : ''}
             </div>
           </div>
         </div>
