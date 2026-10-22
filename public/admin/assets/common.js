@@ -31,6 +31,11 @@
       notifyBlockedHelp: 'Tr\u00ecnh duy\u1ec7t \u0111ang ch\u1eb7n th\u00f4ng b\u00e1o. B\u1ea5m bi\u1ec3u t\u01b0\u1ee3ng \u1ed5 kh\u00f3a c\u1ea1nh \u0111\u1ecba ch\u1ec9 web, ch\u1ecdn Th\u00f4ng b\u00e1o: Cho ph\u00e9p r\u1ed3i t\u1ea3i l\u1ea1i trang.',
       notifyTitle: 'Tin nh\u1eafn m\u1edbi',
       notifyCustomer: 'Kh\u00e1ch',
+      notifyTestTitle: '\u0110\u00e3 b\u1eadt th\u00f4ng b\u00e1o KingCom',
+      notifyTestBody: 'Khi kh\u00e1ch nh\u1eafn trong gi\u1edd tr\u1ef1c, th\u00f4ng b\u00e1o s\u1ebd hi\u1ec7n nh\u01b0 th\u1ebf n\u00e0y.',
+      notifyEnabledToast: '\u0110\u00e3 b\u1eadt th\u00f4ng b\u00e1o. N\u1ebfu kh\u00f4ng th\u1ea5y th\u00f4ng b\u00e1o th\u1eed \u1edf g\u00f3c m\u00e0n h\u00ecnh, ki\u1ec3m tra C\u00e0i \u0111\u1eb7t Windows > Th\u00f4ng b\u00e1o: cho ph\u00e9p tr\u00ecnh duy\u1ec7t, v\u00e0 t\u1eaft ch\u1ebf \u0111\u1ed9 Kh\u00f4ng l\u00e0m phi\u1ec1n.',
+      notifyOffToast: '\u0110\u00e3 t\u1eaft th\u00f4ng b\u00e1o tr\u00ean tr\u00ecnh duy\u1ec7t n\u00e0y.',
+      notifyPromptHelp: 'Tr\u00ecnh duy\u1ec7t ch\u01b0a cho ph\u00e9p th\u00f4ng b\u00e1o. B\u1ea5m bi\u1ec3u t\u01b0\u1ee3ng chu\u00f4ng (ho\u1eb7c \u1ed5 kh\u00f3a) b\u00ean tr\u00e1i \u0111\u1ecba ch\u1ec9 web, ch\u1ecdn Th\u00f4ng b\u00e1o: Cho ph\u00e9p, r\u1ed3i b\u1ea5m l\u1ea1i n\u00fat n\u00e0y.',
       titleSchedule: 'L\u1ecbch tr\u1ea3 l\u1eddi t\u1ef1 \u0111\u1ed9ng',
       subtitleSchedule: 'Gi\u1edd nh\u00e2n vi\u00ean tr\u1ef1c th\u00ec AI im l\u1eb7ng; ngo\u00e0i gi\u1edd v\u00e0 ng\u00e0y ngh\u1ec9 AI tr\u1ea3 l\u1eddi',
       titleDashboard: 'T\u1ed5ng quan',
@@ -164,6 +169,11 @@
       notifyBlockedHelp: 'The browser is blocking notifications. Click the lock icon next to the address, set Notifications to Allow, then reload.',
       notifyTitle: 'New message',
       notifyCustomer: 'Customer',
+      notifyTestTitle: 'KingCom notifications enabled',
+      notifyTestBody: 'Messages during staff hours will appear like this.',
+      notifyEnabledToast: 'Notifications enabled. If no test notification appeared, allow the browser in Windows Settings > Notifications and turn off Do not disturb.',
+      notifyOffToast: 'Notifications turned off in this browser.',
+      notifyPromptHelp: 'The browser has not allowed notifications. Click the bell (or lock) icon left of the address, set Notifications to Allow, then click this button again.',
       titleSchedule: 'Auto-reply schedule',
       subtitleSchedule: 'AI stays silent during staff hours; it replies outside them and on days off',
       titleDashboard: 'Overview',
@@ -297,6 +307,11 @@
       notifyBlockedHelp: '\u6d4f\u89c8\u5668\u62e6\u622a\u4e86\u901a\u77e5\u3002\u8bf7\u70b9\u51fb\u5730\u5740\u680f\u65c1\u7684\u9501\u56fe\u6807\uff0c\u5c06\u901a\u77e5\u8bbe\u4e3a\u5141\u8bb8\uff0c\u7136\u540e\u5237\u65b0\u3002',
       notifyTitle: '\u65b0\u6d88\u606f',
       notifyCustomer: '\u5ba2\u6237',
+      notifyTestTitle: 'KingCom \u901a\u77e5\u5df2\u5f00\u542f',
+      notifyTestBody: '\u503c\u73ed\u65f6\u95f4\u5185\u7684\u5ba2\u6237\u6d88\u606f\u5c06\u4ee5\u6b64\u65b9\u5f0f\u663e\u793a\u3002',
+      notifyEnabledToast: '\u901a\u77e5\u5df2\u5f00\u542f\u3002\u82e5\u672a\u770b\u5230\u6d4b\u8bd5\u901a\u77e5\uff0c\u8bf7\u5728 Windows \u8bbe\u7f6e > \u901a\u77e5\u4e2d\u5141\u8bb8\u6d4f\u89c8\u5668\uff0c\u5e76\u5173\u95ed\u52ff\u6270\u6a21\u5f0f\u3002',
+      notifyOffToast: '\u5df2\u5728\u6b64\u6d4f\u89c8\u5668\u5173\u95ed\u901a\u77e5\u3002',
+      notifyPromptHelp: '\u6d4f\u89c8\u5668\u5c1a\u672a\u5141\u8bb8\u901a\u77e5\u3002\u8bf7\u70b9\u51fb\u5730\u5740\u680f\u5de6\u4fa7\u7684\u94c3\u94db\uff08\u6216\u9501\uff09\u56fe\u6807\uff0c\u5c06\u901a\u77e5\u8bbe\u4e3a\u5141\u8bb8\uff0c\u7136\u540e\u518d\u6b21\u70b9\u51fb\u6b64\u6309\u94ae\u3002',
       titleSchedule: '\u81ea\u52a8\u56de\u590d\u65f6\u95f4\u8868',
       subtitleSchedule: '\u5458\u5de5\u503c\u73ed\u65f6 AI \u4e0d\u56de\u590d\uff0c\u5176\u4ed6\u65f6\u95f4\u548c\u4f11\u606f\u65e5\u7531 AI \u56de\u590d',
       titleDashboard: '\u603b\u89c8',
@@ -471,13 +486,13 @@
     return date.toLocaleString(locale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
   }
 
-  function toast(message) {
+  function toast(message, durationMs = 2400) {
     const el = $('#toast');
     if (!el) return;
     el.textContent = message;
     el.classList.add('show');
     clearTimeout(state.toastTimer);
-    state.toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+    state.toastTimer = setTimeout(() => el.classList.remove('show'), durationMs);
   }
 
   async function api(path, opts = {}) {
@@ -730,20 +745,30 @@
     } catch {}
   }
 
+  // Every click gives visible feedback: browsers may answer the permission request
+  // silently (quiet UI, a crossed-out bell in the address bar) instead of a prompt.
   async function toggleNotify() {
     if (!notificationsSupported()) return;
     if (Notification.permission === 'denied') {
-      toast(t('notifyBlockedHelp'));
+      toast(t('notifyBlockedHelp'), 10000);
       return;
     }
     if (notifyEnabled()) {
       storageSet(NOTIFY_KEY, 'off');
+      toast(t('notifyOffToast'));
+      renderNotifyButton();
+      return;
+    }
+    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    if (permission === 'granted') {
+      storageSet(NOTIFY_KEY, 'on');
+      playChime();
+      new Notification(t('notifyTestTitle'), { body: t('notifyTestBody'), tag: 'kc-notify-test' });
+      toast(t('notifyEnabledToast'), 8000);
+    } else if (permission === 'denied') {
+      toast(t('notifyBlockedHelp'), 10000);
     } else {
-      const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-      if (permission === 'granted') {
-        storageSet(NOTIFY_KEY, 'on');
-        playChime();
-      }
+      toast(t('notifyPromptHelp'), 10000);
     }
     renderNotifyButton();
   }
