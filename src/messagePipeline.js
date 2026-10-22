@@ -9,6 +9,9 @@ const {
   applyCustomerBranding
 } = require('./sourceRegistry');
 const { judgeAiReply } = require('./replyJudge');
+const { getReplySchedule, aiReplyDecision } = require('./replySchedule');
+
+const STAFF_HOURS_REASON = 'Tin nhắn trong giờ làm việc: nhân viên trả lời';
 const { analyzeProductImages } = require('./mediaVision');
 const { resolveConversationContext, updateContextFromReply } = require('./conversationContext');
 const { parseCustomerMessage } = require('./customerIntentParser');
@@ -419,6 +422,42 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       skipped: 'auto_reply_off'
     });
     return { ok: true, skipped: 'auto_reply_off', conversationId: conversation.id };
+  }
+
+  // Reply schedule: during staff hours the AI stays silent; the conversation is flagged
+  // for staff, with one notification per conversation (not per message).
+  const schedule = testMode ? null : await getReplySchedule();
+  if (schedule && !aiReplyDecision(schedule).aiReplies) {
+    logAiResponse({
+      channel,
+      externalUserId,
+      conversationId: conversation.id,
+      inboundMessageId: inbound.id,
+      intent,
+      confidence,
+      customerText: processingText,
+      parsedCustomerMessage,
+      skipped: 'staff_hours'
+    });
+    const reason = STAFF_HOURS_REASON;
+    const staffEngaged = Number(conversation.needs_human) === 1 && conversation.handoff_status === 'in_progress';
+    const alreadyAlerted = Number(conversation.needs_human) === 1 && conversation.handoff_status === 'open';
+    if (!staffEngaged) {
+      const alertId = await flagHandoff({
+        conversationId: conversation.id,
+        customerId: customer.id,
+        channel,
+        reason,
+        message: storedText,
+        sourceGroup: source.sourceGroup,
+        sourceKey: source.sourceKey,
+        sourceName: source.sourceName
+      });
+      if (schedule.notifyStaff && !alreadyAlerted) {
+        notifyStaff(alertId, { channel, externalUserId, intent, reason, text: storedText, conversationId: conversation.id, sourceGroup: source.sourceGroup, sourceKey: source.sourceKey, sourceName: source.sourceName }).catch(e => console.error('notifyStaff error:', e.message));
+      }
+    }
+    return { ok: true, skipped: 'staff_hours', conversationId: conversation.id };
   }
 
   const freshCustomer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);

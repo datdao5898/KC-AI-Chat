@@ -191,6 +191,12 @@ async function initDb() {
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS processed_events (
       id TEXT PRIMARY KEY,
       channel TEXT NOT NULL,
@@ -830,6 +836,23 @@ async function updateCustomerLearning(customerId, conversationId, intent, userTe
   `, [JSON.stringify(arr), Math.min(100, (customer.hot_score || 0) + hotInc), intent, customerId]);
 }
 
+async function getSetting(key) {
+  const { rows } = await db.query('SELECT value FROM app_settings WHERE key=$1', [key]);
+  if (!rows[0]) return null;
+  try {
+    return JSON.parse(rows[0].value);
+  } catch {
+    return null;
+  }
+}
+
+async function setSetting(key, value) {
+  await db.query(`
+    INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+    ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=CURRENT_TIMESTAMP
+  `, [key, JSON.stringify(value)]);
+}
+
 // Admin test chats live in the normal tables but are flagged so they never reach
 // the conversation list, stats or staff alerts.
 async function markConversationTest(conversationId) {
@@ -866,5 +889,5 @@ module.exports = {
   listConversations, getConversation, updateConversationSummary, updateCustomerLearning, flagHandoff, resolveHandoff,
   updateAlertDelivery, listStaffAlerts, softDeleteMessage, softDeleteConversation, hardDeleteConversation, getWebsiteConversationByVisitor,
   listWebsiteConversationMessages, rateWebsiteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews,
-  getConversationContext, updateConversationContext, markConversationTest, deleteTestConversations
+  getConversationContext, updateConversationContext, markConversationTest, deleteTestConversations, getSetting, setSetting
 };

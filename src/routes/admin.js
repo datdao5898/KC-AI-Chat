@@ -6,6 +6,7 @@ const { listConversations, getConversation, updateConversationSummary, db, flagH
 const { processIncoming } = require('../messagePipeline');
 const { buildSourceContext } = require('../sourceRegistry');
 const { catalogSyncStatus, syncSourceCatalog } = require('../catalogSync');
+const { getReplySchedule, saveReplySchedule, aiReplyDecision } = require('../replySchedule');
 const { searchProducts, loadProducts } = require('../rag');
 const { summarizeConversation, summarizeConversationFast } = require('../ai');
 const { notifyStaff } = require('../staffAlert');
@@ -506,6 +507,21 @@ router.post('/test-chat', async (req, res) => {
 });
 
 router.get('/catalog-sync', (req, res) => res.json({ sources: catalogSyncStatus() }));
+
+router.get('/reply-schedule', async (req, res) => {
+  const schedule = await getReplySchedule({ fresh: true });
+  res.json({ schedule, now: aiReplyDecision(schedule) });
+});
+
+router.put('/reply-schedule', async (req, res) => {
+  try {
+    const schedule = await saveReplySchedule(req.body || {});
+    res.json({ ok: true, schedule, now: aiReplyDecision(schedule) });
+  } catch (e) {
+    if (e.code === 'invalid_schedule') return res.status(400).json({ error: e.message });
+    throw e;
+  }
+});
 
 // Download the synced catalog; the BOM makes Excel open the UTF-8 Vietnamese text correctly.
 router.get('/catalog-sync/file', (req, res) => {

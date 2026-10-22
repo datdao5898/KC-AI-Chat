@@ -8,6 +8,7 @@
     knowledge: '<ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"></path>',
     guide: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M8 7h8"></path><path d="M8 11h6"></path>',
     testchat: '<path d="M9 3h6"></path><path d="M10 3v6L4.5 18.5A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.5L14 9V3"></path><path d="M7 15h10"></path>',
+    schedule: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
     logs: '<path d="M8 3h8l4 4v14H8z"></path><path d="M16 3v5h5"></path><path d="M4 7v14"></path><path d="M12 13h5"></path><path d="M12 17h5"></path>'
   };
 
@@ -23,6 +24,9 @@
       navTestChat: 'Test AI',
       titleTestChat: 'Test AI',
       subtitleTestChat: 'Chat th\u1eed v\u1edbi AI: kh\u00f4ng b\u00e1o nh\u00e2n vi\u00ean, kh\u00f4ng hi\u1ec7n trong danh s\u00e1ch h\u1ed9i tho\u1ea1i',
+      navSchedule: 'L\u1ecbch AI',
+      titleSchedule: 'L\u1ecbch tr\u1ea3 l\u1eddi t\u1ef1 \u0111\u1ed9ng',
+      subtitleSchedule: 'Gi\u1edd nh\u00e2n vi\u00ean tr\u1ef1c th\u00ec AI im l\u1eb7ng; ngo\u00e0i gi\u1edd v\u00e0 ng\u00e0y ngh\u1ec9 AI tr\u1ea3 l\u1eddi',
       titleDashboard: 'T\u1ed5ng quan',
       subtitleDashboard: 'Xem nhanh s\u1ed1 li\u1ec7u v\u00e0 c\u00e1c c\u1ea3nh b\u00e1o quan tr\u1ecdng',
       titleConversations: 'H\u1ed9i tho\u1ea1i',
@@ -147,6 +151,9 @@
       navTestChat: 'AI test',
       titleTestChat: 'AI test',
       subtitleTestChat: 'Chat with the AI: no staff alerts, hidden from the conversation list',
+      navSchedule: 'AI schedule',
+      titleSchedule: 'Auto-reply schedule',
+      subtitleSchedule: 'AI stays silent during staff hours; it replies outside them and on days off',
       titleDashboard: 'Overview',
       subtitleDashboard: 'Quick view of key numbers and important alerts',
       titleConversations: 'Conversations',
@@ -271,6 +278,9 @@
       navTestChat: 'AI \u6d4b\u8bd5',
       titleTestChat: 'AI \u6d4b\u8bd5',
       subtitleTestChat: '\u4e0e AI \u6d4b\u8bd5\u5bf9\u8bdd\uff1a\u4e0d\u901a\u77e5\u5458\u5de5\uff0c\u4e0d\u663e\u793a\u5728\u4f1a\u8bdd\u5217\u8868',
+      navSchedule: 'AI \u6392\u73ed',
+      titleSchedule: '\u81ea\u52a8\u56de\u590d\u65f6\u95f4\u8868',
+      subtitleSchedule: '\u5458\u5de5\u503c\u73ed\u65f6 AI \u4e0d\u56de\u590d\uff0c\u5176\u4ed6\u65f6\u95f4\u548c\u4f11\u606f\u65e5\u7531 AI \u56de\u590d',
       titleDashboard: '\u603b\u89c8',
       subtitleDashboard: '\u5feb\u901f\u67e5\u770b\u91cd\u8981\u6570\u636e\u548c\u63d0\u9192',
       titleConversations: '\u4f1a\u8bdd',
@@ -394,6 +404,7 @@
     ['knowledge', '/admin/knowledge.html', 'navKnowledge', icons.knowledge],
     ['guide', '/admin/guide.html', 'navGuide', icons.guide],
     ['testchat', '/admin/test-chat.html', 'navTestChat', icons.testchat],
+    ['schedule', '/admin/schedule.html', 'navSchedule', icons.schedule],
     ['logs', '/admin/logs.html', 'navLogs', icons.logs]
   ];
 
