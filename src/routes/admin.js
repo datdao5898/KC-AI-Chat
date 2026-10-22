@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const router = express.Router();
-const { listConversations, getConversation, updateConversationSummary, db, flagHandoff, resolveHandoff, listStaffAlerts, softDeleteMessage, hardDeleteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews, deleteTestConversations } = require('../db');
+const { listConversations, getConversation, updateConversationSummary, db, flagHandoff, resolveHandoff, listStaffAlerts, softDeleteMessage, hardDeleteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews, deleteTestConversations, listCustomerMessagesSince } = require('../db');
 const { processIncoming } = require('../messagePipeline');
 const { buildSourceContext } = require('../sourceRegistry');
 const { catalogSyncStatus, syncSourceCatalog } = require('../catalogSync');
@@ -521,6 +521,29 @@ router.put('/reply-schedule', async (req, res) => {
     if (e.code === 'invalid_schedule') return res.status(400).json({ error: e.message });
     throw e;
   }
+});
+
+// Browser notifications: customer messages that arrived during staff hours (when the
+// AI stays silent). Without `since` it only returns the cursor to start from.
+router.get('/notifications/feed', async (req, res) => {
+  const serverTime = new Date();
+  const since = new Date(String(req.query.since || ''));
+  if (Number.isNaN(since.getTime())) return res.json({ serverTime, messages: [] });
+  const oldest = new Date(serverTime.getTime() - 10 * 60 * 1000);
+  const schedule = await getReplySchedule();
+  const rows = await listCustomerMessagesSince(since < oldest ? oldest : since, 20);
+  const messages = rows
+    .filter(row => !aiReplyDecision(schedule, new Date(row.created_at)).aiReplies)
+    .map(row => ({
+      id: row.id,
+      conversationId: row.conversation_id,
+      customerName: row.customer_name || '',
+      sourceName: row.source_name || '',
+      text: String(row.text || '').slice(0, 200),
+      createdAt: row.created_at
+    }));
+  const lastSeen = rows.length ? new Date(rows[rows.length - 1].created_at) : serverTime;
+  res.json({ serverTime: rows.length === 20 ? lastSeen : serverTime, messages });
 });
 
 // Download the synced catalog; the BOM makes Excel open the UTF-8 Vietnamese text correctly.

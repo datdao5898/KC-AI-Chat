@@ -25,6 +25,12 @@
       titleTestChat: 'Test AI',
       subtitleTestChat: 'Chat th\u1eed v\u1edbi AI: kh\u00f4ng b\u00e1o nh\u00e2n vi\u00ean, kh\u00f4ng hi\u1ec7n trong danh s\u00e1ch h\u1ed9i tho\u1ea1i',
       navSchedule: 'L\u1ecbch AI',
+      notifyOff: 'B\u1eadt th\u00f4ng b\u00e1o',
+      notifyOn: 'Th\u00f4ng b\u00e1o: \u0111ang b\u1eadt',
+      notifyBlocked: 'Th\u00f4ng b\u00e1o b\u1ecb ch\u1eb7n',
+      notifyBlockedHelp: 'Tr\u00ecnh duy\u1ec7t \u0111ang ch\u1eb7n th\u00f4ng b\u00e1o. B\u1ea5m bi\u1ec3u t\u01b0\u1ee3ng \u1ed5 kh\u00f3a c\u1ea1nh \u0111\u1ecba ch\u1ec9 web, ch\u1ecdn Th\u00f4ng b\u00e1o: Cho ph\u00e9p r\u1ed3i t\u1ea3i l\u1ea1i trang.',
+      notifyTitle: 'Tin nh\u1eafn m\u1edbi',
+      notifyCustomer: 'Kh\u00e1ch',
       titleSchedule: 'L\u1ecbch tr\u1ea3 l\u1eddi t\u1ef1 \u0111\u1ed9ng',
       subtitleSchedule: 'Gi\u1edd nh\u00e2n vi\u00ean tr\u1ef1c th\u00ec AI im l\u1eb7ng; ngo\u00e0i gi\u1edd v\u00e0 ng\u00e0y ngh\u1ec9 AI tr\u1ea3 l\u1eddi',
       titleDashboard: 'T\u1ed5ng quan',
@@ -152,6 +158,12 @@
       titleTestChat: 'AI test',
       subtitleTestChat: 'Chat with the AI: no staff alerts, hidden from the conversation list',
       navSchedule: 'AI schedule',
+      notifyOff: 'Enable notifications',
+      notifyOn: 'Notifications: on',
+      notifyBlocked: 'Notifications blocked',
+      notifyBlockedHelp: 'The browser is blocking notifications. Click the lock icon next to the address, set Notifications to Allow, then reload.',
+      notifyTitle: 'New message',
+      notifyCustomer: 'Customer',
       titleSchedule: 'Auto-reply schedule',
       subtitleSchedule: 'AI stays silent during staff hours; it replies outside them and on days off',
       titleDashboard: 'Overview',
@@ -279,6 +291,12 @@
       titleTestChat: 'AI \u6d4b\u8bd5',
       subtitleTestChat: '\u4e0e AI \u6d4b\u8bd5\u5bf9\u8bdd\uff1a\u4e0d\u901a\u77e5\u5458\u5de5\uff0c\u4e0d\u663e\u793a\u5728\u4f1a\u8bdd\u5217\u8868',
       navSchedule: 'AI \u6392\u73ed',
+      notifyOff: '\u5f00\u542f\u901a\u77e5',
+      notifyOn: '\u901a\u77e5\uff1a\u5df2\u5f00\u542f',
+      notifyBlocked: '\u901a\u77e5\u5df2\u88ab\u62e6\u622a',
+      notifyBlockedHelp: '\u6d4f\u89c8\u5668\u62e6\u622a\u4e86\u901a\u77e5\u3002\u8bf7\u70b9\u51fb\u5730\u5740\u680f\u65c1\u7684\u9501\u56fe\u6807\uff0c\u5c06\u901a\u77e5\u8bbe\u4e3a\u5141\u8bb8\uff0c\u7136\u540e\u5237\u65b0\u3002',
+      notifyTitle: '\u65b0\u6d88\u606f',
+      notifyCustomer: '\u5ba2\u6237',
       titleSchedule: '\u81ea\u52a8\u56de\u590d\u65f6\u95f4\u8868',
       subtitleSchedule: '\u5458\u5de5\u503c\u73ed\u65f6 AI \u4e0d\u56de\u590d\uff0c\u5176\u4ed6\u65f6\u95f4\u548c\u4f11\u606f\u65e5\u7531 AI \u56de\u590d',
       titleDashboard: '\u603b\u89c8',
@@ -562,6 +580,7 @@
           <nav class="nav-menu">${navHtml()}</nav>
           <div class="nav-footer">
             <select class="lang-select" aria-label="Language">${langOptions()}</select>
+            <button class="nav-btn" id="notifyBtn" type="button"></button>
             <button class="nav-btn" id="themeBtn" type="button"></button>
             <button class="nav-btn" id="logoutBtn" type="button">${t('logout')}</button>
           </div>
@@ -587,6 +606,7 @@
     $('#loginForm').onsubmit = login;
     $('#logoutBtn').onclick = logout;
     $('#themeBtn').onclick = () => setTheme(state.theme === 'dark' ? 'light' : 'dark');
+    $('#notifyBtn').onclick = toggleNotify;
   }
 
   function showLogin(message = '') {
@@ -658,6 +678,117 @@
     return `<div class="empty">${esc(text || t('noData'))}</div>`;
   }
 
+  // Browser notifications for customer messages during staff hours, while an admin tab
+  // is open. One tab polls at a time (localStorage lease) and the cursor is shared, so
+  // several open tabs neither duplicate nor miss notifications.
+  const NOTIFY_KEY = 'kc-notify-enabled';
+  const NOTIFY_LEASE = 'kc-notify-leader';
+  const NOTIFY_CURSOR = 'kc-notify-cursor';
+  const NOTIFY_POLL_MS = 10000;
+  const notifierId = Math.random().toString(36).slice(2);
+  let notifierTimer = null;
+
+  function storageGet(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
+  function storageSet(key, value) {
+    try { localStorage.setItem(key, value); } catch {}
+  }
+
+  function notificationsSupported() {
+    return 'Notification' in window;
+  }
+
+  function notifyEnabled() {
+    return notificationsSupported() && Notification.permission === 'granted' && storageGet(NOTIFY_KEY) === 'on';
+  }
+
+  function renderNotifyButton() {
+    const btn = $('#notifyBtn');
+    if (!btn) return;
+    if (!notificationsSupported()) {
+      btn.hidden = true;
+      return;
+    }
+    btn.textContent = Notification.permission === 'denied'
+      ? t('notifyBlocked')
+      : (notifyEnabled() ? t('notifyOn') : t('notifyOff'));
+  }
+
+  function playChime() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    } catch {}
+  }
+
+  async function toggleNotify() {
+    if (!notificationsSupported()) return;
+    if (Notification.permission === 'denied') {
+      toast(t('notifyBlockedHelp'));
+      return;
+    }
+    if (notifyEnabled()) {
+      storageSet(NOTIFY_KEY, 'off');
+    } else {
+      const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+      if (permission === 'granted') {
+        storageSet(NOTIFY_KEY, 'on');
+        playChime();
+      }
+    }
+    renderNotifyButton();
+  }
+
+  function holdsNotifyLease() {
+    const now = Date.now();
+    let lease = {};
+    try { lease = JSON.parse(storageGet(NOTIFY_LEASE) || '{}'); } catch {}
+    if (lease.id && lease.id !== notifierId && now - lease.at < NOTIFY_POLL_MS * 2) return false;
+    storageSet(NOTIFY_LEASE, JSON.stringify({ id: notifierId, at: now }));
+    return true;
+  }
+
+  function showMessageNotification(message) {
+    const title = `${t('notifyTitle')}${message.sourceName ? ` · ${message.sourceName}` : ''}`;
+    const notification = new Notification(title, {
+      body: `${message.customerName || t('notifyCustomer')}: ${message.text}`,
+      tag: `kc-conversation-${message.conversationId}`,
+      renotify: true
+    });
+    notification.onclick = () => {
+      window.focus();
+      location.href = `/admin/conversations.html?conversation=${encodeURIComponent(message.conversationId)}`;
+      notification.close();
+    };
+  }
+
+  async function pollNotifications() {
+    if (!notifyEnabled() || !holdsNotifyLease()) return;
+    try {
+      const cursor = storageGet(NOTIFY_CURSOR);
+      const feed = await api(`${API}/notifications/feed${cursor ? `?since=${encodeURIComponent(cursor)}` : ''}`);
+      storageSet(NOTIFY_CURSOR, new Date(feed.serverTime).toISOString());
+      for (const message of feed.messages || []) showMessageNotification(message);
+      if ((feed.messages || []).length) playChime();
+    } catch {}
+  }
+
+  function startNotifier() {
+    renderNotifyButton();
+    if (notifierTimer || !notificationsSupported()) return;
+    pollNotifications();
+    notifierTimer = setInterval(pollNotifications, NOTIFY_POLL_MS);
+  }
+
   async function bootPage(config) {
     state.page = config.page;
     state.title = resolveText(config.title, config.titleKey);
@@ -669,6 +800,7 @@
       return;
     }
     showShell();
+    startNotifier();
     const refreshButton = $('#refreshPageBtn');
     if (refreshButton && config.refreshButton === false) refreshButton.hidden = true;
 

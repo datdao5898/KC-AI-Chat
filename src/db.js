@@ -836,6 +836,22 @@ async function updateCustomerLearning(customerId, conversationId, intent, userTe
   `, [JSON.stringify(arr), Math.min(100, (customer.hot_score || 0) + hotInc), intent, customerId]);
 }
 
+// New customer messages (excluding admin test chats) for admin browser notifications.
+async function listCustomerMessagesSince(since, limit = 20) {
+  const { rows } = await db.query(`
+    SELECT m.id, m.conversation_id, m.text, m.created_at, m.channel,
+      c.source_name, cu.name AS customer_name, cu.external_id
+    FROM messages m
+    JOIN conversations c ON c.id = m.conversation_id
+    JOIN customers cu ON cu.id = c.customer_id
+    WHERE m.direction='in' AND m.deleted_at IS NULL AND c.deleted_at IS NULL
+      AND COALESCE(c.is_test, 0)=0 AND m.created_at > $1
+    ORDER BY m.created_at ASC
+    LIMIT $2
+  `, [since, Math.max(1, Math.min(50, Number(limit) || 20))]);
+  return rows;
+}
+
 async function getSetting(key) {
   const { rows } = await db.query('SELECT value FROM app_settings WHERE key=$1', [key]);
   if (!rows[0]) return null;
@@ -889,5 +905,5 @@ module.exports = {
   listConversations, getConversation, updateConversationSummary, updateCustomerLearning, flagHandoff, resolveHandoff,
   updateAlertDelivery, listStaffAlerts, softDeleteMessage, softDeleteConversation, hardDeleteConversation, getWebsiteConversationByVisitor,
   listWebsiteConversationMessages, rateWebsiteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews,
-  getConversationContext, updateConversationContext, markConversationTest, deleteTestConversations, getSetting, setSetting
+  getConversationContext, updateConversationContext, markConversationTest, deleteTestConversations, getSetting, setSetting, listCustomerMessagesSince
 };
