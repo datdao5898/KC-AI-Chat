@@ -248,6 +248,7 @@ async function initDb() {
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rating_feedback TEXT DEFAULT '';
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rated_at TIMESTAMPTZ;
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS conversation_context TEXT DEFAULT '{}';
+    ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_test INTEGER DEFAULT 0;
   `);
   await backfillConversationSources();
   await refreshConfiguredSourceNames();
@@ -546,7 +547,7 @@ async function listConversations() {
       WHERE status='active'
       GROUP BY conversation_id
     ) r ON r.conversation_id = c.id
-    WHERE c.deleted_at IS NULL
+    WHERE c.deleted_at IS NULL AND COALESCE(c.is_test, 0)=0
     ORDER BY c.needs_human DESC, c.updated_at DESC
     LIMIT 100
   `);
@@ -829,14 +830,33 @@ async function updateCustomerLearning(customerId, conversationId, intent, userTe
   `, [JSON.stringify(arr), Math.min(100, (customer.hot_score || 0) + hotInc), intent, customerId]);
 }
 
+// Admin test chats live in the normal tables but are flagged so they never reach
+// the conversation list, stats or staff alerts.
+async function markConversationTest(conversationId) {
+  await db.query('UPDATE conversations SET is_test=1 WHERE id=$1', [conversationId]);
+}
+
+async function deleteTestConversations() {
+  const { rows } = await db.query('SELECT id, customer_id FROM conversations WHERE is_test=1');
+  for (const row of rows) await hardDeleteConversation(row.id);
+  const customerIds = [...new Set(rows.map(row => row.customer_id))];
+  for (const customerId of customerIds) {
+    await db.query(
+      'DELETE FROM customers WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM conversations WHERE customer_id=$1)',
+      [customerId]
+    );
+  }
+  return { deleted: rows.length };
+}
+
 async function getStats() {
   const { rows } = await db.query(`
     SELECT
-      (SELECT COUNT(*)::int FROM customers) AS customers,
-      (SELECT COUNT(*)::int FROM conversations WHERE deleted_at IS NULL) AS conversations,
-      (SELECT COUNT(*)::int FROM messages WHERE deleted_at IS NULL) AS messages,
-      (SELECT COUNT(*)::int FROM conversations WHERE needs_human=1 AND deleted_at IS NULL) AS needs_human,
-      (SELECT COUNT(*)::int FROM staff_alerts a JOIN conversations c ON c.id=a.conversation_id WHERE a.status='open' AND c.deleted_at IS NULL) AS open_alerts
+      (SELECT COUNT(*)::int FROM customers cu WHERE NOT EXISTS (SELECT 1 FROM conversations t WHERE t.customer_id=cu.id AND t.is_test=1)) AS customers,
+      (SELECT COUNT(*)::int FROM conversations WHERE deleted_at IS NULL AND COALESCE(is_test, 0)=0) AS conversations,
+      (SELECT COUNT(*)::int FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.deleted_at IS NULL AND COALESCE(c.is_test, 0)=0) AS messages,
+      (SELECT COUNT(*)::int FROM conversations WHERE needs_human=1 AND deleted_at IS NULL AND COALESCE(is_test, 0)=0) AS needs_human,
+      (SELECT COUNT(*)::int FROM staff_alerts a JOIN conversations c ON c.id=a.conversation_id WHERE a.status='open' AND c.deleted_at IS NULL AND COALESCE(c.is_test, 0)=0) AS open_alerts
   `);
   return rows[0];
 }
@@ -846,5 +866,5 @@ module.exports = {
   listConversations, getConversation, updateConversationSummary, updateCustomerLearning, flagHandoff, resolveHandoff,
   updateAlertDelivery, listStaffAlerts, softDeleteMessage, softDeleteConversation, hardDeleteConversation, getWebsiteConversationByVisitor,
   listWebsiteConversationMessages, rateWebsiteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews,
-  getConversationContext, updateConversationContext
+  getConversationContext, updateConversationContext, markConversationTest, deleteTestConversations
 };

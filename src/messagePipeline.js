@@ -1,4 +1,4 @@
-const { getOrCreateCustomer, getOrCreateConversation, saveMessage, getRecentMessages, updateCustomerLearning, updateConversationSummary, flagHandoff, updateConversationContext } = require('./db');
+const { getOrCreateCustomer, getOrCreateConversation, saveMessage, getRecentMessages, updateCustomerLearning, updateConversationSummary, flagHandoff, updateConversationContext, markConversationTest } = require('./db');
 const { classifyIntent } = require('./intent');
 const { generateReply, summarizeConversation, summarizeConversationFast, detectMessageLanguage, extractContactInfo } = require('./ai');
 const { notifyStaff } = require('./staffAlert');
@@ -13,6 +13,7 @@ const { analyzeProductImages } = require('./mediaVision');
 const { resolveConversationContext, updateContextFromReply } = require('./conversationContext');
 const { parseCustomerMessage } = require('./customerIntentParser');
 const { validateAiReply } = require('./replyValidator');
+const { enforceVerifiedContactInfo } = require('./storeContacts');
 
 function normalizeForMatch(text) {
   return String(text || '')
@@ -65,6 +66,9 @@ function isUnresolvedReplySource(aiSource = '') {
 function detectHandoff({ text, intent, aiError, ragProducts, aiSource = '' }) {
   const t = String(text || '').toLowerCase();
   const normalized = normalizeForMatch(text);
+  // A hotline/address request answered from the FAQ contact section is resolved; the
+  // reply itself raises a handoff when that source has no contact data.
+  if (aiSource === 'rule_source_store_info') return { needed: false };
   if (intent === 'human') return { needed: true, reason: 'Khách yêu cầu gặp nhân viên' };
   if (/(không phản hồi|khong phan hoi|chưa phản hồi|chua phan hoi|không ai trả lời|khong ai tra loi|gọi lại|goi lai|liên hệ lại|lien he lai|khiếu nại|khieu nai|bảo hành lỗi|bao hanh loi)/i.test(t)) {
     return { needed: true, reason: 'Khách cần follow-up/khiếu nại' };
@@ -322,7 +326,9 @@ function buildImageFallbackReply(customerText = '') {
   return 'Dạ em đã nhận được hình ảnh sản phẩm nhưng chưa thể nhận dạng chắc chắn. Anh/chị gửi thêm ảnh rõ phần nhãn hoặc mã model giúp em; em cũng đã chuyển hình cho nhân viên KingCom kiểm tra thêm ạ.';
 }
 
-async function processIncoming({ channel, externalUserId, text, externalMessageId, raw, imageUrls = [], visionImageInputs = [], customerAttrs = {}, sendFn }) {
+// testMode (admin test chat): same AI pipeline, but the conversation is hidden from the
+// dashboard, no staff alert is created or sent, and the reply carries debug details.
+async function processIncoming({ channel, externalUserId, text, externalMessageId, raw, imageUrls = [], visionImageInputs = [], customerAttrs = {}, sendFn, testMode = false }) {
   const startedAt = Date.now();
   const originalText = String(text || '').trim();
   const mediaUrls = [...new Set((imageUrls || []).filter(Boolean))].slice(0, 3);
@@ -355,6 +361,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   if (contactInfo.phone) enrichedCustomerAttrs.phone = contactInfo.phone;
   const customer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
   const conversation = await getOrCreateConversation(customer.id, channel, source.sourceKey, source.sourceName, source.sourceGroup);
+  if (testMode) await markConversationTest(conversation.id);
   const { intent, confidence } = classifyIntent(processingText);
   const parsedCustomerMessage = parseCustomerMessage(processingText, {
     sourceKey: source.sourceKey,
@@ -395,7 +402,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     parsedMessage: parsedCustomerMessage
   });
   await updateConversationContext(conversation.id, conversationContext);
-  const autoReply = process.env.AUTO_REPLY !== 'false' && conversation.auto_reply !== 0;
+  const autoReply = testMode || (process.env.AUTO_REPLY !== 'false' && conversation.auto_reply !== 0);
   if (!autoReply) {
     logAiResponse({
       channel,
@@ -535,6 +542,18 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   }
   reply = applyCustomerBranding(reply, customerBrand, ragProducts);
   reply = avoidRepeatedContactRequest(reply, freshCustomer, originalText || processingText);
+  // Last gate: hotline/address must match the source FAQ contact section, whichever step produced the reply.
+  const contactGuard = enforceVerifiedContactInfo(reply, {
+    sourceKey: source.sourceKey,
+    userText: originalText || processingText,
+    history,
+    customerPhone: freshCustomer?.phone || '',
+    lang: detectMessageLanguage(processingText, history)
+  });
+  if (!contactGuard.ok) {
+    reply = contactGuard.reply;
+    if (contactGuard.needsHandoff) handoff = { needed: true, reason: contactGuard.reason };
+  }
   const finalConversationContext = updateContextFromReply({
     context: effectiveConversationContext,
     ragProducts,
@@ -542,10 +561,10 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceKey: source.sourceKey
   });
   await updateConversationContext(conversation.id, finalConversationContext);
-  const humanDelayMs = estimateHumanReplyDelayMs(reply, Date.now() - startedAt);
+  const humanDelayMs = testMode ? 0 : estimateHumanReplyDelayMs(reply, Date.now() - startedAt);
   if (humanDelayMs > 0) await sleep(humanDelayMs);
 
-  if (handoff.needed) {
+  if (handoff.needed && !testMode) {
     const alertId = await flagHandoff({
       conversationId: conversation.id,
       customerId: customer.id,
@@ -617,6 +636,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     channel,
     externalUserId,
     conversationId: conversation.id,
+    testMode,
     inboundMessageId: inbound.id,
     intent,
     confidence,
@@ -662,15 +682,40 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     judgeCorrectedReply: judge?.correctedReply || '',
     judgeCorrectedSimilarity: typeof judge?.correctedSimilarity === 'number' ? judge.correctedSimilarity : undefined,
     judgeError: judge?.error || '',
+    contactGuardReason: contactGuard.ok ? '' : contactGuard.reason,
     handoffNeeded: handoff.needed,
     handoffReason: handoff.reason || '',
     deliveryStatus,
     deliveryError
   });
 
-  updateConversationSummaryInBackground(conversation.id, customer.id, freshCustomer, 'vi');
+  if (!testMode) updateConversationSummaryInBackground(conversation.id, customer.id, freshCustomer, 'vi');
 
-  return { ok: deliveryStatus !== 'failed', conversationId: conversation.id, customerId: customer.id, intent, confidence, reply, aiUsed, aiError: !!aiError, aiErrorMessage, needsHuman: handoff.needed, handoffReason: handoff.reason || '', deliveryStatus, deliveryError, humanDelayMs };
+  const result = { ok: deliveryStatus !== 'failed', conversationId: conversation.id, customerId: customer.id, intent, confidence, reply, aiUsed, aiError: !!aiError, aiErrorMessage, needsHuman: handoff.needed, handoffReason: handoff.reason || '', deliveryStatus, deliveryError, humanDelayMs };
+  if (!testMode) return result;
+  return {
+    ...result,
+    debug: {
+      sourceKey: source.sourceKey,
+      sourceName: source.sourceName,
+      aiSource: aiSource || (aiUsed ? 'provider' : 'rule_or_fallback'),
+      draftReply: generatedReply,
+      validator: validation.ok ? null : validation.reason,
+      judge: judge ? {
+        approved: !!judge.approve,
+        skipped: judge.skipped || '',
+        riskType: judge.riskType || '',
+        reason: judge.reason || '',
+        correctedReply: judge.correctedReply || ''
+      } : null,
+      contactGuard: contactGuard.ok ? null : contactGuard.reason,
+      wouldAlertStaff: handoff.needed,
+      ragProducts: (ragProducts || []).slice(0, 5).map(p => p.name || p.title || ''),
+      webSources,
+      webSearchRequests,
+      error: aiErrorMessage || ''
+    }
+  };
 }
 
 module.exports = {

@@ -2,7 +2,9 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const router = express.Router();
-const { listConversations, getConversation, updateConversationSummary, db, flagHandoff, resolveHandoff, listStaffAlerts, softDeleteMessage, hardDeleteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews } = require('../db');
+const { listConversations, getConversation, updateConversationSummary, db, flagHandoff, resolveHandoff, listStaffAlerts, softDeleteMessage, hardDeleteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews, deleteTestConversations } = require('../db');
+const { processIncoming } = require('../messagePipeline');
+const { buildSourceContext } = require('../sourceRegistry');
 const { searchProducts, loadProducts } = require('../rag');
 const { summarizeConversation, summarizeConversationFast } = require('../ai');
 const { notifyStaff } = require('../staffAlert');
@@ -29,7 +31,7 @@ function tailLines(filePath, maxLines = 120) {
 function readLogEntries(type = 'ai', limit = 120) {
   const normalized = LOG_FILES[type] ? type : 'ai';
   const filePath = path.join(DATA_DIR, LOG_FILES[normalized]);
-  const lines = tailLines(filePath, limit);
+  const lines = tailLines(filePath, limit).filter(line => !(normalized === 'ai' && /"testMode":"?true/.test(line)));
   return lines.reverse().map((line, index) => {
     if (normalized === 'ai') {
       try {
@@ -460,6 +462,50 @@ router.put('/knowledge-file/:type', express.text({ type: '*/*', limit: process.e
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, content, 'utf8');
   res.json({ ok: true, sourceKey, type: req.params.type, bytes: Buffer.byteLength(content, 'utf8'), file: path.basename(p) });
+});
+
+// Admin test chat: runs the real AI pipeline for a chosen source, but the conversation is
+// flagged as test (hidden from lists/stats), no staff alert is sent, and debug details are returned.
+function testChatSource(sourceKey = '') {
+  const [group, ...rest] = String(sourceKey || '').split('/');
+  const sourceId = rest.join('/');
+  if (!sourceId) return null;
+  if (group === 'website') return { channel: 'haravan_website', raw: { siteName: sourceId } };
+  if (group === 'facebook') return { channel: 'facebook', raw: { recipient: { id: sourceId } } };
+  return null;
+}
+
+router.post('/test-chat', async (req, res) => {
+  const sourceKey = String(req.body?.sourceKey || '').trim();
+  const sessionId = String(req.body?.sessionId || '').trim().toLowerCase();
+  const message = String(req.body?.message || '').trim();
+  if (!message) return res.status(400).json({ error: 'message_required' });
+  if (!/^[a-z0-9-]{8,64}$/.test(sessionId)) return res.status(400).json({ error: 'invalid_session_id' });
+  if (!listKnowledgeSources().some(source => source.sourceKey === sourceKey)) return res.status(400).json({ error: 'invalid_source_key' });
+  const target = testChatSource(sourceKey);
+  if (!target || buildSourceContext(target).sourceKey !== sourceKey) {
+    return res.status(400).json({ error: 'unsupported_test_source' });
+  }
+
+  try {
+    const result = await processIncoming({
+      channel: target.channel,
+      externalUserId: `admin-test-${sessionId}`,
+      text: message,
+      externalMessageId: `admin-test-${Date.now()}`,
+      raw: { ...target.raw, adminTest: true },
+      sendFn: null,
+      testMode: true
+    });
+    res.json(result);
+  } catch (e) {
+    console.error('Admin test chat error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/test-chat', async (req, res) => {
+  res.json({ ok: true, ...(await deleteTestConversations()) });
 });
 
 module.exports = router;

@@ -23,6 +23,8 @@ const {
 const { answerProductGuidanceFromWeb, answerProductSpecsFromWeb } = require('./webGuidance');
 const { readProductPageContext } = require('./productPageReader');
 const { chatCompletion } = require('./llmClient');
+const { buildStoreContactReply, buildContactPromptBlock, isStoreContactRequest, getVerifiedContact } = require('./storeContacts');
+const { buildPolicyAnswer, detectPolicyTopic, storeIntroLines, technicalSupportLines, policySectionText } = require('./policyAnswers');
 const {
   normalizeContext,
   resolveConversationContext,
@@ -267,18 +269,61 @@ function isTechnicalSupportIssue(text = '') {
   return deviceSignal && symptomSignal;
 }
 
-function buildTechnicalSupportReply(userText = '', lang = 'vi', customerBrand = 'KingCom', conversationContext = {}) {
+async function buildTechnicalSupportReply({
+  userText = '',
+  history = [],
+  sourceKey = '',
+  sourceConfig = {},
+  lang = 'vi',
+  customerBrand = 'KingCom',
+  conversationContext = {}
+} = {}) {
   if (!isTechnicalSupportIssue(userText)) return null;
-  const brand = String(customerBrand || 'KingCom').trim() || 'KingCom';
-  const productName = String(conversationContext.current_product_name || '').trim();
-  const subject = productName ? ` c\u1ee7a ${productName}` : '';
-  if (lang === 'en') {
-    return `I understand the issue is slow or incomplete charging${subject}, not a price question. Please check the charger's output rating and cable, try another compatible charger/cable, and note the starting battery percentage and the percentage after 30 minutes. Stop using the device if it becomes unusually hot, swells, smells burnt, or repeatedly disconnects; ${brand} staff should then inspect it directly.`;
+  const productQuery = conversationContext.current_product_sku || conversationContext.current_product_name || '';
+  const product = productQuery
+    ? searchProducts(productQuery, 1, { sourceKey, requireIdentityMatch: true })[0] || null
+    : null;
+
+  if (product) {
+    const webGuidance = await answerProductGuidanceFromWeb({
+      userText,
+      history,
+      products: [product],
+      sourceConfig,
+      customerBrand,
+      language: lang
+    });
+    if (webGuidance.ok) {
+      return {
+        reply: webGuidance.reply,
+        aiUsed: 1,
+        aiSource: 'provider_web_technical_support',
+        products: [product],
+        webSources: webGuidance.webSources,
+        webSearchRequests: webGuidance.webSearchRequests,
+        handoff: { needed: false }
+      };
+    }
+    if (webGuidance.error) console.warn('Technical support web search skipped after error:', webGuidance.error);
   }
-  if (lang === 'zh') {
-    return `\u6211\u7406\u89e3\u60a8\u53cd\u9988\u7684\u662f${subject || '\u8bbe\u5907'}\u5145\u7535\u6162\u6216\u65e0\u6cd5\u5145\u6ee1\uff0c\u5e76\u4e0d\u662f\u8be2\u95ee\u4ef7\u683c\u3002\u8bf7\u5148\u6838\u5bf9\u5145\u7535\u5668\u8f93\u51fa\u529f\u7387\u548c\u7ebf\u6750\uff0c\u5c1d\u8bd5\u53e6\u4e00\u5957\u517c\u5bb9\u7684\u5145\u7535\u5668/\u7ebf\u6750\uff0c\u5e76\u8bb0\u5f55\u5f00\u59cb\u7535\u91cf\u53ca 30 \u5206\u949f\u540e\u7684\u7535\u91cf\u3002\u5982\u51fa\u73b0\u5f02\u5e38\u53d1\u70ed\u3001\u9f13\u5305\u3001\u7126\u5473\u6216\u53cd\u590d\u65ad\u5145\uff0c\u8bf7\u7acb\u5373\u505c\u6b62\u4f7f\u7528\uff0c\u5e76\u4ea4\u7531 ${brand} \u5de5\u4f5c\u4eba\u5458\u68c0\u67e5\u3002`;
-  }
-  return `D\u1ea1 em hi\u1ec3u v\u1ea5n \u0111\u1ec1 anh/ch\u1ecb \u0111ang h\u1ecfi l\u00e0 s\u1ea1c ch\u1eadm ho\u1eb7c ch\u01b0a \u0111\u1ea7y pin${subject}, kh\u00f4ng ph\u1ea3i h\u1ecfi gi\u00e1 \u1ea1. Anh/ch\u1ecb gi\u00fap em ki\u1ec3m tra c\u00f4ng su\u1ea5t \u0111\u1ea7u ra c\u1ee7a c\u1ee7 s\u1ea1c v\u00e0 d\u00e2y c\u00e1p, th\u1eed m\u1ed9t b\u1ed9 s\u1ea1c/c\u00e1p t\u01b0\u01a1ng th\u00edch kh\u00e1c, \u0111\u1ed3ng th\u1eddi ghi l\u1ea1i ph\u1ea7n tr\u0103m pin l\u00fac b\u1eaft \u0111\u1ea7u v\u00e0 sau 30 ph\u00fat. N\u1ebfu thi\u1ebft b\u1ecb n\u00f3ng b\u1ea5t th\u01b0\u1eddng, ph\u1ed3ng, c\u00f3 m\u00f9i kh\u00e9t ho\u1eb7c li\u00ean t\u1ee5c ng\u1eaft s\u1ea1c th\u00ec m\u00ecnh ng\u1eebng s\u1eed d\u1ee5ng v\u00e0 \u0111\u1ec3 nh\u00e2n vi\u00ean ${brand} ki\u1ec3m tra tr\u1ef1c ti\u1ebfp \u1ea1.`;
+
+  const faqLines = lang === 'vi' ? technicalSupportLines(sourceKey) : [];
+  const reply = faqLines.length
+    ? `Dạ, anh/chị tham khảo giúp em các bước kiểm tra cơ bản:\n${faqLines.map(line => `- ${line}`).join('\n')}\nEm cũng đã chuyển nhân viên ${customerBrand} hỗ trợ thêm ạ.`
+    : lang === 'en'
+      ? `I have forwarded this technical issue to ${customerBrand} staff. Please share the exact product model and a short video of the issue so they can check it accurately.`
+      : lang === 'zh'
+        ? `我已将此技术问题转交 ${customerBrand} 工作人员。请提供具体产品型号和问题视频，方便准确检查。`
+        : `Dạ em đã chuyển vấn đề kỹ thuật này cho nhân viên ${customerBrand}. Anh/chị gửi giúp em model sản phẩm và video tình trạng lỗi để nhân viên kiểm tra chính xác ạ.`;
+  return {
+    reply,
+    aiUsed: 0,
+    aiSource: 'rule_technical_support',
+    products: product ? [product] : [],
+    webSources: [],
+    webSearchRequests: 0,
+    handoff: { needed: true, reason: 'Khách cần hỗ trợ kỹ thuật' }
+  };
 }
 
 const REPLACEMENT_PART_RULES = [
@@ -418,14 +463,6 @@ function quoteAvailabilityText(product = {}) {
   return 'cần nhân viên xác nhận tồn kho';
 }
 
-function sourceWarrantyOverview(sourceKey = '') {
-  const normalizedPolicy = normalize(loadTextFile('policies.md', { sourceKey }));
-  const hasGeneralTerms = /than may.*12 thang\s*(?:\+\s*)?1 thang/.test(normalizedPolicy)
-    && /phu kien.*3 thang\s*(?:\+\s*)?1 thang/.test(normalizedPolicy);
-  if (!hasGeneralTerms) return '';
-  return 'Theo chính sách chung đang lưu: thân máy thường bảo hành 12 tháng + 1 tháng, phụ kiện 3 tháng + 1 tháng, tùy loại sản phẩm. Catalog chưa ghi thời hạn riêng của AM8 nên nhân viên cần xác nhận chính xác theo model/đơn hàng.';
-}
-
 function findQuoteProduct(query, sourceKey, predicate = () => true) {
   const catalogMatches = loadProducts({ sourceKey }).filter(predicate);
   if (!catalogMatches.length) return null;
@@ -494,12 +531,14 @@ function buildMultiItemQuoteReply({ userText, sourceKey, customerBrand, conversa
   }
 
   if (referenceSubtotal > 0) {
-    lines.push(`- Tạm tính các món đã tìm thấy: ${formatPrice(referenceSubtotal)}. Mức này chưa gồm Pop Filter và chưa phải báo giá chốt vì cả hai sản phẩm đang hết hàng theo catalog.`);
+    const missingLabels = items.filter(item => !item.product).map(item => item.label);
+    lines.push(`- Tạm tính các món đã tìm thấy: ${formatPrice(referenceSubtotal)}.${missingLabels.length ? ` Chưa gồm: ${missingLabels.join(', ')}.` : ''} Đây chưa phải báo giá chốt.`);
   }
 
   const mic = items.find(item => item.id === 'primary_product')?.product;
-  if (mic && /\busb\b/i.test(normalize(mic.description || mic.name || ''))) {
-    lines.push(`- Dùng với laptop Dell: catalog của ${productDisplayName(mic)} ghi hỗ trợ USB/XLR và có thể cắm trực tiếp vào PC qua USB. Với nhu cầu học phát âm và họp online cơ bản, không cần mixer; mixer/soundcard chỉ cần khi anh/chị muốn dùng ngõ XLR hoặc mở rộng setup.`);
+  const asksComputerUse = /\b(laptop|may tinh|pc|macbook|windows)\b/i.test(normalized);
+  if (mic && asksComputerUse && /\busb\b/i.test(normalize(`${mic.name || ''} ${mic.description || ''}`))) {
+    lines.push(`- Kết nối máy tính: catalog của ${productDisplayName(mic)} ghi có kết nối USB; nhân viên sẽ xác nhận tương thích với máy của anh/chị.`);
   }
 
   const boomArm = items.find(item => item.id === 'boom_arm')?.product;
@@ -515,12 +554,11 @@ function buildMultiItemQuoteReply({ userText, sourceKey, customerBrand, conversa
       confirmsAdapter ? 'có screw adapter 5/8' : '',
       confirmsCableManagement ? 'có thông tin quản lý dây' : ''
     ].filter(Boolean).join(', ');
-    lines.push(`- Boom Arm: ${details || 'catalog chưa ghi đủ thông số lắp đặt'}. ${confirmsCableManagement ? '' : 'Catalog chưa ghi tính năng quản lý dây. '}Catalog chưa xác nhận riêng ren/ngàm của AM8 có khớp trọn bộ hay không, nên nhân viên cần kiểm tra trước khi chốt.`);
+    lines.push(`- Boom Arm: ${details || 'catalog chưa ghi đủ thông số lắp đặt'}. ${confirmsCableManagement ? '' : 'Catalog chưa ghi tính năng quản lý dây. '}Catalog chưa xác nhận ren/ngàm có khớp trọn bộ hay không, nên nhân viên cần kiểm tra trước khi chốt.`);
   }
 
-  const warranty = sourceWarrantyOverview(sourceKey);
-  if (warranty) lines.push(`- Bảo hành: ${warranty}`);
-  else lines.push('- Bảo hành: catalog/policy hiện chưa có thời hạn đủ để xác nhận riêng cho AM8.');
+  const warranty = policySectionText(sourceKey, 'warranty');
+  lines.push(warranty ? `- Bảo hành theo chính sách:\n${warranty}` : '- Bảo hành: dữ liệu chính sách hiện chưa có thông tin để xác nhận.');
   lines.push('- Ưu đãi trọn bộ, ảnh thực tế và giá cuối cùng: catalog hiện chưa có dữ liệu để xác nhận.');
   lines.push(`Em đã chuyển yêu cầu cho nhân viên ${customerBrand} kiểm tra tồn kho, phụ kiện đi kèm, hình thực tế và báo giá cuối cùng trước khi phản hồi anh/chị.`);
 
@@ -1683,26 +1721,9 @@ function isProductSpecsRequest(userText, history = []) {
 
 function isCommercialPolicyQuestion(userText, intent) {
   const raw = String(userText || '');
-  const normalized = normalize(raw);
-  return intent === 'warranty'
-    || /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|bao hanh|doi tra|chinh sach|bao loi|loi san pham|warranty|return policy|invoice)\b/i.test(normalized)
+  return Boolean(detectPolicyTopic(raw, intent))
+    || /\b(chinh sach|loi san pham)\b/i.test(normalize(raw))
     || /(保修|退换|发票|發票|增值税|政策)/.test(raw);
-}
-
-function isVatInvoiceQuestion(userText) {
-  const raw = String(userText || '');
-  const normalized = normalize(raw);
-  return /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|invoice)\b/i.test(normalized)
-    || /(å‘ç¥¨|ç™¼ç¥¨|å¢žå€¼ç¨Ž)/.test(raw);
-}
-
-function sourceHasFullVatPolicy(sourceKey = '') {
-  const policyText = [
-    loadTextFile('faq.md', { sourceKey }),
-    loadTextFile('policies.md', { sourceKey })
-  ].join('\n');
-  const normalized = normalize(policyText);
-  return /\b(full vat|bao gom vat|da bao gom vat|gom vat|vat included|included vat)\b/i.test(normalized);
 }
 
 function pickRandomProducts(products, limit = 3) {
@@ -1747,31 +1768,25 @@ function categoryLabelFromProduct(product) {
   return 'phụ kiện quay chụp';
 }
 
-function buildCatalogOverviewReply({ lang = 'vi', scopeBrand = '', products = [] }) {
+function buildCatalogOverviewReply({ lang = 'vi', scopeBrand = '', products = [], sourceKey = '', customerBrand = 'KingCom' }) {
   const scope = String(scopeBrand || '').trim();
   const count = Array.isArray(products) ? products.length : 0;
-  const categories = [...new Set((products || []).map(categoryLabelFromProduct))].slice(0, 6);
-  const categoryText = categories.length ? categories.join(', ') : 'phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung';
+  const categories = [...new Set((products || []).map(categoryLabelFromProduct).filter(Boolean))].slice(0, 6);
+  const categoryText = categories.join(', ');
+  const brand = scope || customerBrand;
 
   if (lang === 'en') {
-    if (scope) {
-      return `This page supports ${scope} products. The current catalog has ${count || 'several'} ${scope} items, including ${categoryText}. Please tell me your use case or the product type you need so I can suggest suitable models.`;
-    }
-    return 'KingCom carries photography, filming, and content creation accessories such as gimbals, microphones, lights, filters, tripods, monitors, livestream gear, and related accessories. Which product group are you interested in?';
+    return `The current ${brand} catalog has ${count || 'several'} items${categoryText ? `, including ${categoryText}` : ''}. Please tell me your use case or the product type you need so I can suggest suitable models.`;
   }
-
   if (lang === 'zh') {
-    if (scope) {
-      return `此页面主要咨询 ${scope} 产品。目前目录中有 ${count || '多款'} 款 ${scope} 产品，包括 ${categoryText}。请告诉我您的使用需求或想了解的产品类型，我会为您推荐合适的型号。`;
-    }
-    return 'KingCom 销售摄影、拍摄和内容创作相关配件，例如稳定器、麦克风、灯具、滤镜、三脚架、外接屏幕和直播设备。您想了解哪一类产品？';
+    return `目前 ${brand} 目录中有 ${count || '多款'} 款产品${categoryText ? `，包括 ${categoryText}` : ''}。请告诉我您的使用需求或想了解的产品类型，我会为您推荐合适的型号。`;
   }
-
   if (scope) {
-    return `Dạ không phải chỉ có một mẫu đâu ạ. Fanpage này hiện tư vấn sản phẩm ${scope}; trong catalog hiện có ${count || 'nhiều'} sản phẩm ${scope}, gồm các nhóm như ${categoryText}. Anh/chị đang cần dùng cho nhu cầu nào để em gợi ý đúng mẫu hơn ạ?`;
+    return `Dạ không phải chỉ có một mẫu đâu ạ. Fanpage này hiện tư vấn sản phẩm ${scope}; trong catalog hiện có ${count || 'nhiều'} sản phẩm ${scope}${categoryText ? `, gồm các nhóm như ${categoryText}` : ''}. Anh/chị đang cần dùng cho nhu cầu nào để em gợi ý đúng mẫu hơn ạ?`;
   }
-
-  return 'Dạ KingCom đang kinh doanh phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod, màn hình phụ, thiết bị livestream và các phụ kiện quay chụp khác. Anh/chị đang quan tâm nhóm sản phẩm nào để em tư vấn mẫu phù hợp ạ?';
+  const intro = storeIntroText(sourceKey);
+  const catalogLine = `catalog của ${customerBrand} hiện có ${count || 'nhiều'} sản phẩm${categoryText ? `, gồm các nhóm như ${categoryText}` : ''}.`;
+  return `Dạ ${intro ? `${intro} Hiện ` : ''}${catalogLine} Anh/chị đang quan tâm nhóm sản phẩm nào để em tư vấn mẫu phù hợp ạ?`;
 }
 
 function isCatalogScopeQuestion(userText) {
@@ -1779,96 +1794,44 @@ function isCatalogScopeQuestion(userText) {
   return /\b(chi ban moi|chi co moi|moi mat hang|moi san pham|ban nhung mat hang gi|ban nhung mat hang nao|ban mat hang gi|ban mat hang nao|dang ban nhung mat hang|dang ban mat hang|bay ban)\b/i.test(normalized);
 }
 
-function buildPolicyRuleReply(userText, lang, scopeBrand = '', sourceKey = '', customerBrand = 'KingCom') {
-  const normalized = normalize(userText);
-  const scope = normalize(scopeBrand);
-  const brand = String(customerBrand || 'KingCom').trim() || 'KingCom';
-
-  if (isVatInvoiceQuestion(userText)) {
-    if (sourceHasFullVatPolicy(sourceKey)) {
-      if (lang === 'en') {
-        return `Yes, listed product prices at ${brand} already include VAT. If you need a VAT invoice for your order, ${brand} can support it using the order/invoice information.`;
-      }
-      if (lang === 'zh') {
-        return `${brand} \u6807\u793a\u7684\u4ea7\u54c1\u4ef7\u683c\u5df2\u5305\u542b VAT\u3002\u5982\u679c\u60a8\u9700\u8981 VAT \u53d1\u7968\uff0c${brand} \u53ef\u4ee5\u6839\u636e\u8ba2\u5355\u4fe1\u606f\u534f\u52a9\u5f00\u5177\u3002`;
-      }
-      return `D\u1ea1, gi\u00e1 s\u1ea3n ph\u1ea9m ni\u00eam y\u1ebft t\u1ea1i ${brand} \u0111\u00e3 bao g\u1ed3m VAT r\u1ed3i \u1ea1. Anh/ch\u1ecb kh\u00f4ng c\u1ea7n tr\u1ea3 th\u00eam VAT khi mua h\u00e0ng.\n\nN\u1ebfu anh/ch\u1ecb c\u1ea7n xu\u1ea5t h\u00f3a \u0111\u01a1n VAT, ${brand} c\u00f3 h\u1ed7 tr\u1ee3 theo th\u00f4ng tin \u0111\u01a1n h\u00e0ng \u1ea1.`;
-    }
-
-    if (lang === 'en') {
-      return `I do not see a clear VAT confirmation in the current ${brand} policy data, so I will avoid guessing. ${brand} staff can verify the invoice/VAT details for the exact order.`;
-    }
-    if (lang === 'zh') {
-      return `\u76ee\u524d ${brand} \u7684\u653f\u7b56\u8d44\u6599\u91cc\u6ca1\u6709\u660e\u786e\u7684 VAT \u786e\u8ba4\uff0c\u6211\u4e0d\u4f1a\u81ea\u884c\u731c\u6d4b\u3002\u5de5\u4f5c\u4eba\u5458\u53ef\u4ee5\u6839\u636e\u5177\u4f53\u8ba2\u5355\u786e\u8ba4\u53d1\u7968/VAT \u4fe1\u606f\u3002`;
-    }
-    return `D\u1ea1, hi\u1ec7n em ch\u01b0a th\u1ea5y th\u00f4ng tin VAT \u0111\u01b0\u1ee3c ghi r\u00f5 trong d\u1eef li\u1ec7u ch\u00ednh s\u00e1ch c\u1ee7a ${brand}, n\u00ean em kh\u00f4ng t\u1ef1 x\u00e1c nh\u1eadn \u0111\u1ec3 tr\u00e1nh t\u01b0 v\u1ea5n sai. Nh\u00e2n vi\u00ean ${brand} c\u00f3 th\u1ec3 ki\u1ec3m tra th\u00f4ng tin h\u00f3a \u0111\u01a1n/VAT theo \u0111\u01a1n h\u00e0ng c\u1ee5 th\u1ec3 \u1ea1.`;
-  }
-
-  if (/\b(doi tra|tra hang|doi hang|return policy|refund|exchange)\b/i.test(normalized)) {
-    if (lang === 'en') {
-      return `${brand} supports return/exchange checks when the received item is wrong, missing quantity/accessories, or damaged on arrival. Please keep order details and photos/videos of the package/product so staff can verify the case.`;
-    }
-    if (lang === 'zh') {
-      return `${brand} 可协助处理收到商品不符、缺件/少件或到货损坏等退换货情况。请保留订单信息以及包裹/产品照片或视频，方便工作人员核实。`;
-    }
-    return `Dạ, ${brand} hỗ trợ kiểm tra đổi trả khi hàng nhận không đúng mẫu/loại, thiếu số lượng/phụ kiện hoặc bị ảnh hưởng bên ngoài khi nhận hàng. Anh/chị giữ giúp em thông tin đơn hàng và hình ảnh/video sản phẩm, bao bì để nhân viên kiểm tra chính xác ạ.`;
-  }
-
-  if (/\b(giao hang|van chuyen|ship|shipping|phi ship|thoi gian giao)\b/i.test(normalized)) {
-    if (lang === 'en') {
-      return `${brand} supports nationwide delivery. Exact shipping fee and delivery time depend on the address and order details, so staff can confirm after receiving the destination/product information.`;
-    }
-    if (lang === 'zh') {
-      return `${brand} 支持全国配送。具体运费和时效取决于收货地址和订单信息，工作人员可在收到地址/产品信息后确认。`;
-    }
-    return `Dạ, ${brand} có hỗ trợ giao hàng toàn quốc ạ. Phí vận chuyển và thời gian giao chính xác sẽ phụ thuộc vào địa chỉ nhận hàng và đơn hàng cụ thể, nên nhân viên sẽ kiểm tra lại khi có thông tin địa chỉ/sản phẩm ạ.`;
-  }
-
-  if (!/\b(bao hanh|warranty)\b/i.test(normalized)) return null;
-
-  if (scope === 'viltrox') {
-    if (lang === 'en') {
-      return 'Viltrox products are covered by a limited 1-year warranty from the purchase date. The warranty applies to defects under normal use and does not cover misuse, physical impact, unauthorized repair, power issues, or incorrect installation/use. Please share the exact model or order information so KingCom staff can check the case more accurately.';
-    }
-    if (lang === 'zh') {
-      return 'Viltrox 产品通常享有自购买日起 1 年有限保修。保修适用于正常使用下产生的故障，不包括误用、外力损坏、擅自维修、电源问题或错误安装/使用等情况。请提供具体型号或订单信息，方便 KingCom 员工进一步确认。';
-    }
-    return 'Dạ sản phẩm Viltrox áp dụng bảo hành giới hạn 1 năm tính từ ngày mua hàng ạ. Bảo hành áp dụng cho lỗi phát sinh trong quá trình sử dụng bình thường, không gồm các trường hợp dùng sai cách, va đập, tự ý sửa chữa, lỗi nguồn điện hoặc lắp đặt/sử dụng không đúng hướng dẫn. Anh/chị gửi giúp em model hoặc thông tin đơn hàng để nhân viên KingCom kiểm tra chính xác hơn ạ.';
-  }
-
-  if (lang === 'en') {
-    return `${brand} warranty policy generally applies to valid products/orders with clear warranty seal/documents and defects caused by product quality. Coverage can vary by product type, so please share the model or order information for staff to check the exact warranty term.`;
-  }
-  if (lang === 'zh') {
-    return `${brand} 的保修通常适用于保修标识/凭证清楚、订单信息有效且属于产品质量问题的情况。不同产品类型的保修期可能不同，请提供型号或订单信息，方便工作人员确认。`;
-  }
-  return `Dạ, chính sách bảo hành của ${brand} áp dụng cho sản phẩm/đơn hàng hợp lệ, tem hoặc chứng từ bảo hành rõ ràng và lỗi phát sinh từ chất lượng sản phẩm. Thời hạn bảo hành có thể khác nhau theo từng loại sản phẩm, nên anh/chị gửi giúp em model hoặc thông tin đơn hàng để nhân viên kiểm tra chính xác hơn ạ.`;
+function buildPolicyRuleReply(userText, lang, sourceKey = '', customerBrand = 'KingCom', intent = '') {
+  return buildPolicyAnswer({ userText, intent, sourceKey, lang, customerBrand });
 }
 
-function sourceContactLines(sourceKey = '') {
-  const faq = loadTextFile('faq.md', { sourceKey });
-  const lines = String(faq || '').split(/\r?\n/).map(line => line.trim());
-  return lines
-    .filter(line => /^-\s*(?:HCM|Ha Noi|Hà Nội)\s*:/i.test(line))
-    .map(line => line.replace(/^-\s*/, ''))
-    .slice(0, 3);
+function storeIntroText(sourceKey = '') {
+  return storeIntroLines(sourceKey).join(' ');
 }
 
-function buildStoreInfoReply({ sourceKey = '', customerBrand = 'KingCom', lang = 'vi' } = {}) {
-  const locations = sourceContactLines(sourceKey);
-  if (!locations.length) {
-    if (lang === 'en') return `I do not have a verified store address for ${customerBrand} in the current source data. I have forwarded this to staff for checking.`;
-    if (lang === 'zh') return `当前资料中没有可核实的 ${customerBrand} 门店地址，我已转交工作人员进一步确认。`;
-    return `Dạ hiện dữ liệu của ${customerBrand} chưa có địa chỉ cửa hàng đã được xác thực. Em đã chuyển nhân viên kiểm tra thêm ạ.`;
-  }
+function storeIntroPromptLine(sourceKey = '') {
+  const intro = storeIntroText(sourceKey);
+  return intro
+    ? `Giới thiệu cửa hàng (theo dữ liệu FAQ): ${intro}`
+    : 'Giới thiệu cửa hàng: chưa có trong dữ liệu FAQ, chỉ nói theo catalog sản phẩm.';
+}
 
-  if (lang === 'en') {
-    return `You can contact or visit the following locations:\n${locations.map(line => `- ${line}`).join('\n')}`;
-  }
-  if (lang === 'zh') {
-    return `您可以联系或前往以下地点：\n${locations.map(line => `- ${line}`).join('\n')}`;
-  }
-  return `Dạ anh/chị có thể liên hệ hoặc đến các địa chỉ sau:\n${locations.map(line => `- ${line}`).join('\n')}`;
+function buildUnsupportedReply({ label = '', lang = 'vi', sourceKey = '', customerBrand = 'KingCom' } = {}) {
+  if (lang === 'en') return `${customerBrand} currently does not sell ${label || 'that product'}. Please tell me which product you are looking for and I will check our catalog.`;
+  if (lang === 'zh') return `目前 ${customerBrand} 暂未销售${label || '该产品'}。请告诉我您想找的产品，我会为您查询目录。`;
+  const intro = storeIntroText(sourceKey);
+  return `Dạ hiện ${customerBrand} chưa kinh doanh ${label || 'sản phẩm đó'} ạ.${intro ? ` ${intro}` : ''} Anh/chị cần em tư vấn sản phẩm nào ạ?`;
+}
+
+function buildStoreInfoReply({ sourceKey = '', lang = 'vi' } = {}) {
+  return buildStoreContactReply({ sourceKey, lang });
+}
+
+function storeInfoResult(sourceKey = '', lang = 'vi') {
+  const hasContact = Boolean(getVerifiedContact(sourceKey));
+  return {
+    reply: buildStoreInfoReply({ sourceKey, lang }),
+    aiUsed: 0,
+    aiError: false,
+    aiSource: 'rule_source_store_info',
+    ragProducts: [],
+    handoff: hasContact
+      ? { needed: false }
+      : { needed: true, reason: 'FAQ chưa có thông tin liên hệ cửa hàng' }
+  };
 }
 
 function buildProductGuidanceFallbackReply(products, lang = 'vi') {
@@ -1915,12 +1878,6 @@ function fallbackReply(intent, userText, products) {
     if (intent === 'greeting') {
       return '您好！KingCom 可以协助您查询产品、报价、配送或保修信息。';
     }
-    if (intent === 'store_info') {
-      return 'KingCom 门店地址是越南胡志明市 Bảy Hiền 坊 Nguyễn Minh Hoàng 65 号。';
-    }
-    if (intent === 'unsupported') {
-      return '目前 KingCom 暂未销售笔记本电脑或 ThinkPad。我们主要销售摄影、拍摄和内容创作相关配件。';
-    }
     if (intent === 'human') {
       if (hasPhoneNumber(userText)) return '谢谢，我已收到您的电话号码，并会转交给 KingCom 员工跟进。';
       return '我已记录您需要人工协助。请留下电话号码，KingCom 员工会尽快联系您。';
@@ -1941,12 +1898,6 @@ function fallbackReply(intent, userText, products) {
     if (intent === 'greeting') {
       return 'Hi! How can KingCom help you today?';
     }
-    if (intent === 'store_info') {
-      return 'KingCom store address is 65 Nguyen Minh Hoang, Bay Hien Ward, Ho Chi Minh City.';
-    }
-    if (intent === 'unsupported') {
-      return 'KingCom currently does not sell laptops or ThinkPads. We focus on photography, filming, and content creation accessories.';
-    }
     if (intent === 'human') {
       if (hasPhoneNumber(userText)) return 'Thank you, I have received your phone number. I will forward it to KingCom staff for follow-up.';
       return 'I have noted your request to speak with staff. Please share your phone number so KingCom staff can contact you soon.';
@@ -1965,13 +1916,7 @@ function fallbackReply(intent, userText, products) {
   }
 
   if (intent === 'greeting') {
-    return 'Dạ em chào anh/chị ạ! KingCom hỗ trợ phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung. Anh/chị cần em tư vấn sản phẩm nào ạ?';
-  }
-  if (intent === 'store_info') {
-    return 'Dạ địa chỉ cửa hàng KingCom là 65 Nguyễn Minh Hoàng, phường Bảy Hiền, TP. Hồ Chí Minh ạ.';
-  }
-  if (intent === 'unsupported') {
-    return 'Dạ hiện KingCom chưa kinh doanh laptop/ThinkPad ạ. Bên em chuyên phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung. Anh/chị cần em tư vấn gimbal, micro, đèn, filter, tripod hoặc phụ kiện quay chụp nào không ạ?';
+    return 'Dạ em chào anh/chị ạ! Anh/chị cần em tư vấn sản phẩm nào ạ?';
   }
   if (intent === 'human') {
     return 'Dạ mình đã ghi nhận yêu cầu gặp nhân viên. Anh/chị vui lòng để lại số điện thoại để KingCom liên hệ tư vấn nhanh nhất nhé.';
@@ -2434,15 +2379,11 @@ function buildLocalizedRuleReply(intent, userText, lang, scopeBrand = '', custom
   const brand = String(customerBrand || 'KingCom').trim() || 'KingCom';
   const unsupportedLabel = productQueryLabel(userText);
   if (lang === 'en') {
-    if (intent === 'store_info') {
-      return 'KingCom store address is 65 Nguyen Minh Hoang, Bay Hien Ward, Ho Chi Minh City. What product can I help you with?';
-    }
-    if (intent === 'catalog_info') {
-      if (scope) return `This page supports ${scope} products. Please tell me the product type or model you are looking for so I can suggest matching ${scope} products.`;
-      return 'KingCom carries photography, filming, and content creation accessories such as gimbals, microphones, lights, filters, tripods, monitors, and livestream equipment. Which product group are you interested in?';
+    if (intent === 'catalog_info' && scope) {
+      return `This page supports ${scope} products. Please tell me the product type or model you are looking for so I can suggest matching ${scope} products.`;
     }
     if (intent === 'unsupported') {
-      return `${brand} currently does not sell ${unsupportedLabel || 'that product'}. We focus on photography, filming, and content creation accessories such as gimbals, microphones, lights, filters, and tripods. Which product group would you like help with?`;
+      return buildUnsupportedReply({ label: unsupportedLabel, lang: 'en', customerBrand: brand });
     }
     if (intent === 'human') {
       if (hasPhoneNumber(userText)) return 'Thank you, I have received your phone number. I will forward it to KingCom staff for follow-up.';
@@ -2454,15 +2395,11 @@ function buildLocalizedRuleReply(intent, userText, lang, scopeBrand = '', custom
   }
 
   if (lang === 'zh') {
-    if (intent === 'store_info') {
-      return 'KingCom 门店地址是越南胡志明市 Bảy Hiền 坊 Nguyễn Minh Hoàng 65 号。您需要我继续协助查询哪一款产品吗？';
-    }
-    if (intent === 'catalog_info') {
-      if (scope) return `此页面提供 ${scope} 产品咨询。请告诉我您需要的产品类型或具体型号，我会为您推荐合适的 ${scope} 产品。`;
-      return 'KingCom 销售摄影、拍摄和内容创作相关配件，例如稳定器、麦克风、灯具、滤镜、三脚架、外接屏幕和直播设备。您想了解哪一类产品？';
+    if (intent === 'catalog_info' && scope) {
+      return `此页面提供 ${scope} 产品咨询。请告诉我您需要的产品类型或具体型号，我会为您推荐合适的 ${scope} 产品。`;
     }
     if (intent === 'unsupported') {
-      return `目前 ${brand} 暂未销售${unsupportedLabel || '该产品'}。我们主要销售摄影、拍摄和内容创作相关配件，例如稳定器、麦克风、灯具、滤镜和三脚架。您想咨询哪一类产品？`;
+      return buildUnsupportedReply({ label: unsupportedLabel, lang: 'zh', customerBrand: brand });
     }
     if (intent === 'human') {
       if (hasPhoneNumber(userText)) return '谢谢，我已收到您的电话号码，并会转交给 KingCom 员工跟进。';
@@ -2571,6 +2508,8 @@ async function generateReplyRaw({
     };
   }
 
+  if (isStoreContactRequest(userText)) return storeInfoResult(sourceKey, messageLanguage);
+
   if (intent === 'human') {
     return {
       reply: buildHumanRequestReply(userText, messageLanguage, channel, customerBrand, customerPhone),
@@ -2583,7 +2522,7 @@ async function generateReplyRaw({
 
   if (intent === 'catalog_info' || isCatalogScopeQuestion(userText)) {
     return {
-      reply: buildCatalogOverviewReply({ lang: messageLanguage, scopeBrand, products: scopedProducts }),
+      reply: buildCatalogOverviewReply({ lang: messageLanguage, scopeBrand, products: scopedProducts, sourceKey, customerBrand }),
       aiUsed: 0,
       aiError: false,
       aiSource: 'rule_catalog_overview',
@@ -2611,31 +2550,38 @@ async function generateReplyRaw({
     };
   }
 
-  const policyRuleReply = buildPolicyRuleReply(userText, messageLanguage, scopeBrand, sourceKey, customerBrand);
+  const policyRuleReply = buildPolicyRuleReply(userText, messageLanguage, sourceKey, customerBrand, intent);
   if (policyRuleReply) {
     return {
-      reply: policyRuleReply,
+      reply: policyRuleReply.reply,
       aiUsed: 0,
       aiError: false,
       aiSource: 'rule_policy',
-      ragProducts: []
+      ragProducts: [],
+      handoff: policyRuleReply.handoff
     };
   }
 
-  const technicalSupportReply = buildTechnicalSupportReply(
+  const technicalSupportReply = await buildTechnicalSupportReply({
     userText,
-    messageLanguage,
+    history,
+    sourceKey,
+    sourceConfig,
+    lang: messageLanguage,
     customerBrand,
-    resolvedConversationContext
-  );
+    conversationContext: resolvedConversationContext
+  });
   if (technicalSupportReply) {
     return {
-      reply: technicalSupportReply,
-      aiUsed: 0,
+      reply: technicalSupportReply.reply,
+      aiUsed: technicalSupportReply.aiUsed,
       aiError: false,
-      aiSource: 'rule_technical_support',
+      aiSource: technicalSupportReply.aiSource,
       searchQuery: userText,
-      ragProducts: [],
+      ragProducts: technicalSupportReply.products,
+      webSources: technicalSupportReply.webSources,
+      webSearchRequests: technicalSupportReply.webSearchRequests,
+      handoff: technicalSupportReply.handoff,
       conversationContext: resolvedConversationContext
     };
   }
@@ -2674,15 +2620,7 @@ async function generateReplyRaw({
     }
   }
 
-  if (intent === 'store_info') {
-    return {
-      reply: buildStoreInfoReply({ sourceKey, customerBrand, lang: messageLanguage }),
-      aiUsed: 0,
-      aiError: false,
-      aiSource: 'rule_source_store_info',
-      ragProducts: []
-    };
-  }
+  if (intent === 'store_info') return storeInfoResult(sourceKey, messageLanguage);
 
   const localizedRuleReply = buildLocalizedRuleReply(intent, userText, messageLanguage, scopeBrand, customerBrand);
   if (localizedRuleReply) {
@@ -2698,7 +2636,7 @@ async function generateReplyRaw({
   if (intent === 'unsupported') {
     const unsupportedLabel = productQueryLabel(userText) || 'sản phẩm đó';
     return {
-      reply: `Dạ hiện ${customerBrand} chưa kinh doanh ${unsupportedLabel} ạ. Bên em chuyên phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod... Anh/chị cần em tư vấn nhóm sản phẩm nào ạ?`,
+      reply: buildUnsupportedReply({ label: unsupportedLabel, lang: messageLanguage, sourceKey, customerBrand }),
       aiUsed: 0,
       aiError: false,
       aiSource: 'rule',
@@ -2709,7 +2647,7 @@ async function generateReplyRaw({
   if (isClearlyOutOfScopeProductRequest(userText, intent, sourceKey)) {
     const unsupportedLabel = productQueryLabel(userText) || 'sản phẩm đó';
     return {
-      reply: `Dạ hiện ${customerBrand} chưa kinh doanh ${unsupportedLabel} ạ. Bên em chuyên phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung như gimbal, micro, đèn, filter, tripod... Anh/chị cần em tư vấn nhóm sản phẩm nào ạ?`,
+      reply: buildUnsupportedReply({ label: unsupportedLabel, lang: messageLanguage, sourceKey, customerBrand }),
       aiUsed: 0,
       aiError: false,
       aiSource: 'rule_out_of_scope_product',
@@ -2781,9 +2719,9 @@ async function generateReplyRaw({
       sourceKey ? `Source key: ${sourceKey}` : ''
     ].filter(Boolean).join('\n');
 
-    const greetingPrompt = `Bạn là nhân viên tư vấn của ${customerBrand}, cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung. Trả lời tiếng Việt, ngắn gọn, thân thiện, tự nhiên như người thật đang chat với khách.
+    const greetingPrompt = `Bạn là nhân viên tư vấn của ${customerBrand}. ${storeIntroPromptLine(sourceKey)} Trả lời tiếng Việt, ngắn gọn, thân thiện, tự nhiên như người thật đang chat với khách.
 
-Địa chỉ cửa hàng KingCom: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam
+${buildContactPromptBlock(sourceKey)}
 
 ${sourceContext ? `Nguồn dữ liệu hiện tại:\n${sourceContext}\n` : ''}
 ${existingContactInstruction}
@@ -2795,8 +2733,7 @@ Quy tắc giọng nói:
 - Không tự xưng là AI, bot, trợ lý ảo, hệ thống tự động.
 - Xưng "em" hoặc "${customerBrand}", gọi khách là "anh/chị" khi phù hợp.
 - Chỉ dùng tên thương hiệu "${customerBrand}" khi nói với khách. Không tự nhận là thương hiệu khác.
-- KingCom KHÔNG phải cửa hàng mỹ phẩm. Tuyệt đối không nói KingCom bán mỹ phẩm/làm đẹp.
-- Khi giới thiệu KingCom, chỉ nói là cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung.
+- Khi giới thiệu cửa hàng, chỉ dùng đúng phần "Giới thiệu cửa hàng" ở trên; không tự liệt kê ngành hàng khác.
 - Nếu không chắc thông tin, nói "em kiểm tra thêm" hoặc "em chuyển nhân viên phụ trách kiểm tra", không nói "AI không biết".
 - Không cười, trêu, chê hoặc nói khách "nhầm lẫn gì đây"; nếu câu hỏi ngoài phạm vi, hãy giải thích lịch sự và gợi ý nhóm sản phẩm phù hợp.
 - Không nói mình là "giao diện tự động" hoặc "không thể trao đổi trực tiếp".
@@ -3238,9 +3175,9 @@ ${intent === 'greeting'
     sourceKey ? `Source key: ${sourceKey}` : ''
   ].filter(Boolean).join('\n');
 
-  const prompt = `Bạn là nhân viên tư vấn của ${customerBrand}, cửa hàng phụ kiện nhiếp ảnh, quay phim và thiết bị sáng tạo nội dung. Trả lời tiếng Việt, ngắn gọn, thân thiện, tự nhiên như người thật đang chat với khách, đúng dữ liệu.
+  const prompt = `Bạn là nhân viên tư vấn của ${customerBrand}. ${storeIntroPromptLine(sourceKey)} Trả lời tiếng Việt, ngắn gọn, thân thiện, tự nhiên như người thật đang chat với khách, đúng dữ liệu.
 
-Địa chỉ cửa hàng KingCom: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam
+${buildContactPromptBlock(sourceKey)}
 
 ${sourceContext ? `Nguồn dữ liệu hiện tại:\n${sourceContext}\n` : ''}
 ${scopeBrand ? `Phạm vi fanpage: chỉ tư vấn sản phẩm ${scopeBrand}.\n` : ''}
@@ -3264,7 +3201,7 @@ Khách hỏi: ${userText}
 Quy tắc:
 - Bạn là nhân viên thật, hãy xưng "em" hoặc tên thương hiệu "${customerBrand}", gọi khách là "anh/chị". Tuyệt đối không xưng là AI, bot hay trợ lý ảo.
 - Nếu khách yêu cầu gặp nhân viên thật trên website, hãy trả lời là bạn đã chuyển thông tin cho bộ phận chuyên trách và họ sẽ hỗ trợ trực tiếp tại đây.
-- KingCom chuyên bán phụ kiện nhiếp ảnh, quay phim và sáng tạo nội dung. Hãy từ chối lịch sự nếu khách hỏi về mỹ phẩm hoặc ngành hàng không liên quan.
+- Chỉ tư vấn sản phẩm có trong catalog và giới thiệu cửa hàng đúng theo phần "Giới thiệu cửa hàng". Từ chối lịch sự nếu khách hỏi ngành hàng không có trong catalog.
 - Luôn giữ thái độ chuyên nghiệp, tôn trọng và lịch sự với khách hàng trong mọi tình huống.
 - Không cười, trêu, chê hoặc nói khách "nhầm lẫn gì đây"; nếu câu hỏi ngoài phạm vi, hãy giải thích lịch sự và gợi ý hướng phù hợp.
 - Không nói mình là "giao diện tự động", "hệ thống tự động" hoặc "không thể trao đổi trực tiếp".
@@ -3277,7 +3214,7 @@ Quy tắc:
 - Nếu danh sách sản phẩm có nhiều lựa chọn phù hợp, hãy liệt kê tối đa 3-5 mẫu, bao gồm: tên sản phẩm, giá và link trực tiếp.
 - Nếu có phạm vi fanpage, chỉ giới thiệu các sản phẩm thuộc phạm vi đó.
 - Nếu khách muốn mua, chốt đơn hoặc gặp người thật, hãy ghi nhận thông tin và chuyển ngay cho nhân viên hỗ trợ.
-- Địa chỉ cửa hàng luôn là: 65 Nguyễn Minh Hoàng, phường Bảy Hiền, thành phố Hồ Chí Minh, Việt Nam.
+- Địa chỉ, hotline, số điện thoại cửa hàng: chỉ dùng đúng phần "Thông tin liên hệ cửa hàng" ở trên, không tự tạo số hay địa chỉ khác.
 - Quy tắc liên hệ: ${existingContactInstruction}`;
 
   try {

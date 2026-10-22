@@ -2,6 +2,8 @@ const { detectMessageLanguage } = require('./ai');
 const { resolveCustomerBrand } = require('./sourceRegistry');
 const { chatCompletion } = require('./llmClient');
 const { loadTextFile } = require('./rag');
+const { buildContactPromptBlock, getVerifiedContact } = require('./storeContacts');
+const { detectPolicyTopic, policySectionText } = require('./policyAnswers');
 const { normalizeContext, isContextualProductFollowUp, isAlternativeProductRequest } = require('./conversationContext');
 
 function getApiConfig() {
@@ -166,7 +168,11 @@ function summarizeConversationContext(context = {}) {
   });
 }
 
-function summarizeTrustedKnowledge(sourceKey = '') {
+function summarizeTrustedKnowledge(sourceKey = '', userText = '', intent = '') {
+  // Give the judge the exact policy section the customer asks about, not a truncated file head.
+  const topic = detectPolicyTopic(userText, intent);
+  const section = topic ? policySectionText(sourceKey, topic.id) : '';
+  if (section) return `Policy section "${topic.label}" (verbatim):\n${section}`;
   const faq = compactText(loadTextFile('faq.md', { sourceKey }), 350);
   const policies = compactText(loadTextFile('policies.md', { sourceKey }), 500);
   return [
@@ -311,7 +317,7 @@ function buildJudgePrompt({
   const contextText = summarizeConversationContext(conversationContext);
   const needsTrustedKnowledge = /store_info|warranty|policy|invoice/i.test(String(intent || ''))
     || /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|bao hanh|doi tra|chinh sach|invoice)\b/i.test(String(userText || ''));
-  const trustedSourceKnowledge = needsTrustedKnowledge ? summarizeTrustedKnowledge(sourceKey) : '';
+  const trustedSourceKnowledge = needsTrustedKnowledge ? summarizeTrustedKnowledge(sourceKey, userText, intent) : '';
   const validationText = validation?.ok === false
     ? `Previous rule validator rejected the draft reply: ${validation.reason || 'unknown reason'}`
     : 'Previous rule validator approved the draft reply.';
@@ -362,6 +368,9 @@ function buildJudgePrompt({
     'Trusted FAQ and policy knowledge for this source (compact):',
     trustedSourceKnowledge || '(none)',
     '',
+    'Verified store contact info (the ONLY allowed addresses, hotlines and phone numbers):',
+    buildContactPromptBlock(sourceKey),
+    '',
     'Draft reply to judge:',
     String(reply || '').trim(),
     '',
@@ -381,6 +390,7 @@ function buildJudgePrompt({
     '- If the customer asks for a follow-up link and the previous product is visible in recent conversation, provide that link only if it is visible here; otherwise ask staff to confirm the exact link.',
     '- If unsafe and cannot be fixed from supplied context, provide a brief safe correctedReply and set needsHandoff true.',
     '- Do not invent products, prices, stock, warranty details, links, promotions, or policies.',
+    '- Never write a hotline, phone number, Zalo, email or store address that is not in the verified store contact info.',
     '- Keep correctedReply short, natural, polite, and ready to send.',
     '- If the customer is writing in Vietnamese, reply in Vietnamese. If English, reply in English. If Simplified Chinese, reply in Simplified Chinese.',
   ].join('\n');
@@ -430,26 +440,20 @@ function normalizeEvidenceText(text) {
 }
 
 function approveTrustedSourceStoreInfo(payload = {}) {
-  if (payload.aiSource !== 'rule_source_store_info' || payload.intent !== 'store_info') return null;
+  if (payload.aiSource !== 'rule_source_store_info') return null;
 
-  const faq = loadTextFile('faq.md', { sourceKey: payload.sourceKey || '' });
-  const addressLines = String(faq || '')
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(line => /^-\s*(?:HCM|Ha Noi|Hà Nội)\s*:/i.test(line))
-    .map(line => normalizeEvidenceText(line.replace(/^-\s*/, '')))
-    .filter(Boolean);
-  if (!addressLines.length) return null;
+  const contact = getVerifiedContact(payload.sourceKey || '');
+  if (!contact) return null;
 
   const normalizedReply = normalizeEvidenceText(payload.reply);
-  const supportedLines = addressLines.filter(line => normalizedReply.includes(line));
-  if (supportedLines.length !== addressLines.length) return null;
+  const allLinesQuoted = contact.entries.every(entry => normalizedReply.includes(normalizeEvidenceText(entry.text)));
+  if (!allLinesQuoted) return null;
 
   return {
     approve: true,
     inferredCustomerNeed: 'Customer asks for a store or support location',
     riskType: 'ok',
-    reason: 'Store locations were generated directly from the FAQ for the active source.',
+    reason: 'Store locations and hotlines were generated directly from the FAQ contact section of the active source.',
     severity: 'low',
     confidence: 1,
     needsHandoff: false,

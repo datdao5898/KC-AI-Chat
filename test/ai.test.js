@@ -64,7 +64,26 @@ test('generateReply uses configured Facebook brand identity', async () => {
   assert.doesNotMatch(result.reply, /\bKingCom\b/);
 });
 
-test('generateReply answers NewLite store address from source FAQ', async () => {
+test('generateReply answers KingCom store address and hotline from verified contacts', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'địa chỉ cửa hàng ở đâu vậy ạ',
+    history: [],
+    customer: {},
+    intent: 'store_info',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_source_store_info');
+  assert.match(result.reply, /65 Nguyễn Minh Hoàng, Phường Bảy Hiền \(Phường 12, Quận Tân Bình cũ\)/);
+  assert.match(result.reply, /0903 898 478/);
+  assert.match(result.reply, /96-96B Nguyễn Huy Tưởng/);
+  assert.match(result.reply, /070 447 1438/);
+});
+
+test('generateReply does not give KingCom contacts to NewLite before they are verified', async () => {
   const result = await generateReply({
     channel: 'haravan_website',
     userText: 'địa chỉ cửa hàng ở đâu vậy ạ',
@@ -77,11 +96,25 @@ test('generateReply answers NewLite store address from source FAQ', async () => 
   });
 
   assert.equal(result.aiSource, 'rule_source_store_info');
-  assert.match(result.reply, /liên hệ hoặc đến các địa chỉ sau/i);
-  assert.match(result.reply, /65 Nguyen Minh Hoang/);
-  assert.match(result.reply, /96-96B Nguyen Huy Tuong/);
-  assert.doesNotMatch(result.reply, /địa chỉ cửa hàng NewLite/i);
-  assert.doesNotMatch(result.reply, /phường Bảy Hiền/i);
+  assert.doesNotMatch(result.reply, /Nguyễn Minh Hoàng|0903 898 478/);
+  assert.match(result.reply, /chuyển nhân viên/);
+});
+
+test('generateReply answers a hotline request with verified hotlines instead of a generic handoff', async () => {
+  const result = await generateReply({
+    channel: 'haravan_website',
+    userText: 'Hotline',
+    history: [],
+    customer: {},
+    intent: 'human',
+    sourceKey: 'website/kingcom',
+    sourceName: 'KingCom',
+    sourceGroup: 'website'
+  });
+
+  assert.equal(result.aiSource, 'rule_source_store_info');
+  assert.match(result.reply, /0903 898 478/);
+  assert.match(result.reply, /070 447 1438/);
 });
 
 test('generateReply answers warranty policy without provider fallback', async () => {
@@ -1016,9 +1049,10 @@ test('multi-item quote request answers catalog items before handing off commerci
   assert.match(result.reply, /BM63 Boom Arm/i);
   assert.match(result.reply, /Pop Filter lưới đôi: em chưa tìm thấy mẫu bán rời/i);
   assert.match(result.reply, /Tạm tính các món đã tìm thấy: 2\.089\.000đ/i);
-  assert.match(result.reply, /cắm trực tiếp vào PC qua USB/i);
+  assert.match(result.reply, /Kết nối máy tính: catalog của .*AM8.* ghi có kết nối USB/i);
   assert.match(result.reply, /screw adapter 5\/8/i);
-  assert.match(result.reply, /thân máy thường bảo hành 12 tháng \+ 1 tháng/i);
+  assert.match(result.reply, /Bảo hành: dữ liệu chính sách hiện chưa có thông tin/i);
+  assert.doesNotMatch(result.reply, /Dell|không cần mixer|cả hai sản phẩm|riêng cho AM8/i);
   assert.doesNotMatch(result.reply, /Default Title/i);
   assert.equal(result.handoff?.needed, true);
 });
@@ -1040,7 +1074,8 @@ test('full Vietnamese multi-item quote is not rejected because laptop is a compa
   assert.match(result.reply, /FIFINE AmpliGame AM8/i);
   assert.match(result.reply, /BM63 Boom Arm/i);
   assert.match(result.reply, /Tạm tính các món đã tìm thấy: 2\.089\.000đ/i);
-  assert.match(result.reply, /cắm trực tiếp vào PC qua USB/i);
+  assert.match(result.reply, /Kết nối máy tính: catalog của .*AM8.* ghi có kết nối USB/i);
+  assert.doesNotMatch(result.reply, /Dell|không cần mixer|cả hai sản phẩm/i);
   assert.equal(result.handoff?.needed, true);
 });
 
@@ -1064,17 +1099,31 @@ test('generateReply apologizes and escalates when staff have not contacted the c
   assert.doesNotMatch(result.reply, /nh\u00f3m s\u1ea3n ph\u1ea9m|s\u1ea3n ph\u1ea9m n\u00e0o/i);
 });
 
-test('technical charging issue stays on troubleshooting instead of price', () => {
-  const reply = buildTechnicalSupportReply(
-    's\u1ea1c 1 ti\u1ebfng m\u00e0 pin v\u1eabn 68%',
-    'vi',
-    'NewLite',
-    { current_product_name: 'Pin d\u1ef1 ph\u00f2ng Gutek 50000mAh' }
-  );
+test('technical charging issue quotes the FAQ technical section instead of price', async () => {
+  const result = await buildTechnicalSupportReply({
+    userText: 's\u1ea1c 1 ti\u1ebfng m\u00e0 pin v\u1eabn 68%',
+    sourceKey: 'website/kingcom',
+    lang: 'vi',
+    customerBrand: 'KingCom',
+    conversationContext: {}
+  });
 
-  assert.match(reply, /s\u1ea1c ch\u1eadm|ch\u01b0a \u0111\u1ea7y pin/i);
-  assert.match(reply, /c\u00f4ng su\u1ea5t.*c\u1ee7 s\u1ea1c|d\u00e2y c\u00e1p/i);
-  assert.doesNotMatch(reply, /Gi\u00e1:|Link:/i);
+  assert.match(result.reply, /Kh\u00f4ng l\u00ean ngu\u1ed3n: anh\/ch\u1ecb ki\u1ec3m tra ngu\u1ed3n \u0111i\u1ec7n, d\u00e2y v\u00e0 pin/);
+  assert.equal(result.handoff.needed, true);
+  assert.doesNotMatch(result.reply, /Gi\u00e1:|Link:|30 ph\u00fat/i);
+});
+
+test('technical issue without FAQ technical section hands off to staff', async () => {
+  const result = await buildTechnicalSupportReply({
+    userText: 's\u1ea1c 1 ti\u1ebfng m\u00e0 pin v\u1eabn 68%',
+    sourceKey: 'website/newlite',
+    lang: 'vi',
+    customerBrand: 'NewLite',
+    conversationContext: {}
+  });
+
+  assert.match(result.reply, /chuy\u1ec3n v\u1ea5n \u0111\u1ec1 k\u1ef9 thu\u1eadt n\u00e0y cho nh\u00e2n vi\u00ean NewLite/);
+  assert.equal(result.handoff.needed, true);
 });
 
 test('cable compatibility requires evidence for every requested connector', () => {

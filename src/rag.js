@@ -611,7 +611,8 @@ function loadTextFile(name, options = {}) {
     const file = path.join(SOURCES_DIR, ...String(sourceKey).split('/'), name);
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').slice(0, 4000) : '';
   }
-  return readFirstExistingText(name, sourceKey, 4000);
+  // FAQ/policy markdown is the source of truth for answers, so do not cut it short.
+  return readFirstExistingText(name, sourceKey, Number(process.env.KNOWLEDGE_MAX_CHARS || 12000));
 }
 
 function buildContext(query, options = {}) {

@@ -58,6 +58,7 @@ function summarizeJudgeMetrics(lines = []) {
     } catch {
       continue;
     }
+    if (asLoggedBoolean(row.testMode)) continue;
     metrics.sampled += 1;
     if (row.judgeSkipped) {
       metrics.skipped += 1;
