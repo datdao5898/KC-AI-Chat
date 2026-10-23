@@ -79,13 +79,14 @@ router.post('/facebook', async (req, res) => {
 
 router.post('/zalo', async (req, res) => {
   try {
+    // Zalo only saves the webhook URL if its test POST gets a 200, and retries any
+    // non-200, so always acknowledge and simply drop events that fail verification.
+    res.status(200).json({ ok: true });
     if (!verifyZaloSignature(req)) {
       const configured = Boolean(process.env.ZALO_OA_SECRET_KEY);
-      console.warn('[ZALO WEBHOOK] rejected', JSON.stringify({ reason: configured ? 'invalid_signature' : 'secret_not_configured', event: req.body?.event_name }));
-      return res.status(configured ? 401 : 503).json({ error: configured ? 'invalid_signature' : 'zalo_secret_not_configured' });
+      console.warn('[ZALO WEBHOOK] ignored', JSON.stringify({ reason: configured ? 'invalid_signature' : 'secret_not_configured', event: req.body?.event_name }));
+      return;
     }
-    // Zalo retries unless it gets a quick 200, so acknowledge before the AI runs.
-    res.status(200).json({ ok: true });
     const event = parseZaloEvent(req.body);
     if (!event) return;
     if (!await markProcessed('zalo', event.messageId)) return;
