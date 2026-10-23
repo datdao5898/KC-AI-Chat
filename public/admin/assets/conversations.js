@@ -40,6 +40,11 @@
     }
   }
 
+  // Time of the latest message; updated_at also moves on summaries and status changes.
+  function lastActivity(conv) {
+    return conv.last_message_at || conv.updated_at;
+  }
+
   function convName(conv) {
     return conv.customer_name || conv.profile_name || conv.name || conv.external_id || conv.customer_id || KC.t('dashboardCustomers');
   }
@@ -170,7 +175,7 @@
     }).sort((a, b) => {
       const needDiff = Number(Boolean(b.needs_human)) - Number(Boolean(a.needs_human));
       if (needDiff) return needDiff;
-      return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
+      return new Date(lastActivity(b) || 0) - new Date(lastActivity(a) || 0);
     });
   }
 
@@ -236,7 +241,7 @@
       <button class="conversation-row ${conv.needs_human ? 'need' : ''} ${active ? 'active' : ''}" data-open-conv="${KC.esc(conv.id)}" type="button">
         <div class="conversation-row-main">
           <span class="conversation-name">${KC.esc(convName(conv))}</span>
-          <time>${KC.esc(KC.shortDate(conv.updated_at))}</time>
+          <time title="${KC.esc(KC.t('lastMessageAt'))}">${KC.esc(KC.shortDate(lastActivity(conv)))}</time>
         </div>
         ${showSource ? `<div class="conversation-source">${KC.esc(conv.source_name || sourceGroupLabel(groupKey(conv)))}</div>` : ''}
         <div class="conversation-statuses">

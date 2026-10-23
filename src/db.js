@@ -542,10 +542,15 @@ async function getRecentMessages(conversationId, limit = 12) {
   return rows.reverse();
 }
 
+// The dashboard filters, counts and searches this list client-side, so it returns every
+// conversation (capped only as a safety valve) ordered by the latest message, not by
+// updated_at, which also moves on summaries, handoff changes and auto-reply toggles.
 async function listConversations() {
+  const limit = Math.max(1, Number(process.env.ADMIN_CONVERSATION_LIST_LIMIT || 5000));
   const { rows } = await db.query(`
     SELECT c.*, cu.name, cu.phone, cu.email, cu.external_id, cu.profile_summary, cu.interested_products,
       (SELECT text FROM messages WHERE conversation_id=c.id AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message,
+      (SELECT MAX(created_at) FROM messages WHERE conversation_id=c.id AND deleted_at IS NULL) AS last_message_at,
       (SELECT COUNT(*)::int FROM staff_alerts WHERE conversation_id=c.id AND status='open') AS open_alerts,
       COALESCE(r.reply_review_count, 0)::int AS reply_review_count
     FROM conversations c
@@ -557,10 +562,11 @@ async function listConversations() {
       GROUP BY conversation_id
     ) r ON r.conversation_id = c.id
     WHERE c.deleted_at IS NULL AND COALESCE(c.is_test, 0)=0
-    ORDER BY c.needs_human DESC, c.updated_at DESC
-    LIMIT 100
-  `);
-  return rows.map(decorateConversation);
+    ORDER BY c.needs_human DESC, last_message_at DESC NULLS LAST, c.updated_at DESC
+    LIMIT $1
+  `, [limit]);
+  // The list never shows the AI context; getConversation returns it for the open chat.
+  return rows.map(({ conversation_context, ...row }) => decorateConversation(row));
 }
 
 async function getConversation(id) {
