@@ -86,7 +86,9 @@ function buildSourceContext({ channel, raw = {}, customerAttrs = {} }) {
   } else if (channelKey === 'zalo') {
     const oaId = raw?.oa_id || raw?.recipient?.id || raw?.app_id || process.env.ZALO_OA_ID || '';
     sourceId = oaId || 'default';
-    sourceName = lookupEnvMap('ZALO_OA_NAMES', oaId) || process.env.ZALO_OA_NAME || raw?.oa_name || (oaId ? `Zalo OA ${oaId}` : 'Zalo OA');
+    sourceName = lookupEnvMap('ZALO_OA_NAMES', oaId) || process.env.ZALO_OA_NAME || raw?.oa_name
+      || readSourceConfig(`zalo/${slugifyPart(sourceId) || 'default'}`).displayName
+      || (oaId ? `Zalo OA ${oaId}` : 'Zalo OA');
   } else if (channelKey === 'website') {
     const siteName = raw?.siteName || raw?.site_name || customerAttrs.siteName || process.env.DEFAULT_WEBSITE_NAME || '';
     const host = compactHost(raw?.siteHost || raw?.site_host || raw?.siteUrl || raw?.site_url || raw?.origin || raw?.referrer || process.env.DEFAULT_WEBSITE_HOST || '');
@@ -163,6 +165,8 @@ function getSourceCandidates(sourceKey) {
   const normalized = String(sourceKey || '').trim();
   const candidates = [];
   if (normalized) candidates.push(normalized);
+  const sharedKey = String(readSourceConfig(normalized).sharesDataWith || '').trim();
+  if (sharedKey) candidates.push(sharedKey);
   const group = normalized.split('/')[0];
   if (group && group !== normalized) candidates.push(group);
   candidates.push('common');
@@ -191,17 +195,30 @@ function readFirstExistingText(filename, sourceKey, maxBytes = 4000) {
   return '';
 }
 
+function readSourceJson(key) {
+  const file = path.join(SOURCES_DIR, ...String(key).split('/'), 'source.json');
+  if (!fs.existsSync(file)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// A source.json may set "sharesDataWith": "<group>/<source>" to answer from another
+// source's catalog, FAQ and policies (e.g. every Zalo OA reuses website/kingcom).
+// It can sit in the source folder or, for a whole channel, in the group folder.
 function readSourceConfig(sourceKey) {
   const normalized = String(sourceKey || '').trim();
   if (!normalized) return {};
-  const file = path.join(SOURCES_DIR, ...normalized.split('/'), 'source.json');
-  if (!fs.existsSync(file)) return {};
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
+  const group = normalized.split('/')[0];
+  const own = readSourceJson(normalized) || (group !== normalized ? readSourceJson(group) : null) || {};
+  const sharedKey = String(own.sharesDataWith || '').trim();
+  if (!sharedKey || sharedKey === normalized) return own;
+  // The shared source keeps its own store sync; only its answering settings carry over.
+  const { catalogSync, ...shared } = readSourceJson(sharedKey) || {};
+  return { ...shared, ...own };
 }
 
 module.exports = {

@@ -155,6 +155,11 @@ Neu muon tach du lieu theo tung nguon, dung cau truc:
 
 App se uu tien doc file trong dung thu muc nguon truoc, sau do moi fallback ve du lieu chung.
 
+Mot nguon co the dung chung du lieu voi nguon khac bang `"sharesDataWith"` trong `source.json`
+(dat trong thu muc nguon, hoac thu muc nhom de ap dung cho ca kenh). Hien tai
+`data/sources/zalo/source.json` cho moi Zalo OA tra loi bang du lieu `website/kingcom`
+(san pham tu dong bo tu store, FAQ, chinh sach) voi ten thuong hieu KingCom.
+
 ## Nhung widget vao Haravan website
 
 Them truoc `</body>`.

@@ -59,3 +59,18 @@ test('branding replacement keeps product names and URLs unchanged', () => {
   assert.match(branded, /Chính Hãng KingCom/);
   assert.match(branded, /https:\/\/store\.kingcom\.com\.vn\/products\/lens/);
 });
+
+test('Zalo OAs answer from the KingCom website data under the KingCom brand', () => {
+  const { getSourceCandidates, readSourceConfig } = require('../src/sourceRegistry');
+  const source = buildSourceContext({ channel: 'zalo', raw: { recipient: { id: '4321098765' } } });
+
+  assert.equal(source.sourceKey, 'zalo/4321098765');
+  assert.equal(source.sourceName, 'KingCom');
+  assert.equal(resolveCustomerBrand(source), 'KingCom');
+  assert.equal(getSourceCandidates(source.sourceKey)[1], 'website/kingcom');
+
+  const config = readSourceConfig(source.sourceKey);
+  assert.equal(config.webGuidance?.enabled, true, 'inherits KingCom web guidance');
+  assert.equal(config.catalogSync, undefined, 'store sync stays with the website source');
+  assert.equal(config.brand, undefined, 'no single-brand product filter');
+});
