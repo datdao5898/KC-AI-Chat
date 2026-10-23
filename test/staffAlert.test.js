@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildDashboardUrl, formatAlert } = require('../src/staffAlert');
+const { buildDashboardUrl, formatAlert, formatNewMessageAlert } = require('../src/staffAlert');
 
 test('buildDashboardUrl opens the separated conversations page', () => {
   const previousBaseUrl = process.env.PUBLIC_BASE_URL;
@@ -42,4 +42,28 @@ test('staff alert includes the current admin conversation URL', () => {
     if (previousBaseUrl === undefined) delete process.env.PUBLIC_BASE_URL;
     else process.env.PUBLIC_BASE_URL = previousBaseUrl;
   }
+});
+
+test('new message alert shows the customer message, AI reply and status', () => {
+  const message = formatNewMessageAlert({
+    channel: 'zalo',
+    externalUserId: 'user-1',
+    customer: { name: 'Anh Tuấn', phone: '0900000000' },
+    text: 'Còn hàng không?',
+    status: 'AI replied',
+    reply: 'Dạ còn hàng ạ.',
+    conversationId: 'conv-1',
+    sourceName: 'KingCom Zalo'
+  });
+  assert.match(message, /KingCom new message \(Zalo\)/);
+  assert.match(message, /Name: Anh Tuấn/);
+  assert.match(message, /"Còn hàng không\?"/);
+  assert.match(message, /Status: AI replied/);
+  assert.match(message, /AI reply:\n"Dạ còn hàng ạ\."/);
+  assert.match(message, /conversation=conv-1/);
+});
+
+test('new message alert omits the AI reply block when the AI stayed silent', () => {
+  const message = formatNewMessageAlert({ channel: 'facebook', externalUserId: 'u', text: 'hi', status: 'Staff hours', conversationId: 'c' });
+  assert.doesNotMatch(message, /AI reply/);
 });

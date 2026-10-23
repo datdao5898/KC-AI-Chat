@@ -156,7 +156,7 @@
               <span class="track"></span>
               <span>Gửi Lark/Telegram khi khách nhắn trong giờ trực</span>
             </label>
-            <div class="sch-help">Mỗi hội thoại báo một lần; không báo lại khi nhân viên đang xử lý. Thông báo trên trình duyệt bật riêng ở nút "Bật thông báo" cuối menu trái.</div>
+            <div class="sch-help">Tin đầu tiên của hội thoại báo "cần nhân viên"; các tin sau vẫn báo từng tin sang Lark. Thông báo trên trình duyệt bật riêng ở nút "Bật thông báo" cuối menu trái.</div>
           </div>
         </div>
       </div>

@@ -14,8 +14,12 @@ memoryDb.public.registerFunction({
 });
 require.cache[require.resolve('pg')] = { exports: memoryDb.adapters.createPg() };
 const notifications = [];
+const newMessages = [];
 require.cache[require.resolve('../src/staffAlert')] = {
-  exports: { notifyStaff: async (alertId, payload) => { notifications.push(payload); }, notifyWebsiteMessage: async () => {} }
+  exports: {
+    notifyStaff: async (alertId, payload) => { notifications.push(payload); },
+    notifyNewMessage: async payload => { newMessages.push(payload); }
+  }
 };
 
 const dbModule = require('../src/db');
@@ -49,7 +53,9 @@ test('during staff hours the AI stays silent and staff are notified once per con
 
   const second = await message('bảo hành bao lâu', 2);
   assert.equal(second.skipped, 'staff_hours');
-  assert.equal(notifications.length, 1, 'one notification per conversation');
+  assert.equal(notifications.length, 1, 'one staff alert per conversation');
+  assert.equal(newMessages.length, 1, 'later messages still reach Lark');
+  assert.equal(newMessages[0].text, 'bảo hành bao lâu');
 
   const conversation = await dbModule.db.query('SELECT needs_human, handoff_status FROM conversations');
   assert.equal(conversation.rows[0].needs_human, 1);
@@ -59,6 +65,8 @@ test('during staff hours the AI stays silent and staff are notified once per con
   await dbModule.db.query("UPDATE conversations SET handoff_status='in_progress'");
   await message('ok cảm ơn', 3);
   assert.equal(notifications.length, 1);
+  assert.equal(newMessages.length, 2);
+  assert.match(newMessages[1].status, /staff is handling/);
   const status = await dbModule.db.query('SELECT handoff_status FROM conversations');
   assert.equal(status.rows[0].handoff_status, 'in_progress');
 });
@@ -75,4 +83,8 @@ test('outside staff hours the AI replies as usual', async () => {
   });
   assert.equal(result.skipped, undefined);
   assert.match(result.reply, /0903 898 478/);
+  const announced = newMessages.at(-1);
+  assert.equal(announced.text, 'Hotline');
+  assert.equal(announced.reply, result.reply);
+  assert.equal(announced.status, 'AI replied');
 });

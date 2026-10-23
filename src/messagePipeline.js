@@ -1,7 +1,7 @@
 const { getOrCreateCustomer, getOrCreateConversation, saveMessage, getRecentMessages, updateCustomerLearning, updateConversationSummary, flagHandoff, updateConversationContext, markConversationTest } = require('./db');
 const { classifyIntent } = require('./intent');
 const { generateReply, summarizeConversation, summarizeConversationFast, detectMessageLanguage, extractContactInfo } = require('./ai');
-const { notifyStaff } = require('./staffAlert');
+const { notifyStaff, notifyNewMessage } = require('./staffAlert');
 const { logAiResponse } = require('./aiTrace');
 const {
   buildSourceContext,
@@ -331,6 +331,10 @@ function buildImageFallbackReply(customerText = '') {
 
 // testMode (admin test chat): same AI pipeline, but the conversation is hidden from the
 // dashboard, no staff alert is created or sent, and the reply carries debug details.
+function announceNewMessage(payload) {
+  notifyNewMessage(payload).catch(e => console.error('notifyNewMessage error:', e.message));
+}
+
 async function processIncoming({ channel, externalUserId, text, externalMessageId, raw, imageUrls = [], visionImageInputs = [], customerAttrs = {}, sendFn, testMode = false }) {
   const startedAt = Date.now();
   const originalText = String(text || '').trim();
@@ -421,6 +425,9 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       parsedCustomerMessage,
       skipped: 'auto_reply_off'
     });
+    if (!testMode) {
+      announceNewMessage({ channel, externalUserId, customer, text: storedText, status: 'Auto-reply is off for this conversation, staff needs to reply', conversationId: conversation.id, sourceName: source.sourceName, sourceKey: source.sourceKey });
+    }
     return { ok: true, skipped: 'auto_reply_off', conversationId: conversation.id };
   }
 
@@ -456,6 +463,10 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       if (schedule.notifyStaff && !alreadyAlerted) {
         notifyStaff(alertId, { channel, externalUserId, intent, reason, text: storedText, conversationId: conversation.id, sourceGroup: source.sourceGroup, sourceKey: source.sourceKey, sourceName: source.sourceName }).catch(e => console.error('notifyStaff error:', e.message));
       }
+    }
+    // The staff alert covers the first message; later ones still reach Lark one by one.
+    if (schedule.notifyStaff && (staffEngaged || alreadyAlerted)) {
+      announceNewMessage({ channel, externalUserId, customer, text: storedText, status: `${reason}${staffEngaged ? ' (staff is handling this conversation)' : ''}`, conversationId: conversation.id, sourceName: source.sourceName, sourceKey: source.sourceKey });
     }
     return { ok: true, skipped: 'staff_hours', conversationId: conversation.id };
   }
@@ -640,6 +651,11 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       });
       notifyStaff(alertId, { channel, externalUserId, intent, reason: 'Không gửi được tin nhắn trả lời tự động', text: `${storedText}\n\nLỗi gửi: ${deliveryError}`, conversationId: conversation.id, sourceGroup: source.sourceGroup, sourceKey: source.sourceKey, sourceName: source.sourceName }).catch(err => console.error('notifyStaff error:', err.message));
     }
+  }
+
+  // Handoff and delivery-failure alerts already notified staff about this message.
+  if (!testMode && !handoff.needed && deliveryStatus !== 'failed') {
+    announceNewMessage({ channel, externalUserId, customer: freshCustomer, text: storedText, status: deliveryStatus === 'dry_run' ? 'AI replied (dry run, not delivered)' : 'AI replied', reply, conversationId: conversation.id, sourceName: source.sourceName, sourceKey: source.sourceKey });
   }
 
   await saveMessage({

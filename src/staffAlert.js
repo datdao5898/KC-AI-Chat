@@ -87,7 +87,11 @@ function buildDashboardUrl(conversationId) {
   return `${base}/admin/conversations.html?conversation=${encodeURIComponent(conversationId)}`;
 }
 
-function formatWebsiteMessageAlert({ externalUserId, text, conversationId, sourceName, sourceKey, customer }) {
+const CHANNEL_LABELS = { facebook: 'Facebook', zalo: 'Zalo', haravan_website: 'Website', haravan: 'Website' };
+
+// One Lark message per customer message that did not already raise a staff alert,
+// so staff see every conversation, including the ones the AI answered.
+function formatNewMessageAlert({ channel, externalUserId, customer, text, status, reply, conversationId, sourceName, sourceKey }) {
   const name = String(customer?.name || '').trim();
   const phone = String(customer?.phone || '').trim();
   const email = String(customer?.email || '').trim();
@@ -96,14 +100,17 @@ function formatWebsiteMessageAlert({ externalUserId, text, conversationId, sourc
     phone ? `Phone: ${phone}` : '',
     email ? `Email: ${email}` : ''
   ].filter(Boolean).join('\n');
+  const replyText = String(reply || '').trim();
 
-  return `KingCom website message
+  return `KingCom new message (${CHANNEL_LABELS[channel] || channel})
 
-Source: ${sourceName || sourceKey || 'Website'}
-Visitor: ${externalUserId}
+Source: ${sourceName || sourceKey || CHANNEL_LABELS[channel] || channel}
+Customer: ${externalUserId}
 ${contactLine ? `${contactLine}\n` : ''}
 Customer message:
 "${text}"
+
+Status: ${status}${replyText ? `\n\nAI reply:\n"${replyText}"` : ''}
 
 Dashboard:
 ${buildDashboardUrl(conversationId)}`;
@@ -128,19 +135,19 @@ ${buildDashboardUrl(conversationId)}
 Tip: check products/FAQ data, reply manually, or update knowledge if something is missing.`;
 }
 
-async function notifyWebsiteMessage(payload) {
+async function notifyNewMessage(payload) {
   if (process.env.LARK_ALERT_ENABLED === 'false') return { ok: true, skipped: 'lark_disabled' };
-  if (process.env.WEBSITE_MESSAGE_LARK_ALERT_ENABLED === 'false') return { ok: true, skipped: 'website_message_lark_disabled' };
+  if (process.env.NEW_MESSAGE_LARK_ALERT_ENABLED === 'false') return { ok: true, skipped: 'new_message_lark_disabled' };
 
-  const message = formatWebsiteMessageAlert(payload);
+  const message = formatNewMessageAlert(payload);
   fs.mkdirSync(path.dirname(ALERT_LOG), { recursive: true });
-  fs.appendFileSync(ALERT_LOG, `[${new Date().toISOString()}] website_message=${payload.conversationId || ''}\n${message}\n\n`, 'utf8');
+  fs.appendFileSync(ALERT_LOG, `[${new Date().toISOString()}] new_message=${payload.conversationId || ''}\n${message}\n\n`, 'utf8');
 
   try {
     const result = await sendLarkMessage(message);
     return { ok: true, mode: 'lark', result };
   } catch (e) {
-    console.error('Lark website message alert failed:', e.message);
+    console.error('Lark new message alert failed:', e.message);
     return { ok: false, error: e.message };
   }
 }
@@ -185,9 +192,9 @@ async function notifyStaff(alertId, payload) {
 
 module.exports = {
   notifyStaff,
-  notifyWebsiteMessage,
+  notifyNewMessage,
   formatAlert,
-  formatWebsiteMessageAlert,
+  formatNewMessageAlert,
   sendLarkMessage,
   buildDashboardUrl
 };
