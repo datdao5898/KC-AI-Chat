@@ -19,20 +19,22 @@ require.cache[require.resolve('pg')] = { exports: memoryDb.adapters.createPg() }
 
 const dbModule = require('../src/db');
 const { processIncoming } = require('../src/messagePipeline');
+const { withNewliteFixture } = require('./helpers/newliteFixture');
 
 test('admin test chat runs the pipeline but stays hidden and never alerts staff', async () => {
   await dbModule.initDb();
-  const result = await processIncoming({
+  // A source with no warranty policy, so the reply would normally alert staff.
+  const result = await withNewliteFixture((sourceKey, siteName) => processIncoming({
     channel: 'haravan_website',
     externalUserId: 'admin-test-session-0001',
     text: 'bảo hành bao lâu shop',
     externalMessageId: 'admin-test-1',
-    raw: { siteName: 'newlite', adminTest: true },
+    raw: { siteName, adminTest: true },
     sendFn: null,
     testMode: true
-  });
+  }).then(reply => ({ ...reply, expectedSourceKey: sourceKey })));
 
-  assert.equal(result.debug.sourceKey, 'website/newlite');
+  assert.equal(result.debug.sourceKey, result.expectedSourceKey);
   assert.equal(result.debug.aiSource, 'rule_policy');
   assert.equal(result.debug.wouldAlertStaff, true);
   assert.match(result.reply, /chưa có thông tin về bảo hành/);

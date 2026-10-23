@@ -1,7 +1,7 @@
 {
   "displayName": "NewLite",
   "catalogSync": {
-    "enabled": false,
+    "enabled": true,
     "storeUrl": "https://newlite.vn"
   },
   "webGuidance": {

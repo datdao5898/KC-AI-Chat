@@ -14,7 +14,7 @@ const REQUEST_DELAY_MS = Number(process.env.CATALOG_SYNC_REQUEST_DELAY_MS || 150
 const COLLECTIONS_REFRESH_MS = 24 * 60 * 60 * 1000;
 const MIN_KEEP_RATIO = 0.8; // refuse to overwrite when the fetch returns far fewer products
 const BACKUP_KEEP = 24;
-const SKIPPED_COLLECTION = /(sale|flash|khuyen-mai|uu-dai|deal|black-friday)/i;
+const SKIPPED_COLLECTION = /(sale|flash|khuyen-mai|uu-dai|deal|black-friday|out-of-stock|het-hang)/i;
 const HEADERS = [
   'sku', 'name', 'vendor', 'category', 'collections', 'price', 'compare_at_price',
   'inventory_quantity', 'availability', 'url', 'variants', 'description', 'tags',
@@ -174,7 +174,7 @@ function mapProduct(product, storeUrl, collectionsByProduct, previousBySku, prev
   const previous = previousBySku.get(primary.sku) || previousByUrl.get(url) || {};
   return {
     sku: primary.sku || '',
-    name: String(product.title || '').replace(/\s*\|\s*kingcom\s*$/i, '').trim(),
+    name: String(product.title || '').replace(/\s*\|\s*(kingcom|newlite)\s*$/i, '').trim(),
     vendor: product.vendor || '',
     category: product.product_type || '',
     collections: (collectionsByProduct[product.id] || []).join('; '),
@@ -230,8 +230,11 @@ async function syncSourceCatalog(sourceKey, { force = false, rag = require('./ra
       .map(product => mapProduct(product, config.storeUrl, collectionsByProduct, previousBySku, previousByUrl));
 
     const previousCount = previousRows.length;
-    if (!rows.length || (!force && previousCount && rows.length < previousCount * MIN_KEEP_RATIO)) {
-      throw new Error(`Fetched ${rows.length} products vs ${previousCount} in the current catalog; not overwriting (use force to accept)`);
+    // Guard against a partial fetch replacing a good synced catalog. A hand-made
+    // products.csv (first sync) is a different source, so it does not count.
+    const syncedCount = fs.existsSync(file) ? rag.fileRows(file).length : 0;
+    if (!rows.length || (!force && syncedCount && rows.length < syncedCount * MIN_KEEP_RATIO)) {
+      throw new Error(`Fetched ${rows.length} products vs ${syncedCount} in the current synced catalog; not overwriting (use force to accept)`);
     }
 
     backupCatalog(sourceKey, file);

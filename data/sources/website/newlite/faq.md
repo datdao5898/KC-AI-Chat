@@ -1,38 +1,75 @@
-# Kien thuc tu van chung KingCom
+# FAQ CSKH NewLite
 
-Nguon tham khao cong khai:
-- https://store.kingcom.com.vn/
-- https://store.kingcom.com.vn/pages/chinh-sach-bao-hanh
-- https://store.kingcom.com.vn/pages/chinh-sach-doi-tra
-- https://newlite.vn/
+Các mục Giới thiệu cửa hàng, Đặt hàng, Kỹ thuật cơ bản, Thông tin cửa hàng được bot gửi NGUYÊN VĂN cho khách: viết đúng giọng nói với khách. Dòng bắt đầu bằng [nội bộ] không gửi cho khách. Hotline/địa chỉ chỉ được ghi trong mục Thông tin cửa hàng. Chính sách thanh toán, VAT, giao hàng, đổi trả, hoàn tiền, bảo hành nằm ở policies.md. Nguồn: FAQ CSKH KingCom (đổi thương hiệu) và các trang newlite.vn/pages/faqs, /pages/lien-he, /pages/about-us (đối chiếu ngày 2026-10-23).
 
-## Vai tro tu van
-- KingCom la cua hang phu kien nhiep anh, quay phim, livestream va thiet bi sang tao noi dung.
-- Khong gioi thieu KingCom la cua hang my pham, thuc pham, laptop/ThinkPad, nuoc uong hay nganh hang ngoai catalog.
-- Xung "em" hoac "KingCom", goi khach la "anh/chị" khi phu hop.
-- Tra loi ngan gon, lich su, khong cuoi cot hay che khach khi khach hoi sai nganh hang.
-- Han che emoji va khong dung dinh dang Markdown dam/italic nhu **...** trong cau tra loi gui khach.
+## Giới thiệu cửa hàng
+- NewLite là đơn vị phân phối phụ kiện nhiếp ảnh và quay phim chính hãng: ống kính, đèn chiếu sáng studio, thiết bị âm thanh (micro không dây, mixer, podcast), gimbal chống rung, chân tripod, màn hình monitor, hệ thống video không dây, webcam và phụ kiện cho điện thoại. Thương hiệu phân phối gồm Viltrox, Boya, Colbor, Ulanzi, Zhiyun, Hohem, Maono, Synco, Feelworld, Kase và nhiều thương hiệu uy tín khác.
 
-## Nhom san pham KingCom co the tu van
-- Lighting: den quay phim, den LED, den RGB, den studio, light modifier, chan den, phu kien den.
-- Pro Audio: micro khong day, micro shotgun, micro podcast, mixer, headphone, day/cap am thanh.
-- Pro Photo & Video: lens, filter, monitor, teleprompter, wireless video transmission, intercom, camera rig, battery.
-- Tripods/Gimbal/Rigs/Slider: tripod, monopod, gimbal dien thoai, gimbal camera, cage, handle, plate, slider.
-- Mobile & Supports: tripod dien thoai, gay selfie, phone holder, mobile monitor, fog machine, armstand, tui/balo.
-- Thuong hieu thuong gap trong catalog: Ulanzi, Synco, Viltrox, Boya, Zhiyun, Kase, Kingjoy, FiFine, COMICA, MAONO, Obsbot, Accsoon, PortKeys, Feelworld, Lensgo, Colbor.
+## Vai trò và cách trả lời
+- Xưng "em"/"shop", gọi khách "Anh/Chị", mở đầu bằng "Dạ". Trả lời ngắn gọn, lịch sự, hạn chế emoji, không dùng **in đậm**.
+- Chỉ nói giá, tồn kho, thông số theo dữ liệu catalog NewLite. Chỉ nói "còn sẵn hàng" khi catalog ghi còn hàng; không có dữ liệu thì xin model và số điện thoại để nhân viên kiểm tra.
+- Giá và VAT trả lời theo mục Hóa đơn VAT trong chính sách.
+- Việc liên quan đơn hàng (sửa, hủy, theo dõi, hoàn tiền, khiếu nại): xin mã đơn hoặc số điện thoại đặt hàng để nhân viên kiểm tra. Không tự hứa kết quả.
+- Khách muốn gặp nhân viên, cần gấp, để lại số điện thoại: xác nhận đã ghi nhận, nhân viên sẽ liên hệ; hỏi khung giờ thuận tiện nếu khách muốn được gọi lại.
 
-## Cach tu van san pham
-- Neu khach hoi ten/model/SKU cu the: tim trong products.csv cua dung nguon, neu co thi tra loi ten san pham, gia, link va hoi nhu cau tiep theo.
-- Neu khach hoi chung chung nhu "san pham nao hot", "goi y cho em": chon 3 san pham phu hop trong catalog cua nguon hien tai, noi ro la goi y tham khao theo danh muc hien co.
-- Neu khach hoi huong dan su dung: co the giai thich nguyen ly va cac buoc pho thong, nhung khong duoc khang dinh chi tiet nut bam/cong ket noi/tinh nang neu khong chac hoac khong co trong du lieu.
-- Neu khach hoi ton kho, khuyen mai, thoi gian giao hang chinh xac: khong tu khang dinh; de nghi nhan vien kiem tra hoac xin so dien thoai.
-- Neu khach de lai so dien thoai: xac nhan da ghi nhan va chuyen nhan vien KingCom ho tro.
-- Neu khach yeu cau gap nhan vien: noi da chuyen thong tin cho nhan vien; voi website chat, khach co the tiep tuc nhan trong khung chat.
+## Sản phẩm
+- Hỏi: Sản phẩm này có sẵn hàng không? | Trả lời mẫu: Nếu catalog ghi còn hàng: "Dạ, sản phẩm này bên em còn sẵn hàng ạ. Anh/Chị để lại địa chỉ và số điện thoại để bên em giao đơn nha." Nếu catalog không ghi tồn kho: báo nhân viên kiểm tra tồn kho.
+- Hỏi: Sản phẩm này giá bao nhiêu? | Trả lời mẫu: "Dạ, sản phẩm [tên] đang có giá [giá trong catalog] ạ." kèm link sản phẩm, mời khách để lại thông tin đặt hàng.
+- Hỏi: Có phải hàng chính hãng không? | Trả lời mẫu: "Dạ, tất cả sản phẩm tại NewLite đều là hàng chính hãng, có đầy đủ tem bảo hành, phiếu bảo hành và hóa đơn hợp lệ. NewLite cam kết không kinh doanh hàng giả, hàng nhái, hàng không rõ nguồn gốc ạ."
+- Hỏi: Có tương thích với điện thoại của tôi không? | Trả lời mẫu: "Dạ, Anh/Chị vui lòng gửi model điện thoại và hình ảnh hoặc tên sản phẩm đang quan tâm. Shop sẽ kiểm tra khả năng tương thích và tư vấn cụ thể nha."
+- Hỏi: Hai sản phẩm này khác nhau như thế nào? | Trả lời mẫu: "Dạ, Anh/Chị cho em xin tên hoặc hình ảnh hai model cần so sánh. Shop sẽ đối chiếu về tính năng, kết nối, phụ kiện, hiệu năng và mức giá để Anh/Chị dễ lựa chọn ạ."
+- Hỏi: Tôi nên chọn sản phẩm nào? | Trả lời mẫu: "Dạ, Anh/Chị cho shop biết nhu cầu sử dụng chính, thiết bị đang dùng và khoảng ngân sách. Shop sẽ tư vấn sản phẩm phù hợp nhất, tránh mua dư tính năng không cần thiết."
+- Hỏi: Tôi không rành kỹ thuật, có được tư vấn chọn sản phẩm không? | Trả lời mẫu: "Dạ có ạ. Đội ngũ NewLite sẵn sàng tư vấn để Anh/Chị chọn đúng thiết bị phù hợp với nhu cầu và ngân sách."
+- Hỏi: Có kiểm tra được hàng chính hãng không? | Trả lời mẫu: "Dạ, Anh/Chị có thể tra cứu thông tin sản phẩm và bảo hành chính hãng tại https://imeiphotocity.com/ ạ."
 
-## Cach xu ly ngoai catalog
-- Neu san pham khach hoi khong co trong catalog: noi "Dạ hiện KingCom chưa có dữ liệu/ chưa kinh doanh sản phẩm này trong catalog", khong goi y sang san pham cu tru khi khach hoi nhu cau thay the.
-- Neu khach hoi thuong hieu ngoai fanpage rieng: nhac pham vi fanpage hien tai, roi de nghi nhan vien kiem tra them.
-- Neu khach hoi "bên bạn có bán X không" ma X khong nam trong nganh quay phim/nhiep anh/livestream: tra loi lich su rang KingCom hien chua kinh doanh san pham do.
+## Giá và khuyến mãi
+- Hỏi: Shop có giảm giá không? | Trả lời mẫu: "Dạ, shop thường có các chương trình ưu đãi theo từng thời điểm. Anh/Chị gửi sản phẩm đang quan tâm để shop kiểm tra chương trình khuyến mãi hiện tại nhé."
+- Hỏi: Sản phẩm có quà tặng kèm không? | Trả lời mẫu: "Dạ, quà tặng tùy theo chương trình khuyến mãi tại thời điểm mua hàng. Shop sẽ kiểm tra và thông báo cụ thể cho Anh/Chị trước khi đặt hàng."
+- Hỏi: Mua nhiều có được giảm giá không? | Trả lời mẫu: "Dạ có thể ạ. Với đơn hàng số lượng lớn, shop có chính sách giá phù hợp theo số lượng. Anh/Chị gửi số lượng mua hàng để shop báo giá tốt nhất nhé."
 
-## Thong tin lien he co the cung cap
-- Chua co dia chi/hotline/Zalo NewLite da xac thuc. Khi khach hoi, chuyen nhan vien gui thong tin lien he chinh xac.
+## Đặt hàng
+- Để đặt hàng, anh/chị gửi tên sản phẩm, số lượng, họ tên người nhận, số điện thoại và địa chỉ nhận hàng; shop sẽ kiểm tra và xác nhận đơn hàng với anh/chị.
+- Anh/chị có thể mua trực tiếp tại cửa hàng, đặt hàng online qua website newlite.vn, hoặc nhắn tin qua kênh Zalo/Facebook chính thức của NewLite; nhân viên sẽ xác nhận lại thông tin trước khi giao hàng.
+- Sau khi tạo đơn thành công, shop sẽ gửi lại thông tin đơn hàng hoặc xác nhận qua tin nhắn/gọi điện để anh/chị kiểm tra.
+- Muốn kiểm tra đơn hàng đang ở đâu, anh/chị gửi mã đơn hoặc số điện thoại đặt hàng để shop kiểm tra tình trạng vận chuyển.
+- Thay đổi thông tin đơn, đổi địa chỉ nhận hàng: shop hỗ trợ được nếu đơn chưa bàn giao cho đơn vị vận chuyển; anh/chị gửi mã đơn và thông tin mới.
+- Hủy đơn: anh/chị gửi mã đơn hoặc số điện thoại đặt hàng, shop sẽ kiểm tra trạng thái và hỗ trợ hủy nếu đơn còn đủ điều kiện.
+- Đặt nhầm sản phẩm: anh/chị liên hệ shop càng sớm càng tốt kèm mã đơn; nếu đơn chưa được xử lý/giao đi, shop sẽ hỗ trợ điều chỉnh sản phẩm.
+
+## Kỹ thuật cơ bản
+- Chưa biết cách sử dụng sản phẩm: anh/chị gửi model sản phẩm và thiết bị đang sử dụng, shop sẽ hướng dẫn cách cài đặt và sử dụng phù hợp; một số sản phẩm có video hoặc tài liệu hướng dẫn.
+- Máy tính không nhận thiết bị: anh/chị kiểm tra lại dây/cổng kết nối và thử sang cổng khác; nếu vẫn chưa nhận, anh/chị gửi model máy tính, hệ điều hành và model sản phẩm.
+- Sản phẩm không lên nguồn: anh/chị thử kiểm tra nguồn điện, dây kết nối hoặc pin nếu có; nếu vẫn không lên nguồn, anh/chị gửi video tình trạng hiện tại.
+- Không kết nối được với điện thoại: anh/chị gửi model sản phẩm, model điện thoại và hình ảnh/video tình trạng kết nối.
+- Sản phẩm hoạt động không ổn định: anh/chị mô tả cụ thể tình trạng và gửi video thể hiện rõ lỗi, kèm model sản phẩm và thiết bị đang sử dụng.
+
+## Phụ kiện
+- Hỏi: Shop có bán phụ kiện rời không? | Trả lời mẫu: "Dạ, một số phụ kiện có hỗ trợ bán riêng. Anh/Chị gửi model sản phẩm và tên phụ kiện cần mua để shop kiểm tra."
+- Hỏi: Bị mất dây/phụ kiện có mua lại được không? | Trả lời mẫu: "Dạ, Anh/Chị vui lòng gửi model sản phẩm và hình ảnh phụ kiện nếu có. Shop sẽ kiểm tra phụ kiện thay thế tương thích."
+- Hỏi: Phụ kiện này có dùng được với sản phẩm của tôi không? | Trả lời mẫu: "Dạ, Anh/Chị gửi tên phụ kiện và model sản phẩm đang sử dụng. Shop sẽ kiểm tra khả năng tương thích trước khi Anh/Chị mua."
+
+## Sau khi mua hàng, góp ý, khiếu nại
+- Hỏi: Cần hỗ trợ sau khi mua hàng thì liên hệ ở đâu? | Trả lời mẫu: "Dạ, Anh/Chị có thể nhắn trực tiếp qua kênh CSKH chính thức của shop và cung cấp mã đơn hoặc số điện thoại mua hàng để được hỗ trợ."
+- Hỏi: Muốn phản ánh về chất lượng sản phẩm? | Trả lời mẫu: "Dạ, shop xin tiếp nhận phản ánh của Anh/Chị. Anh/Chị vui lòng gửi mã đơn, model sản phẩm và mô tả tình trạng để shop kiểm tra."
+- Hỏi: Muốn góp ý về dịch vụ? | Trả lời mẫu: "Dạ, shop rất mong nhận được góp ý của Anh/Chị để cải thiện chất lượng phục vụ. Anh/Chị vui lòng gửi nội dung góp ý trực tiếp tại đây."
+- Hỏi: Muốn khiếu nại về đơn hàng? | Trả lời mẫu: "Dạ, shop xin tiếp nhận thông tin của Anh/Chị. Anh/Chị vui lòng gửi mã đơn hàng, số điện thoại và nội dung sự việc để shop kiểm tra và phản hồi."
+- Hỏi: Không hài lòng với cách xử lý trước đó? | Trả lời mẫu: "Dạ, shop rất tiếc vì trải nghiệm chưa đáp ứng mong đợi của Anh/Chị. Anh/Chị vui lòng gửi lại mã đơn và nội dung cần hỗ trợ, shop sẽ kiểm tra lại toàn bộ trường hợp."
+
+## Khách doanh nghiệp, đại lý
+- Hỏi: Shop có bán sỉ không? | Trả lời mẫu: "Dạ có. Anh/Chị vui lòng gửi sản phẩm quan tâm, số lượng dự kiến và thông tin liên hệ để shop tư vấn chính sách đại lý phù hợp."
+- Hỏi: Muốn làm đại lý thì cần làm gì? | Trả lời mẫu: "Dạ, Anh/Chị vui lòng cung cấp tên cửa hàng/doanh nghiệp, khu vực kinh doanh, sản phẩm quan tâm và thông tin liên hệ. Shop sẽ gửi thông tin chính sách đại lý phù hợp."
+- Hỏi: Cần báo giá số lượng lớn? | Trả lời mẫu: "Dạ, Anh/Chị vui lòng gửi danh sách sản phẩm và số lượng. Shop sẽ kiểm tra và gửi báo giá phù hợp ạ."
+
+## Chat CSKH
+- Hỏi: Có nhân viên tư vấn không? | Trả lời mẫu: "Dạ có ạ. Anh/Chị vui lòng cho shop biết sản phẩm hoặc vấn đề cần hỗ trợ để nhân viên tư vấn ngay."
+- Hỏi: Tôi muốn gặp nhân viên tư vấn. | Trả lời mẫu: "Dạ, Anh/Chị vui lòng để lại nội dung cần hỗ trợ. Nhân viên sẽ tiếp nhận và trao đổi trực tiếp với Anh/Chị."
+- Hỏi: Đã nhắn nhưng chưa thấy phản hồi? | Trả lời mẫu: "Dạ, shop xin lỗi vì đã để Anh/Chị chờ. Anh/Chị vui lòng gửi lại nội dung cần hỗ trợ, shop sẽ kiểm tra và phản hồi sớm nhất."
+- Hỏi: Tôi cần tư vấn gấp. | Trả lời mẫu: "Dạ, Anh/Chị gửi giúp shop tên sản phẩm hoặc vấn đề cần hỗ trợ cùng số điện thoại nếu cần liên hệ nhanh. Shop sẽ ưu tiên kiểm tra thông tin."
+- Hỏi: Có thể để lại số điện thoại để shop gọi lại không? | Trả lời mẫu: "Dạ được ạ. Anh/Chị vui lòng để lại số điện thoại và khung giờ thuận tiện, nhân viên sẽ liên hệ để hỗ trợ."
+
+## Thông tin cửa hàng
+- Cửa hàng TP.HCM: 65 Nguyễn Minh Hoàng, Phường Bảy Hiền (Phường 12, Quận Tân Bình cũ), TP.HCM. Hotline: 0376.459.106.
+- Email: newlite9999@gmail.com
+- Giờ làm việc: 8:00 – 17:00, Thứ Hai – Thứ Bảy.
+- Anh/chị có thể đến xem trực tiếp trong giờ làm việc; nên nhắn tên sản phẩm trước để shop kiểm tra hàng tại cửa hàng.
+- [nội bộ] newlite.vn/pages/lien-he ghi hotline 8h30 - 17h00, còn trang bảo hành/đổi trả ghi 8:00 – 17:00; đang dùng 8:00 – 17:00, cần NewLite xác nhận.

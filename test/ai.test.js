@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { withNewliteFixture } = require('./helpers/newliteFixture');
 const {
   buildAlternativeSearchQuery,
   buildBroaderSearchQuery,
@@ -83,7 +84,7 @@ test('generateReply answers KingCom store address and hotline from verified cont
   assert.match(result.reply, /070 447 1438/);
 });
 
-test('generateReply does not give KingCom contacts to NewLite before they are verified', async () => {
+test('generateReply gives NewLite its own hotline, never the KingCom one', async () => {
   const result = await generateReply({
     channel: 'haravan_website',
     userText: 'địa chỉ cửa hàng ở đâu vậy ạ',
@@ -96,8 +97,27 @@ test('generateReply does not give KingCom contacts to NewLite before they are ve
   });
 
   assert.equal(result.aiSource, 'rule_source_store_info');
-  assert.doesNotMatch(result.reply, /Nguyễn Minh Hoàng|0903 898 478/);
-  assert.match(result.reply, /chuyển nhân viên/);
+  assert.match(result.reply, /0376\.459\.106/);
+  assert.doesNotMatch(result.reply, /0903 898 478|070 447 1438|Nguyễn Huy Tưởng/);
+});
+
+test('generateReply does not borrow contacts for a source whose FAQ has none', async () => {
+  await withNewliteFixture(async sourceKey => {
+    const result = await generateReply({
+      channel: 'haravan_website',
+      userText: 'địa chỉ cửa hàng ở đâu vậy ạ',
+      history: [],
+      customer: {},
+      intent: 'store_info',
+      sourceKey,
+      sourceName: 'NewLite',
+      sourceGroup: 'website'
+    });
+
+    assert.equal(result.aiSource, 'rule_source_store_info');
+    assert.doesNotMatch(result.reply, /Nguyễn Minh Hoàng|0903 898 478/);
+    assert.match(result.reply, /chuyển nhân viên/);
+  });
 });
 
 test('generateReply answers a hotline request with verified hotlines instead of a generic handoff', async () => {
@@ -190,7 +210,7 @@ test('out-of-scope product search does not fall through to unrelated catalog pro
   assert.equal(result.aiSource, 'rule_out_of_scope_product');
   assert.match(result.reply, /bóp da bò/i);
   assert.equal(result.ragProducts.length, 0);
-  assert.doesNotMatch(result.reply, /PHOTOCITY|BOYA|Link:/i);
+  assert.doesNotMatch(result.reply, /PHOTOCITY|Link:|\/products\//i);
 });
 
 test('English unsupported product reply does not repeat sales verbs as product names', async () => {
@@ -1032,52 +1052,56 @@ test('clear category or exact model bypasses the uncertainty gate', () => {
 });
 
 test('multi-item quote request answers catalog items before handing off commercial details', async () => {
-  const result = await generateReply({
-    channel: 'haravan_website',
-    userText: 'Bao gia bo micro FIFINE AM8 USB XLR, boom arm tai tren 1kg va pop filter luoi doi. Dung voi laptop Dell duoc khong? Boom arm co kep ban va dau chuyen ren khong? Bao hanh bao lau, co uu dai tron bo va hinh thuc te khong?',
-    history: [],
-    customer: {},
-    intent: 'product_specs',
-    sourceKey: 'website/newlite',
-    sourceName: 'NewLite',
-    sourceGroup: 'website'
-  });
+  await withNewliteFixture(async sourceKey => {
+    const result = await generateReply({
+      channel: 'haravan_website',
+      userText: 'Bao gia bo micro FIFINE AM8 USB XLR, boom arm tai tren 1kg va pop filter luoi doi. Dung voi laptop Dell duoc khong? Boom arm co kep ban va dau chuyen ren khong? Bao hanh bao lau, co uu dai tron bo va hinh thuc te khong?',
+      history: [],
+      customer: {},
+      intent: 'product_specs',
+      sourceKey,
+      sourceName: 'NewLite',
+      sourceGroup: 'website'
+    });
 
-  assert.equal(result.aiSource, 'rule_multi_item_quote_handoff');
-  assert.deepEqual(result.ragProducts.map(product => product.sku), ['FEK36', 'FETA1']);
-  assert.match(result.reply, /FIFINE AmpliGame AM8/i);
-  assert.match(result.reply, /BM63 Boom Arm/i);
-  assert.match(result.reply, /Pop Filter lưới đôi: em chưa tìm thấy mẫu bán rời/i);
-  assert.match(result.reply, /Tạm tính các món đã tìm thấy: 2\.089\.000đ/i);
-  assert.match(result.reply, /Kết nối máy tính: catalog của .*AM8.* ghi có kết nối USB/i);
-  assert.match(result.reply, /screw adapter 5\/8/i);
-  assert.match(result.reply, /Bảo hành: dữ liệu chính sách hiện chưa có thông tin/i);
-  assert.doesNotMatch(result.reply, /Dell|không cần mixer|cả hai sản phẩm|riêng cho AM8/i);
-  assert.doesNotMatch(result.reply, /Default Title/i);
-  assert.equal(result.handoff?.needed, true);
+    assert.equal(result.aiSource, 'rule_multi_item_quote_handoff');
+    assert.deepEqual(result.ragProducts.map(product => product.sku), ['FEK36', 'FETA1']);
+    assert.match(result.reply, /FIFINE AmpliGame AM8/i);
+    assert.match(result.reply, /BM63 Boom Arm/i);
+    assert.match(result.reply, /Pop Filter lưới đôi: em chưa tìm thấy mẫu bán rời/i);
+    assert.match(result.reply, /Tạm tính các món đã tìm thấy: 2\.089\.000đ/i);
+    assert.match(result.reply, /Kết nối máy tính: catalog của .*AM8.* ghi có kết nối USB/i);
+    assert.match(result.reply, /screw adapter 5\/8/i);
+    assert.match(result.reply, /Bảo hành: dữ liệu chính sách hiện chưa có thông tin/i);
+    assert.doesNotMatch(result.reply, /Dell|không cần mixer|cả hai sản phẩm|riêng cho AM8/i);
+    assert.doesNotMatch(result.reply, /Default Title/i);
+    assert.equal(result.handoff?.needed, true);  });
 });
+
 
 test('full Vietnamese multi-item quote is not rejected because laptop is a compatibility target', async () => {
-  const result = await generateReply({
-    channel: 'haravan_website',
-    userText: 'Chào shop, mình cần mua bộ micro để học phát âm và họp online trên laptop Dell Inspiron 15 3520. Nhờ shop báo giá giúp các sản phẩm sau: Micro FIFINE AM8 (USB/XLR). Boom Arm kim loại chịu tải từ 1kg trở lên, có quản lý dây, tương thích với AM8. Pop Filter lưới đôi (Double Layer). Nhờ shop xác nhận: Boom Arm có đầy đủ kẹp bàn và đầu chuyển ren để lắp AM8 không? Micro bảo hành bao lâu? Nếu mua trọn bộ có ưu đãi gì không? Shop vui lòng gửi giúp hình ảnh thực tế và báo giá cuối cùng.',
-    history: [],
-    customer: {},
-    intent: 'product_specs',
-    sourceKey: 'website/newlite',
-    sourceName: 'NewLite',
-    sourceGroup: 'website'
-  });
+  await withNewliteFixture(async sourceKey => {
+    const result = await generateReply({
+      channel: 'haravan_website',
+      userText: 'Chào shop, mình cần mua bộ micro để học phát âm và họp online trên laptop Dell Inspiron 15 3520. Nhờ shop báo giá giúp các sản phẩm sau: Micro FIFINE AM8 (USB/XLR). Boom Arm kim loại chịu tải từ 1kg trở lên, có quản lý dây, tương thích với AM8. Pop Filter lưới đôi (Double Layer). Nhờ shop xác nhận: Boom Arm có đầy đủ kẹp bàn và đầu chuyển ren để lắp AM8 không? Micro bảo hành bao lâu? Nếu mua trọn bộ có ưu đãi gì không? Shop vui lòng gửi giúp hình ảnh thực tế và báo giá cuối cùng.',
+      history: [],
+      customer: {},
+      intent: 'product_specs',
+      sourceKey,
+      sourceName: 'NewLite',
+      sourceGroup: 'website'
+    });
 
-  assert.equal(result.aiSource, 'rule_multi_item_quote_handoff');
-  assert.deepEqual(result.ragProducts.map(product => product.sku), ['FEK36', 'FETA1']);
-  assert.match(result.reply, /FIFINE AmpliGame AM8/i);
-  assert.match(result.reply, /BM63 Boom Arm/i);
-  assert.match(result.reply, /Tạm tính các món đã tìm thấy: 2\.089\.000đ/i);
-  assert.match(result.reply, /Kết nối máy tính: catalog của .*AM8.* ghi có kết nối USB/i);
-  assert.doesNotMatch(result.reply, /Dell|không cần mixer|cả hai sản phẩm/i);
-  assert.equal(result.handoff?.needed, true);
+    assert.equal(result.aiSource, 'rule_multi_item_quote_handoff');
+    assert.deepEqual(result.ragProducts.map(product => product.sku), ['FEK36', 'FETA1']);
+    assert.match(result.reply, /FIFINE AmpliGame AM8/i);
+    assert.match(result.reply, /BM63 Boom Arm/i);
+    assert.match(result.reply, /Tạm tính các món đã tìm thấy: 2\.089\.000đ/i);
+    assert.match(result.reply, /Kết nối máy tính: catalog của .*AM8.* ghi có kết nối USB/i);
+    assert.doesNotMatch(result.reply, /Dell|không cần mixer|cả hai sản phẩm/i);
+    assert.equal(result.handoff?.needed, true);  });
 });
+
 
 
 test('generateReply apologizes and escalates when staff have not contacted the customer', async () => {
@@ -1114,17 +1138,19 @@ test('technical charging issue quotes the FAQ technical section instead of price
 });
 
 test('technical issue without FAQ technical section hands off to staff', async () => {
-  const result = await buildTechnicalSupportReply({
-    userText: 's\u1ea1c 1 ti\u1ebfng m\u00e0 pin v\u1eabn 68%',
-    sourceKey: 'website/newlite',
-    lang: 'vi',
-    customerBrand: 'NewLite',
-    conversationContext: {}
-  });
+  await withNewliteFixture(async sourceKey => {
+    const result = await buildTechnicalSupportReply({
+      userText: 's\u1ea1c 1 ti\u1ebfng m\u00e0 pin v\u1eabn 68%',
+      sourceKey,
+      lang: 'vi',
+      customerBrand: 'NewLite',
+      conversationContext: {}
+    });
 
-  assert.match(result.reply, /chuy\u1ec3n v\u1ea5n \u0111\u1ec1 k\u1ef9 thu\u1eadt n\u00e0y cho nh\u00e2n vi\u00ean NewLite/);
-  assert.equal(result.handoff.needed, true);
+    assert.match(result.reply, /chuy\u1ec3n v\u1ea5n \u0111\u1ec1 k\u1ef9 thu\u1eadt n\u00e0y cho nh\u00e2n vi\u00ean NewLite/);
+    assert.equal(result.handoff.needed, true);  });
 });
+
 
 test('cable compatibility requires evidence for every requested connector', () => {
   const product = {

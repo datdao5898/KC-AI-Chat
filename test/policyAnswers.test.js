@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { withNewliteFixture } = require('./helpers/newliteFixture');
 const fs = require('fs');
 const path = require('path');
 const { SOURCES_DIR } = require('../src/sourceRegistry');
@@ -55,12 +56,27 @@ test('VAT answer confirms per product instead of claiming prices include VAT', (
   assert.doesNotMatch(result.reply, /đã bao gồm VAT/);
 });
 
-test('source without a policy section hands off instead of borrowing another brand policy', () => {
-  const result = buildPolicyAnswer({ userText: 'bảo hành bao lâu', sourceKey: 'website/newlite', lang: 'vi', customerBrand: 'NewLite' });
+test('source without a policy section hands off instead of borrowing another brand policy', async () => {
+  await withNewliteFixture(sourceKey => {
+    const result = buildPolicyAnswer({ userText: 'bảo hành bao lâu', sourceKey, lang: 'vi', customerBrand: 'NewLite' });
 
-  assert.match(result.reply, /chưa có thông tin về bảo hành/);
-  assert.doesNotMatch(result.reply, /12 tháng/);
-  assert.equal(result.handoff.needed, true);
+    assert.match(result.reply, /chưa có thông tin về bảo hành/);
+    assert.doesNotMatch(result.reply, /12 tháng/);
+    assert.equal(result.handoff.needed, true);
+  });
+});
+
+test('NewLite answers from its own policies, not the KingCom ones', () => {
+  const warranty = buildPolicyAnswer({ userText: 'bảo hành bao lâu', sourceKey: 'website/newlite', lang: 'vi', customerBrand: 'NewLite' });
+  assert.match(warranty.reply, /thân máy 13 tháng \(12 tháng \+ 1 tháng ân hạn\)/);
+  assert.equal(warranty.handoff.needed, false);
+
+  const returns = buildPolicyAnswer({ userText: 'chính sách đổi trả thế nào', sourceKey: 'website/newlite', lang: 'vi', customerBrand: 'NewLite' });
+  assert.match(returns.reply, /trong vòng 48 giờ/);
+  assert.doesNotMatch(returns.reply, /\[nội bộ\]|14 ngày/);
+
+  const vat = buildPolicyAnswer({ userText: 'giá đã bao gồm VAT chưa', sourceKey: 'website/newlite', lang: 'vi', customerBrand: 'NewLite' });
+  assert.match(vat.reply, /đã bao gồm VAT/);
 });
 
 test('"Chính sách ..." headings and paragraph text are supported', () => {

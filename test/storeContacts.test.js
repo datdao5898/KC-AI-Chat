@@ -63,12 +63,22 @@ test('editing the FAQ markdown changes the contact reply without code changes', 
 });
 
 test('source FAQ without contact bullets never gets an address or hotline', () => {
+  withTempSourceFaq('# FAQ\n\n## Giới thiệu cửa hàng\n- Shop phụ kiện quay phim.\n', sourceKey => {
+    const reply = buildStoreContactReply({ sourceKey, lang: 'vi' });
+
+    assert.equal(getVerifiedContact(sourceKey), null);
+    assert.equal(extractPhones(reply).length, 0);
+    assert.doesNotMatch(reply, /Nguyễn Minh Hoàng|Nguyễn Huy Tưởng/);
+    assert.match(reply, /chuyển nhân viên/);
+  });
+});
+
+test('NewLite contacts come from its own FAQ', () => {
   const reply = buildStoreContactReply({ sourceKey: NEWLITE, lang: 'vi' });
 
-  assert.equal(getVerifiedContact(NEWLITE), null);
-  assert.equal(extractPhones(reply).length, 0);
-  assert.doesNotMatch(reply, /Nguyễn Minh Hoàng|Nguyễn Huy Tưởng/);
-  assert.match(reply, /chuyển nhân viên/);
+  assert.deepEqual(extractPhones(reply), ['0376459106']);
+  assert.match(reply, /65 Nguyễn Minh Hoàng/);
+  assert.doesNotMatch(reply, /Nguyễn Huy Tưởng|\[nội bộ\]/);
 });
 
 test('invented hotline from judge correction is removed and replaced with FAQ contacts', () => {
