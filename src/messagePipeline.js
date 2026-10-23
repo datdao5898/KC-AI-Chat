@@ -335,8 +335,8 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   const startedAt = Date.now();
   const originalText = String(text || '').trim();
   const mediaUrls = [...new Set((imageUrls || []).filter(Boolean))].slice(0, 3);
-  const visionEnabled = channel === 'facebook'
-    && process.env.FACEBOOK_IMAGE_RECOGNITION_ENABLED !== 'false';
+  const visionEnabled = (channel === 'facebook' && process.env.FACEBOOK_IMAGE_RECOGNITION_ENABLED !== 'false')
+    || (channel === 'zalo' && process.env.ZALO_IMAGE_RECOGNITION_ENABLED !== 'false');
   const source = buildSourceContext({ channel, raw, customerAttrs });
   const customerBrand = resolveCustomerBrand(source);
   const vision = mediaUrls.length
@@ -501,7 +501,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     : conversationContext;
   const generatedReply = rawReply;
   const baseHandoff = mediaRecognitionFailed
-    ? { needed: true, reason: `Không nhận dạng được hình ảnh sản phẩm ${channel === 'facebook' ? 'Facebook' : 'website'}` }
+    ? { needed: true, reason: `Không nhận dạng được hình ảnh sản phẩm ${{ facebook: 'Facebook', zalo: 'Zalo' }[channel] || 'website'}` }
     : (replyHandoff?.needed
       ? replyHandoff
       : detectHandoff({ text: processingText, intent, aiError, ragProducts, aiSource }));

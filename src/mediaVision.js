@@ -31,9 +31,24 @@ function extractFacebookImageUrls(message = {}) {
     .slice(0, MAX_IMAGES);
 }
 
+function isAllowedZaloMediaUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:') return false;
+    const host = url.hostname.toLowerCase();
+    return ['zdn.vn', 'zadn.vn', 'zalo.me', 'zaloapp.com'].some(domain => host === domain || host.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedMediaUrl(value) {
+  return isAllowedFacebookMediaUrl(value) || isAllowedZaloMediaUrl(value);
+}
+
 function isSupportedVisionInput(value) {
   const input = String(value || '');
-  if (isAllowedFacebookMediaUrl(input)) return true;
+  if (isAllowedMediaUrl(input)) return true;
   return /^data:image\/(?:jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(input)
     && input.length <= 8 * 1024 * 1024;
 }
@@ -109,7 +124,7 @@ function normalizeVisionResult(parsed, model, imageCount) {
 
 async function analyzeProductImages({ imageUrls = [], imageInputs = [], customerText = '', sourceName = '', enabled = true } = {}) {
   const urls = [...new Set([
-    ...(imageUrls || []).filter(isAllowedFacebookMediaUrl),
+    ...(imageUrls || []).filter(isAllowedMediaUrl),
     ...(imageInputs || []).filter(isSupportedVisionInput)
   ])].slice(0, MAX_IMAGES);
   if (!urls.length) return { recognized: false, skipped: 'no_supported_images', imageCount: 0 };
@@ -200,6 +215,7 @@ module.exports = {
   analyzeProductImages,
   extractFacebookImageUrls,
   isAllowedFacebookMediaUrl,
+  isAllowedZaloMediaUrl,
   isSupportedVisionInput,
   normalizeVisionResult
 };

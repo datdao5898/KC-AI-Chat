@@ -41,8 +41,27 @@ Neu dung ngrok/Cloudflare tro vao port `8650`:
 - Website widget API: `https://YOUR_DOMAIN/webhooks/website-chat`
 
 Webhook signature duoc bat mac dinh bang `REQUIRE_WEBHOOK_SIGNATURES=true`.
-Dien cac secret tuong ung trong `.env`: `FACEBOOK_APP_SECRET`, `ZALO_APP_SECRET`,
+Dien cac secret tuong ung trong `.env`: `FACEBOOK_APP_SECRET`, `ZALO_OA_SECRET_KEY`,
 `HARAVAN_WEBHOOK_SECRET`. Chi tat signature khi test local.
+
+## Zalo OA
+
+Can goi OA tra phi co Open API (vd. goi Tang truong). Cac buoc:
+
+1. developers.zalo.me > tao App > lien ket voi OA. Lay `App ID` -> `ZALO_APP_ID`,
+   `Secret Key` -> `ZALO_APP_SECRET`.
+2. Xac thuc domain: tai file `zalo_verifier....html` cua Zalo, bo vao `public/`
+   (server phuc vu tai `https://YOUR_DOMAIN/zalo_verifier....html`).
+3. Official Account > Cai dat: Callback URL = `https://YOUR_DOMAIN/webhooks/zalo/oauth-callback`.
+   Bat quyen gui tin va lay thong tin nguoi dung.
+4. Webhook: URL = `https://YOUR_DOMAIN/webhooks/zalo`, bat su kien `user_send_text`,
+   `user_send_image`. Copy `OA Secret Key` -> `ZALO_OA_SECRET_KEY`.
+5. Khoi dong lai server, dang nhap admin roi mo `https://YOUR_DOMAIN/api/zalo/connect`
+   va dong y cap quyen cho OA. Token duoc luu trong DB va tu refresh moi 30 phut;
+   kiem tra bang `GET /api/zalo/status`.
+
+Thay cho buoc 5 co the dan `ZALO_OA_REFRESH_TOKEN` lay tu API Explorer cua Zalo vao `.env`.
+Refresh token chi dung duoc 1 lan: sau lan dau server tu luu token moi vao DB.
 
 ## CORS va dashboard
 

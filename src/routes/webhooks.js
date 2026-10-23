@@ -4,7 +4,7 @@ const { rateLimit } = require('express-rate-limit');
 const { markProcessed, listWebsiteConversationMessages, rateWebsiteConversation } = require('../db');
 const { processIncoming } = require('../messagePipeline');
 const { sendFacebookMessage, getFacebookUserProfile, verifySignature, requireSignedWebhook } = require('../channels/facebook');
-const { sendZaloMessage } = require('../channels/zalo');
+const { sendZaloMessage, getZaloUserProfile, verifyZaloSignature, parseZaloEvent, completeZaloConnect } = require('../channels/zalo');
 const { sendHaravanMessage } = require('../channels/haravan');
 const { extractFacebookImageUrls } = require('../mediaVision');
 
@@ -79,16 +79,39 @@ router.post('/facebook', async (req, res) => {
 
 router.post('/zalo', async (req, res) => {
   try {
-    if (!requireSignedWebhook(req, res, process.env.ZALO_APP_SECRET || '', ['x-zalo-signature', 'x-zalo-hmac-sha256', 'x-hub-signature-256'], 'zalo')) return;
-    res.json({ ok: true });
-    const body = req.body;
-    const eventId = body.event_id || body.message?.msg_id || `${body.sender?.id || body.user_id}-${Date.now()}`;
-    if (!await markProcessed('zalo', eventId)) return;
-    const userId = body.sender?.id || body.user_id || body.from_id;
-    const text = body.message?.text || body.text || body.message || '';
-    if (!userId || !text) return;
-    await processIncoming({ channel: 'zalo', externalUserId: userId, text, externalMessageId: eventId, raw: body, sendFn: sendZaloMessage });
+    if (!verifyZaloSignature(req)) {
+      const configured = Boolean(process.env.ZALO_OA_SECRET_KEY);
+      console.warn('[ZALO WEBHOOK] rejected', JSON.stringify({ reason: configured ? 'invalid_signature' : 'secret_not_configured', event: req.body?.event_name }));
+      return res.status(configured ? 401 : 503).json({ error: configured ? 'invalid_signature' : 'zalo_secret_not_configured' });
+    }
+    // Zalo retries unless it gets a quick 200, so acknowledge before the AI runs.
+    res.status(200).json({ ok: true });
+    const event = parseZaloEvent(req.body);
+    if (!event) return;
+    if (!await markProcessed('zalo', event.messageId)) return;
+    const profile = await getZaloUserProfile(event.userId, { raw: req.body });
+    await processIncoming({
+      channel: 'zalo',
+      externalUserId: event.userId,
+      text: event.text,
+      externalMessageId: event.messageId,
+      raw: req.body,
+      imageUrls: event.imageUrls,
+      customerAttrs: profile?.name ? { name: profile.name } : {},
+      sendFn: sendZaloMessage
+    });
   } catch (e) { console.error('Zalo webhook error:', e); }
+});
+
+router.get('/zalo/oauth-callback', async (req, res) => {
+  try {
+    const result = await completeZaloConnect(req.query);
+    console.log('[ZALO OAUTH] connected', JSON.stringify(result));
+    res.type('html').send(`<meta charset="utf-8"><p>Đã kết nối Zalo OA ${result.oaId}. Có thể đóng trang này.</p>`);
+  } catch (e) {
+    console.error('[ZALO OAUTH] failed', e.message);
+    res.status(400).type('html').send('<meta charset="utf-8"><p>Kết nối Zalo OA thất bại. Mở lại /api/zalo/connect để thử lại.</p>');
+  }
 });
 
 router.post('/haravan', async (req, res) => {

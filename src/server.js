@@ -7,6 +7,7 @@ const cors = require('cors');
 const { rateLimit } = require('express-rate-limit');
 const { initDb } = require('./db');
 const { backfillFacebookCustomerNames } = require('./channels/facebook');
+const { startZaloTokenScheduler } = require('./channels/zalo');
 const webhooks = require('./routes/webhooks');
 const admin = require('./routes/admin');
 const { startCatalogSyncScheduler } = require('./catalogSync');
@@ -213,6 +214,7 @@ async function startServer() {
     console.log(`📌 Haravan webhook: /webhooks/haravan`);
     console.log(`📌 Website chat API: /webhooks/website-chat`);
     startCatalogSyncScheduler();
+    startZaloTokenScheduler();
     setTimeout(() => {
       backfillFacebookCustomerNames()
         .then(result => console.log('[FB PROFILE] backfill_done', JSON.stringify(result)))

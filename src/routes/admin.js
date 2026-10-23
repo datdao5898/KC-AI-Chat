@@ -7,6 +7,7 @@ const { processIncoming } = require('../messagePipeline');
 const { buildSourceContext } = require('../sourceRegistry');
 const { catalogSyncStatus, syncSourceCatalog } = require('../catalogSync');
 const { getReplySchedule, saveReplySchedule, aiReplyDecision } = require('../replySchedule');
+const { buildZaloConnectUrl, getZaloStatus } = require('../channels/zalo');
 const { searchProducts, loadProducts } = require('../rag');
 const { summarizeConversation, summarizeConversationFast } = require('../ai');
 const { notifyStaff } = require('../staffAlert');
@@ -507,6 +508,19 @@ router.post('/test-chat', async (req, res) => {
 });
 
 router.get('/catalog-sync', (req, res) => res.json({ sources: catalogSyncStatus() }));
+
+router.get('/zalo/status', async (req, res) => {
+  res.json({ ok: true, ...await getZaloStatus() });
+});
+
+// Open in the browser while logged in to admin: redirects to Zalo to authorize the OA.
+router.get('/zalo/connect', async (req, res) => {
+  try {
+    res.redirect(await buildZaloConnectUrl());
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
 
 router.get('/reply-schedule', async (req, res) => {
   const schedule = await getReplySchedule({ fresh: true });
