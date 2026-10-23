@@ -4,7 +4,7 @@ const { rateLimit } = require('express-rate-limit');
 const { markProcessed, listWebsiteConversationMessages, rateWebsiteConversation } = require('../db');
 const { processIncoming } = require('../messagePipeline');
 const { sendFacebookMessage, getFacebookUserProfile, verifySignature, requireSignedWebhook } = require('../channels/facebook');
-const { sendZaloMessage, getZaloUserProfile, verifyZaloSignature, parseZaloEvent, completeZaloConnect } = require('../channels/zalo');
+const { sendZaloMessage, getZaloUserProfile, verifyZaloSignature, parseZaloEvent, parseZaloOaEvent, importZaloHistory, recordZaloStaffMessage, completeZaloConnect } = require('../channels/zalo');
 const { sendHaravanMessage } = require('../channels/haravan');
 const { extractFacebookImageUrls } = require('../mediaVision');
 
@@ -87,10 +87,24 @@ router.post('/zalo', async (req, res) => {
       console.warn('[ZALO WEBHOOK] ignored', JSON.stringify({ reason: configured ? 'invalid_signature' : 'secret_not_configured', event: req.body?.event_name }));
       return;
     }
+    const staffEvent = parseZaloOaEvent(req.body);
+    if (staffEvent) {
+      if (!await markProcessed('zalo', staffEvent.messageId)) return;
+      const result = await recordZaloStaffMessage(staffEvent);
+      if (result.saved) console.log('[ZALO STAFF] recorded', JSON.stringify({ userId: staffEvent.userId, conversationId: result.conversationId }));
+      return;
+    }
     const event = parseZaloEvent(req.body);
     if (!event) return;
     if (!await markProcessed('zalo', event.messageId)) return;
     const profile = await getZaloUserProfile(event.userId, { raw: req.body });
+    await importZaloHistory({
+      userId: event.userId,
+      oaId: event.oaId,
+      excludeMessageId: event.messageId,
+      before: Number(req.body.timestamp) || Date.now(),
+      customerAttrs: profile?.name ? { name: profile.name } : {}
+    }).catch(e => console.warn('[ZALO HISTORY] import_failed', JSON.stringify({ userId: event.userId, error: e.message })));
     await processIncoming({
       channel: 'zalo',
       externalUserId: event.userId,

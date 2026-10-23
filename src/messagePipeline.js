@@ -471,6 +471,28 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     return { ok: true, skipped: 'staff_hours', conversationId: conversation.id };
   }
 
+  // Staff replying in the Zalo OA inbox are recorded as staff messages; while they are
+  // actively chatting, the AI stays out of the conversation and only alerts Lark.
+  const staffActiveMinutes = Number(process.env.STAFF_ACTIVE_PAUSE_MINUTES ?? 30);
+  const lastStaffMessage = [...recentMessages].reverse().find(message => message.sender_type === 'staff');
+  const staffActive = !testMode && channel === 'zalo' && staffActiveMinutes > 0 && lastStaffMessage
+    && Date.now() - parseMessageTimestamp(lastStaffMessage.created_at) < staffActiveMinutes * 60 * 1000;
+  if (staffActive) {
+    logAiResponse({
+      channel,
+      externalUserId,
+      conversationId: conversation.id,
+      inboundMessageId: inbound.id,
+      intent,
+      confidence,
+      customerText: processingText,
+      parsedCustomerMessage,
+      skipped: 'staff_active'
+    });
+    announceNewMessage({ channel, externalUserId, customer, text: storedText, status: `Staff replied in the last ${staffActiveMinutes} minutes, AI stays silent`, conversationId: conversation.id, sourceName: source.sourceName, sourceKey: source.sourceKey });
+    return { ok: true, skipped: 'staff_active', conversationId: conversation.id };
+  }
+
   const freshCustomer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
   const mediaRecognitionFailed = mediaUrls.length > 0 && !vision?.recognized;
   const replyResult = mediaRecognitionFailed

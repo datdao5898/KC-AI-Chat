@@ -60,6 +60,13 @@ Can goi OA tra phi co Open API (vd. goi Tang truong). Cac buoc:
    va dong y cap quyen cho OA. Token duoc luu trong DB va tu refresh moi 30 phut;
    kiem tra bang `GET /api/zalo/status`.
 
+Lich su va nhan vien tren Zalo:
+- Lan dau mot khach nhan toi sau khi tich hop, app lay ~20 tin gan nhat giua khach va OA
+  (`ZALO_HISTORY_IMPORT_LIMIT`) de AI va dashboard thay ca phan nhan vien da tra loi truoc do.
+- Tin nhan vien go truc tiep trong Zalo OA (su kien `oa_send_*`, nho bat trong muc Webhook) duoc
+  luu vao hoi thoai. Neu nhan vien vua tra loi trong `STAFF_ACTIVE_PAUSE_MINUTES` phut (mac dinh 30),
+  AI im lang voi khach do va chi bao Lark.
+
 Thay cho buoc 5 co the dan `ZALO_OA_REFRESH_TOKEN` lay tu API Explorer cua Zalo vao `.env`.
 Refresh token chi dung duoc 1 lan: sau lan dau server tu luu token moi vao DB.
 

@@ -409,20 +409,23 @@ async function updateConversationContext(conversationId, context = {}) {
 
 async function saveMessage({
   conversationId, customerId, channel, externalMessageId, direction, senderType, text, rawJson,
-  intent = '', aiUsed = 0, deliveryStatus = '', deliveryError = '', sourceGroup = '', sourceKey = '', sourceName = ''
+  intent = '', aiUsed = 0, deliveryStatus = '', deliveryError = '', sourceGroup = '', sourceKey = '', sourceName = '',
+  createdAt = null
 }) {
   return withTransaction(async client => {
     const id = uuidv4();
+    // createdAt keeps the original time of messages imported from a channel's history.
     const message = await client.query(`
       INSERT INTO messages (
         id, conversation_id, customer_id, channel, external_message_id, direction, sender_type, text,
-        raw_json, intent, ai_used, delivery_status, delivery_error, source_group, source_key, source_name
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        raw_json, intent, ai_used, delivery_status, delivery_error, source_group, source_key, source_name${createdAt ? ', created_at' : ''}
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16${createdAt ? ', $17' : ''})
       RETURNING *
     `, [
       id, conversationId, customerId, channel, externalMessageId || '', direction, senderType, text || '',
       rawJson ? JSON.stringify(rawJson) : '', intent, aiUsed ? 1 : 0, deliveryStatus || '', deliveryError || '',
-      sourceGroup || '', sourceKey || '', sourceName || ''
+      sourceGroup || '', sourceKey || '', sourceName || '',
+      ...(createdAt ? [new Date(createdAt).toISOString()] : [])
     ]);
     await client.query(`
       UPDATE conversations

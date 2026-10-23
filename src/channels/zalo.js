@@ -1,6 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
-const { getSetting, setSetting } = require('../db');
+const { db, getSetting, setSetting, markProcessed, getOrCreateCustomer, getOrCreateConversation, saveMessage } = require('../db');
+const { buildSourceContext } = require('../sourceRegistry');
 const { isAllowedZaloMediaUrl } = require('../mediaVision');
 
 // Zalo OA Open API v3. Access tokens live ~25h and refresh tokens are single-use
@@ -13,6 +14,8 @@ const OAUTH_STATE_KEY = 'zalo_oauth_state';
 const REFRESH_MARGIN_MS = 10 * 60 * 1000;
 const MAX_TEXT = 2000;
 const MAX_IMAGES = 3;
+// processed_events channel holding message ids the AI sent, to tell them apart from staff replies.
+const AI_SENT_CHANNEL = 'zalo_ai_sent';
 // Zalo error codes meaning the access token is invalid or expired.
 const TOKEN_ERROR_CODES = new Set([-216, -124]);
 
@@ -152,7 +155,9 @@ async function sendZaloMessage(userId, text, context = {}) {
       console.log('[ZALO DRY SEND]', JSON.stringify({ userId, oaId, text }));
       return { dryRun: true, oaId };
     }
-    results.push(data.data?.message_id);
+    const messageId = data.data?.message_id;
+    if (messageId) await markProcessed(AI_SENT_CHANNEL, String(messageId)).catch(() => {});
+    results.push(messageId);
   }
   return { oaId, messageIds: results };
 }
@@ -223,6 +228,135 @@ function parseZaloEvent(body = {}) {
     text,
     imageUrls
   };
+}
+
+// Messages the OA sent (typed by staff in the Zalo OA inbox, or by the AI through the
+// API). Zalo reports both as oa_send_*; the webhook drops the AI's own ones.
+function parseZaloOaEvent(body = {}) {
+  const eventName = String(body.event_name || '');
+  if (!eventName.startsWith('oa_send_')) return null;
+  const message = body.message || {};
+  const userId = String(body.recipient?.id || '').trim();
+  const messageId = String(message.msg_id || '').trim();
+  if (!userId || !messageId) return null;
+  const type = eventName.replace('oa_send_', '');
+  return {
+    userId,
+    oaId: String(body.sender?.id || '').trim(),
+    messageId,
+    text: String(message.text || '').trim() || mediaLabel(type),
+    time: Number(body.timestamp) || Date.now()
+  };
+}
+
+function mediaLabel(type = '') {
+  const labels = { photo: 'Hình ảnh', image: 'Hình ảnh', gif: 'GIF', sticker: 'Sticker', voice: 'Tin nhắn thoại', audio: 'Tin nhắn thoại', file: 'File', video: 'Video', location: 'Vị trí', link: 'Link', links: 'Link', list: 'Danh sách' };
+  return `[${labels[String(type).toLowerCase()] || type || 'Tin nhắn'}]`;
+}
+
+function zaloConversationFor(userId, oaId, customerAttrs = {}) {
+  const source = buildSourceContext({ channel: 'zalo', raw: { oa_id: oaId } });
+  return getOrCreateCustomer('zalo', userId, customerAttrs).then(async customer => ({
+    source,
+    customer,
+    conversation: await getOrCreateConversation(customer.id, 'zalo', source.sourceKey, source.sourceName, source.sourceGroup)
+  }));
+}
+
+// Recent chat between the OA and a user, oldest first (Zalo pages 10 messages per call).
+async function fetchZaloHistory(userId, oaId, limit = Number(process.env.ZALO_HISTORY_IMPORT_LIMIT || 20)) {
+  const resolvedOaId = await resolveOaId(oaId);
+  const messages = [];
+  for (let offset = 0; offset < limit; offset += 10) {
+    const data = await callOaApi(resolvedOaId, {
+      method: 'get',
+      url: `${API_BASE}/v2.0/oa/conversation`,
+      params: { data: JSON.stringify({ user_id: userId, offset, count: Math.min(10, limit - offset) }) }
+    });
+    if (data.dryRun) return [];
+    const page = Array.isArray(data.data) ? data.data : [];
+    messages.push(...page);
+    if (page.length < 10) break;
+  }
+  return messages
+    .map(item => ({
+      messageId: String(item.message_id || ''),
+      fromCustomer: Number(item.src) === 1,
+      text: item.type === 'text' ? String(item.message || '').trim() : mediaLabel(item.type),
+      time: Number(item.time) || 0
+    }))
+    .filter(item => item.messageId && item.text && item.time)
+    .sort((a, b) => a.time - b.time);
+}
+
+// The first time a Zalo user shows up after the integration, copy the recent
+// customer/staff chat from Zalo so the AI and the dashboard see what was said.
+async function importZaloHistory({ userId, oaId, excludeMessageId = '', before = Date.now(), customerAttrs = {} }) {
+  if (process.env.ZALO_HISTORY_IMPORT_ENABLED === 'false') return { skipped: 'disabled' };
+  const { source, customer, conversation } = await zaloConversationFor(userId, oaId, customerAttrs);
+  const existing = await db.query('SELECT 1 FROM messages WHERE conversation_id=$1 LIMIT 1', [conversation.id]);
+  if (existing.rows.length) return { skipped: 'has_messages' };
+  const history = (await fetchZaloHistory(userId, oaId))
+    .filter(item => item.messageId !== excludeMessageId && item.time < before);
+  for (const item of history) {
+    await saveMessage({
+      conversationId: conversation.id,
+      customerId: customer.id,
+      channel: 'zalo',
+      externalMessageId: item.messageId,
+      direction: item.fromCustomer ? 'in' : 'out',
+      senderType: item.fromCustomer ? 'customer' : 'staff',
+      text: item.text,
+      rawJson: { source: 'zalo_history_import' },
+      deliveryStatus: item.fromCustomer ? '' : 'sent_by_staff',
+      sourceGroup: source.sourceGroup,
+      sourceKey: source.sourceKey,
+      sourceName: source.sourceName,
+      createdAt: item.time
+    });
+  }
+  console.log('[ZALO HISTORY] imported', JSON.stringify({ userId, conversationId: conversation.id, count: history.length }));
+  return { imported: history.length, conversationId: conversation.id };
+}
+
+async function isAiSentMessage(event) {
+  const marked = await db.query('SELECT 1 FROM processed_events WHERE channel=$1 AND external_event_id=$2 LIMIT 1', [AI_SENT_CHANNEL, event.messageId]);
+  if (marked.rows.length) return true;
+  // Fallback when Zalo's message id differs: the AI just sent this exact text.
+  const recentAi = await db.query(`
+    SELECT m.text FROM messages m
+    JOIN customers cu ON cu.id = m.customer_id
+    WHERE cu.channel='zalo' AND cu.external_id=$1 AND m.sender_type='ai'
+    ORDER BY m.created_at DESC LIMIT 3
+  `, [event.userId]);
+  return recentAi.rows.some(row => event.text.length > 0 && String(row.text || '').includes(event.text));
+}
+
+// Stores a reply staff typed in the Zalo OA inbox as a staff message of the conversation.
+async function recordZaloStaffMessage(event) {
+  // The AI's own sends echo back as oa_send_* within seconds; give its send/save time to land.
+  const echoWaitMs = Number(process.env.ZALO_OA_ECHO_WAIT_MS ?? 4000);
+  if (echoWaitMs > 0) await new Promise(resolve => setTimeout(resolve, echoWaitMs));
+  if (await isAiSentMessage(event)) return { skipped: 'ai_message' };
+  await importZaloHistory({ userId: event.userId, oaId: event.oaId, excludeMessageId: event.messageId, before: event.time });
+  const { source, customer, conversation } = await zaloConversationFor(event.userId, event.oaId);
+  const message = await saveMessage({
+    conversationId: conversation.id,
+    customerId: customer.id,
+    channel: 'zalo',
+    externalMessageId: event.messageId,
+    direction: 'out',
+    senderType: 'staff',
+    text: event.text,
+    rawJson: { source: 'zalo_oa_inbox' },
+    intent: 'staff_reply',
+    deliveryStatus: 'sent_by_staff',
+    sourceGroup: source.sourceGroup,
+    sourceKey: source.sourceKey,
+    sourceName: source.sourceName,
+    createdAt: event.time
+  });
+  return { saved: message.id, conversationId: conversation.id };
 }
 
 function base64Url(buffer) {
@@ -304,6 +438,10 @@ module.exports = {
   getZaloUserProfile,
   verifyZaloSignature,
   parseZaloEvent,
+  parseZaloOaEvent,
+  fetchZaloHistory,
+  importZaloHistory,
+  recordZaloStaffMessage,
   extractZaloImageUrls,
   splitZaloText,
   buildZaloConnectUrl,
