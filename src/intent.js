@@ -1,3 +1,5 @@
+const { detectOrderSupportTopic } = require('./orderSupport');
+
 function normalize(text) {
   return String(text || '')
     .toLowerCase()
@@ -20,6 +22,7 @@ function hasWord(msg, words) {
 
 function classifyIntent(text) {
   const raw = String(text || '');
+  if (detectOrderSupportTopic(raw)) return { intent: 'order', confidence: 0.9 };
   if (/[\u3400-\u9FFF\uF900-\uFAFF]/.test(raw)) {
     if (/(\u53c2\u6570|\u89c4\u683c|\u6280\u672f\u53c2\u6570|\u914d\u7f6e|\u5c3a\u5bf8|\u91cd\u91cf|\u529f\u7387|\u5206\u8fa8\u7387|\u4f20\u611f\u5668|\u5149\u5708)/.test(raw)) {
       return { intent: 'product_specs', confidence: 0.9 };

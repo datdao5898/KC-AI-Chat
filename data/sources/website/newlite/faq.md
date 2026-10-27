@@ -54,6 +54,11 @@ Các mục Giới thiệu cửa hàng, Đặt hàng, Kỹ thuật cơ bản, Th�
 - Hỏi: Muốn góp ý về dịch vụ? | Trả lời mẫu: "Dạ, shop rất mong nhận được góp ý của Anh/Chị để cải thiện chất lượng phục vụ. Anh/Chị vui lòng gửi nội dung góp ý trực tiếp tại đây."
 - Hỏi: Muốn khiếu nại về đơn hàng? | Trả lời mẫu: "Dạ, shop xin tiếp nhận thông tin của Anh/Chị. Anh/Chị vui lòng gửi mã đơn hàng, số điện thoại và nội dung sự việc để shop kiểm tra và phản hồi."
 - Hỏi: Không hài lòng với cách xử lý trước đó? | Trả lời mẫu: "Dạ, shop rất tiếc vì trải nghiệm chưa đáp ứng mong đợi của Anh/Chị. Anh/Chị vui lòng gửi lại mã đơn và nội dung cần hỗ trợ, shop sẽ kiểm tra lại toàn bộ trường hợp."
+- Hỏi: Đã chuyển khoản/gửi UNC, nhờ shop kiểm tra và giao hàng? | Trả lời mẫu: "Dạ, shop đã nhận thông tin thanh toán Anh/Chị gửi. Nhân viên sẽ đối chiếu và xác nhận đơn, giao hàng cho Anh/Chị. Anh/Chị gửi giúp shop mã đơn hoặc số điện thoại đặt hàng để kiểm tra nhanh hơn ạ."
+- Hỏi: Muốn kiểm tra tình trạng đơn hàng đã đặt? | Trả lời mẫu: "Dạ, Anh/Chị gửi giúp shop mã đơn hoặc số điện thoại đặt hàng, nhân viên sẽ kiểm tra tình trạng đơn và phản hồi Anh/Chị ạ."
+- Hỏi: Đã đặt hàng nhưng chưa thấy xác nhận hoặc cập nhật đơn? | Trả lời mẫu: "Dạ, shop xin lỗi vì để Anh/Chị chờ. Anh/Chị gửi giúp shop mã đơn hoặc số điện thoại đặt hàng, nhân viên sẽ kiểm tra tình trạng đơn và phản hồi Anh/Chị sớm nhất ạ."
+- Hỏi: Đã gửi mã đơn hoặc số điện thoại đặt hàng, nhờ shop kiểm tra? | Trả lời mẫu: "Dạ, shop đã nhận thông tin đơn hàng của Anh/Chị. Nhân viên sẽ kiểm tra và phản hồi Anh/Chị sớm nhất ạ."
+- Hỏi: Đã mua hàng, muốn xin xuất hóa đơn? | Trả lời mẫu: "Dạ, Anh/Chị gửi giúp shop mã đơn hoặc số điện thoại đặt hàng cùng thông tin xuất hóa đơn (tên công ty, mã số thuế, địa chỉ công ty, email nhận hóa đơn). Nhân viên sẽ kiểm tra và hỗ trợ xuất hóa đơn cho Anh/Chị ạ."
 
 ## Khách doanh nghiệp, đại lý
 - Hỏi: Shop có bán sỉ không? | Trả lời mẫu: "Dạ có. Anh/Chị vui lòng gửi sản phẩm quan tâm, số lượng dự kiến và thông tin liên hệ để shop tư vấn chính sách đại lý phù hợp."

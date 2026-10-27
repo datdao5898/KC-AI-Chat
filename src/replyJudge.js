@@ -480,6 +480,7 @@ function isTrustedDeterministicReplySource(aiSource = '') {
   return new Set([
     'rule',
     'rule_policy',
+    'rule_order_support',
     'rule_catalog_overview',
     'rule_broad_consultation',
     'rule_retrieval_clarification',

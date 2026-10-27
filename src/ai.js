@@ -26,6 +26,7 @@ const { readProductPageContext } = require('./productPageReader');
 const { chatCompletion } = require('./llmClient');
 const { buildStoreContactReply, buildContactPromptBlock, isStoreContactRequest, getVerifiedContact } = require('./storeContacts');
 const { buildPolicyAnswer, detectPolicyTopic, storeIntroLines, technicalSupportLines, policySectionText } = require('./policyAnswers');
+const { buildOrderSupportAnswer, orderSupportHandoff, stripInternalAnalysis } = require('./orderSupport');
 const {
   normalizeContext,
   resolveConversationContext,
@@ -76,8 +77,10 @@ function formatPrice(price) {
   return n ? `${n.toLocaleString('vi-VN')}đ` : (price || 'liên hệ');
 }
 
+// The language is the customer's own words; image analysis (e.g. a Chinese bank
+// receipt) appended to the text must not switch the reply language.
 function detectMessageLanguageFromText(text) {
-  const raw = String(text || '').trim();
+  const raw = stripInternalAnalysis(text);
   if (!raw) return 'vi';
 
   if (/[\u3400-\u9FFF\uF900-\uFAFF]/.test(raw)) return 'zh';
@@ -104,7 +107,7 @@ function detectMessageLanguageFromText(text) {
 }
 
 function detectMessageLanguage(text, history = []) {
-  const raw = String(text || '').trim();
+  const raw = stripInternalAnalysis(text);
   const detected = detectMessageLanguageFromText(raw);
   const tokens = raw.split(/\s+/).filter(Boolean);
   const hasStrongSignal = /[\u3400-\u9FFF\uF900-\uFAFF]/.test(raw)
@@ -2512,6 +2515,19 @@ async function generateReplyRaw({
 
   if (isStoreContactRequest(userText)) return storeInfoResult(sourceKey, messageLanguage);
 
+  const orderSupport = buildOrderSupportAnswer({ userText, sourceKey, lang: messageLanguage });
+  if (orderSupport) {
+    return {
+      reply: orderSupport.reply,
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_order_support',
+      ragProducts: [],
+      handoff: orderSupport.handoff,
+      conversationContext: resolvedConversationContext
+    };
+  }
+
   if (intent === 'human') {
     return {
       reply: buildHumanRequestReply(userText, messageLanguage, channel, customerBrand, customerPhone),
@@ -3329,8 +3345,10 @@ function summaryLanguageInstruction(language = 'vi') {
 async function generateReply(payload) {
   const result = await generateReplyRaw(payload);
   const customerBrand = resolveCustomerBrand(payload);
+  const orderHandoff = result.handoff?.needed ? null : orderSupportHandoff(payload.userText);
   return {
     ...result,
+    ...(orderHandoff ? { handoff: orderHandoff } : {}),
     customerBrand,
     reply: applyCustomerBranding(result.reply, customerBrand, result.ragProducts)
   };
