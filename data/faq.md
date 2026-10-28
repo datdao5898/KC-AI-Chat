@@ -45,5 +45,5 @@ Các mục Giới thiệu cửa hàng, Kỹ thuật cơ bản, Thông tin cửa 
 ## Thông tin cửa hàng
 - Chi nhánh TP.HCM: 65 Nguyễn Minh Hoàng, Phường Bảy Hiền (Phường 12, Quận Tân Bình cũ), TP.HCM. Hotline: 0903 898 478.
 - Chi nhánh Hà Nội: LK 23-TT1, Khu nhà ở 96-96B Nguyễn Huy Tưởng, Phường Thanh Xuân Trung, Quận Thanh Xuân, Hà Nội. Hotline: 070 447 1438.
-- Giờ làm việc: 08:30 – 17:30, Thứ 2 – Thứ 7.
+- Giờ làm việc: 08:30 – 17:30, Thứ 2 – Thứ 7. Nghỉ trưa 12:00 – 13:00, shop không tiếp khách tại cửa hàng trong giờ nghỉ trưa.
 - Anh/chị có thể đến xem trực tiếp; nên nhắn tên sản phẩm trước để shop kiểm tra hàng tại cửa hàng.
