@@ -24,6 +24,8 @@ const {
 const { answerProductGuidanceFromWeb, answerProductSpecsFromWeb } = require('./webGuidance');
 const { readProductPageContext } = require('./productPageReader');
 const { chatCompletion } = require('./llmClient');
+const { extractCustomerInfo, hasPhoneNumber, isPhoneCorrection } = require('./customerInfo');
+const { currentMessageLanguage } = require('./messageLanguage');
 const { buildStoreContactReply, buildContactPromptBlock, isStoreContactRequest, getVerifiedContact } = require('./storeContacts');
 const { buildPolicyAnswer, detectPolicyTopic, storeIntroLines, technicalSupportLines, policySectionText } = require('./policyAnswers');
 const { buildOrderSupportAnswer, orderSupportHandoff, stripInternalAnalysis } = require('./orderSupport');
@@ -77,6 +79,21 @@ function formatPrice(price) {
   return n ? `${n.toLocaleString('vi-VN')}đ` : (price || 'liên hệ');
 }
 
+const VIETNAMESE_MARKS = /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i;
+const VIETNAMESE_PHRASES = [
+  'ben minh', 'bao nhieu', 'san pham', 'tu van', 'con hang', 'dia chi', 'giao hang', 'the nao', 'nhu the'
+];
+const VIETNAMESE_WORDS = new Set([
+  'anh', 'chi', 'em', 'minh', 'toi', 'khong', 'ko', 'co', 'mua', 'gia', 'bao',
+  'xem', 'nao', 'gi', 'dau', 'duoc', 'nhe', 'nha', 'oi', 'vay', 'cho', 'cua', 'kiem',
+  'nhanh', 'thanh', 'toan', 'giao', 'mo', 'gio', 'lam', 'sao', 'hoi', 'nay', 'voi', 'roi',
+  'nhu', 'tren', 'moi', 'biet', 'thay', 'nhan'
+]);
+const AMBIGUOUS_VIETNAMESE_WORDS = new Set(['ban', 'k', 'con', 'hang', 'den', 'chan', 'may', 'can']);
+const ENGLISH_WORDS = /\b(hello|hi|please|pls|thanks|thank|i|im|i'm|am|are|looking|look|for|need|want|buy|do|does|have|carry|sell|available|stock|price|how|much|can|you|your|is|the|this|that|what|when|where|which|who|why|time|store|open|opening|close|closed|hours|tell|about|mobile|phone|smartphone|tripod|camera|microphone|light)\b/gi;
+
+// Word-based guess, used only when the language model is unavailable. Otherwise everything
+// runs in Vietnamese and the reply is translated at the end (see messageLanguage.js).
 // The language is the customer's own words; image analysis (e.g. a Chinese bank
 // receipt) appended to the text must not switch the reply language.
 function detectMessageLanguageFromText(text) {
@@ -86,27 +103,26 @@ function detectMessageLanguageFromText(text) {
   if (/[\u3400-\u9FFF\uF900-\uFAFF]/.test(raw)) return 'zh';
 
   const normalized = normalize(raw);
-  const hasVietnameseMarks = /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(raw);
-  const vietnameseHints = [
-    'anh', 'chi', 'em', 'minh', 'toi', 'ban', 'shop', 'ben minh', 'co khong', 'khong',
-    'mua', 'gia', 'bao nhieu', 'san pham', 'tu van', 'con hang', 'dia chi', 'giao hang'
-  ];
-  const vietnameseTokenHints = new Set(['co', 'ko', 'k', 'con', 'hang', 'bao', 'gia', 'den', 'chan', 'may']);
-  const normalizedTokens = normalized.split(/\s+/).filter(Boolean);
+  if (VIETNAMESE_MARKS.test(raw)) return 'vi';
+
+  // Whole words only: as substrings "em" would match "item" and "chi" "machine".
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const spaced = ` ${normalized} `;
   if (
-    hasVietnameseMarks
-    || vietnameseHints.some(h => normalized.includes(h))
-    || normalizedTokens.some(token => vietnameseTokenHints.has(token))
+    VIETNAMESE_PHRASES.some(phrase => spaced.includes(` ${phrase} `))
+    || tokens.some(token => VIETNAMESE_WORDS.has(token))
   ) return 'vi';
 
-  const englishHits = (raw.match(/\b(hello|hi|please|pls|i|im|i'm|am|looking|look|for|need|want|buy|do|does|have|carry|sell|available|stock|price|how|much|can|you|is|the|this|that|mobile|phone|smartphone|tripod|camera|microphone|light)\b/gi) || []).length;
-  const asciiLetters = (raw.match(/[a-z]/gi) || []).length;
-  if (asciiLetters >= 2 && englishHits >= 1) return 'en';
-
-  return 'vi';
+  // "may" or "hang" are words in both languages, so they lose to more English words.
+  const ambiguousHits = tokens.filter(token => AMBIGUOUS_VIETNAMESE_WORDS.has(token)).length;
+  const englishHits = (raw.match(ENGLISH_WORDS) || []).length;
+  return englishHits > ambiguousHits ? 'en' : 'vi';
 }
 
 function detectMessageLanguage(text, history = []) {
+  const identified = currentMessageLanguage();
+  if (identified) return identified;
+
   const raw = stripInternalAnalysis(text);
   const detected = detectMessageLanguageFromText(raw);
   const tokens = raw.split(/\s+/).filter(Boolean);
@@ -154,62 +170,32 @@ function isShortSpecificFollowUp(text) {
     && words.some(w => w.length >= 4 && !['den', 'light', 'micro', 'lens', 'hang'].includes(w));
 }
 
-function hasPhoneNumber(text) {
-  return /(?:\+?84|0)(?:[\s.-]?\d){8,10}\b/.test(String(text || ''));
-}
-
-function cleanContactName(name) {
-  return String(name || '')
-    .replace(/^(?:tôi|toi|em|mình|minh)\s+(?:là|la)\s+/i, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[,.!?;:]+$/g, '');
-}
-
-function extractContactInfo(text) {
-  const raw = String(text || '').trim();
-  const phoneMatch = raw.match(/(?:\+?84|0)(?:[\s.-]?\d){8,10}\b/);
-  const phone = phoneMatch ? phoneMatch[0].replace(/[^\d+]/g, '') : '';
-  const withoutPhone = phoneMatch ? raw.replace(phoneMatch[0], ' ') : raw;
-  const normalized = normalize(withoutPhone);
-
-  let name = '';
-  const rawNameMatch = withoutPhone.match(/(?:ý\s*tôi\s*là|y\s*toi\s*la|tôi\s*là|toi\s*la|em\s*là|em\s*la|mình\s*là|minh\s*la|tên\s*(?:tôi|em|mình)?\s*là|ten\s*(?:toi|em|minh)?\s*la|tên\s*là|ten\s*la)\s+([^,.!?;:]+)/iu);
-  if (rawNameMatch) {
-    name = cleanContactName(rawNameMatch[1]);
-  }
-
-  const normalizedNameMatch = normalized.match(/\b(?:y toi la|toi la|em la|minh la|ten toi la|ten em la|ten minh la|ten la)\s+([a-z\s]{2,40})/);
-  if (!name && normalizedNameMatch) {
-    name = normalizedNameMatch[1]
-      .replace(/^(?:toi|em|minh)\s+(?:la)\s+/, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  if (!name) {
-    const rawHonorificMatch = withoutPhone.match(/\b(?:anh|chị|chi|cô|co|chú|chu)\s+[\p{L}]{2,30}\b/iu);
-    if (rawHonorificMatch && (phone || /\b(?:toi la|em la|minh la|ten la|goi|lien he|sdt|so dien thoai)\b/.test(normalized))) {
-      name = cleanContactName(rawHonorificMatch[0]);
-    }
-  }
-
-  if (!name) {
-    const honorificMatch = normalized.match(/\b(?:anh|chi|co|chu)\s+([a-z]{2,30})\b/);
-    if (honorificMatch && (phone || /\b(?:toi la|em la|minh la|ten la|goi|lien he|sdt|so dien thoai)\b/.test(normalized))) {
-      name = honorificMatch[0].trim();
-    }
-  }
-
-  return { phone, name };
-}
+const extractContactInfo = extractCustomerInfo;
 
 function isContactInfoMessage(text) {
-  const raw = String(text || '');
-  const normalized = normalize(raw);
-  const contact = extractContactInfo(raw);
-  return Boolean(contact.phone)
-    || /\b(?:y toi la|toi la|em la|minh la|ten toi la|ten em la|ten minh la|ten la)\b/.test(normalized);
+  const contact = extractContactInfo(text);
+  return Boolean(contact.phone || contact.name);
+}
+
+function buildInvoiceInfoReply(info, lang = 'vi', brand = 'KingCom') {
+  const company = info.companyName || '';
+  const taxCode = info.taxCode || '';
+  if (lang === 'en') {
+    const subject = [company, taxCode ? `tax code ${taxCode}` : ''].filter(Boolean).join(', ');
+    return `Thank you, I have received your invoice details${subject ? ` (${subject})` : ''}${info.phone ? ` and your phone number ${info.phone}` : ''}. I have forwarded them to ${brand} staff to check and confirm with you.`;
+  }
+  if (lang === 'zh') {
+    const subject = [company, taxCode ? `税号 ${taxCode}` : ''].filter(Boolean).join('，');
+    return `谢谢，我已收到您的发票信息${subject ? `（${subject}）` : ''}${info.phone ? `和电话号码 ${info.phone}` : ''}，并已转交 ${brand} 员工核对确认。`;
+  }
+  const subject = [company ? `của ${company}` : '', taxCode ? `(MST ${taxCode})` : ''].filter(Boolean).join(' ');
+  return `Dạ em đã nhận thông tin xuất hóa đơn${subject ? ` ${subject}` : ''}${info.phone ? ` và số điện thoại ${info.phone}` : ''}. Em đã chuyển nhân viên ${brand} kiểm tra và xác nhận với anh/chị ạ.`;
+}
+
+function buildPhoneCorrectionReply(lang = 'vi') {
+  if (lang === 'en') return 'I am sorry for the mix-up. I have removed that number from your contact details. If you would like staff to call you, please share your phone number.';
+  if (lang === 'zh') return '很抱歉弄错了，我已从您的联系信息中删除该号码。如需工作人员致电，请提供您的电话号码。';
+  return 'Dạ em xin lỗi anh/chị vì đã nhận nhầm số. Em đã bỏ số đó khỏi thông tin liên hệ. Nếu anh/chị muốn nhân viên gọi lại, anh/chị cho em xin số điện thoại nhé ạ.';
 }
 
 function buildContactInfoReply(userText, lang = 'vi') {
@@ -878,7 +864,7 @@ function buildDirectPriceReply(userText, options = {}) {
 function productLinkBlock(products, max = 5) {
   const rows = (products || []).filter(p => p.url || p.link || p.product_url).slice(0, max);
   if (!rows.length) return '';
-  return 'Link sản phẩm để anh/chị xem trực tiếp:\n' + rows.map((p, i) => {
+  return rows.map((p, i) => {
     const url = p.url || p.link || p.product_url;
     const name = p.name || p.title || p.sku || `Sản phẩm ${i + 1}`;
     const price = formatPrice(p.price || p.compare_at_price || p.gia || '');
@@ -1724,10 +1710,15 @@ function isProductSpecsRequest(userText, history = []) {
   return isDirectProductSpecsQuery(userText) || isProductSpecsFollowUp(userText, history);
 }
 
+const STORE_HOURS_QUESTION = /\b(mo cua|dong cua|gio lam viec|nghi trua|(opening|business|working|store|shop|your) hours)\b|\b(what time|when (do|does|is|are|will)|how late)\b.*\b(open|opens|opening|close|closes|closing)\b/;
+
+// Also covers store hours: not a product question, so the model answers from the FAQ
+// without product retrieval, clarifying questions or product links.
 function isCommercialPolicyQuestion(userText, intent) {
   const raw = String(userText || '');
   return Boolean(detectPolicyTopic(raw, intent))
     || /\b(chinh sach|loi san pham)\b/i.test(normalize(raw))
+    || STORE_HOURS_QUESTION.test(normalize(raw))
     || /(保修|退换|发票|發票|增值税|政策)/.test(raw);
 }
 
@@ -2196,7 +2187,8 @@ function assessRetrievalUncertainty({
   conversationContext = {},
   products = []
 } = {}) {
-  if (!['general', 'product_search', 'buy', 'price', 'product_specs', 'order'].includes(intent)) return null;
+  // 'general' messages are not known to be about products: the model answers those from the FAQ.
+  if (!['product_search', 'buy', 'price', 'product_specs', 'order'].includes(intent)) return null;
   if (conversationContext.requested_category || conversationContext.current_product_name) return null;
   const hasStrongExplicitReference = /https?:\/\/\S+\/products?\//i.test(String(userText || ''))
     || queryWords(userText).some(word => /[a-z]+\d|\d+[a-z]+/i.test(word));
@@ -2486,10 +2478,42 @@ async function generateReplyRaw({
   });
   const scopedProducts = loadProducts({ sourceKey });
   const customerPhone = String(customer?.phone || '').trim();
-  const existingContactInstruction = customerPhone
+  const baseContactInstruction = customerPhone
     ? `H\u1ed3 s\u01a1 kh\u00e1ch \u0111\u00e3 c\u00f3 s\u1ed1 \u0111i\u1ec7n tho\u1ea1i ${customerPhone}. Tuy\u1ec7t \u0111\u1ed1i kh\u00f4ng h\u1ecfi ho\u1eb7c xin l\u1ea1i s\u1ed1 \u0111i\u1ec7n tho\u1ea1i. Khi c\u1ea7n nh\u00e2n vi\u00ean theo d\u00f5i, h\u00e3y n\u00f3i s\u1ebd d\u00f9ng th\u00f4ng tin li\u00ean h\u1ec7 kh\u00e1ch \u0111\u00e3 cung c\u1ea5p.`
     : 'H\u1ed3 s\u01a1 kh\u00e1ch ch\u01b0a c\u00f3 s\u1ed1 \u0111i\u1ec7n tho\u1ea1i. Ch\u1ec9 xin th\u00f4ng tin li\u00ean h\u1ec7 khi th\u1ef1c s\u1ef1 c\u1ea7n nh\u00e2n vi\u00ean theo d\u00f5i.';
+  const invoiceProfile = [
+    customer?.company_name ? `tên công ty: ${customer.company_name}` : '',
+    customer?.tax_code ? `mã số thuế: ${customer.tax_code}` : '',
+    customer?.company_address ? `địa chỉ công ty: ${customer.company_address}` : '',
+    customer?.invoice_email ? `email nhận hóa đơn: ${customer.invoice_email}` : ''
+  ].filter(Boolean).join('; ');
+  const existingContactInstruction = [
+    baseContactInstruction,
+    'Mã số thuế (MST) là mã của doanh nghiệp, không phải số điện thoại. Tên công ty không phải tên khách, không dùng tên công ty hay tên người đại diện để xưng hô với khách.',
+    invoiceProfile ? `Thông tin xuất hóa đơn khách đã gửi: ${invoiceProfile}.` : ''
+  ].filter(Boolean).join(' ');
   const structuredIntentForPrompt = JSON.stringify(resolvedConversationContext.customer_intent || {});
+  if (isPhoneCorrection(userText) && !extractContactInfo(userText).phone) {
+    return {
+      reply: buildPhoneCorrectionReply(messageLanguage),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_phone_correction',
+      ragProducts: [],
+      handoff: { needed: true, reason: 'Khách báo số đã lưu không phải số điện thoại' }
+    };
+  }
+  const customerInfo = extractContactInfo(userText);
+  if (customerInfo.isInvoiceInfo) {
+    return {
+      reply: buildInvoiceInfoReply(customerInfo, messageLanguage, customerBrand),
+      aiUsed: 0,
+      aiError: false,
+      aiSource: 'rule_invoice_info',
+      ragProducts: [],
+      handoff: { needed: true, reason: 'Khách gửi thông tin xuất hóa đơn, cần nhân viên xác nhận' }
+    };
+  }
   const contactInfoReply = buildContactInfoReply(userText, messageLanguage);
   if (contactInfoReply) {
     return {
@@ -3282,7 +3306,7 @@ Quy tắc:
       };
     }
     return {
-      reply: policyQuestion ? reply : ensureProductLinks(reply, products),
+      reply: policyQuestion || intent === 'general' ? reply : ensureProductLinks(reply, products),
       aiUsed: 1,
       aiError: false,
       aiSource: specsQuestion ? 'provider_product_specs' : 'provider',

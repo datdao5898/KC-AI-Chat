@@ -230,6 +230,52 @@ test('English unsupported product reply does not repeat sales verbs as product n
   assert.doesNotMatch(result.reply, /sell sell/i);
 });
 
+test('English questions are detected as English, whole words only', () => {
+  for (const text of [
+    'what time store open?',
+    'what are your opening hours?',
+    'is this item in stock?',
+    'remote for sony?',
+    'tell me about machine',
+    'may I ask what time you open?',
+    'can you ship to hanoi?',
+    'thanks'
+  ]) {
+    assert.equal(detectMessageLanguage(text), 'en', text);
+  }
+});
+
+test('Vietnamese with or without marks stays Vietnamese', () => {
+  for (const text of [
+    'mấy giờ mở cửa',
+    'may gio mo cua',
+    'cua hang o dau',
+    'shop mo cua luc may gio',
+    'xem the nao',
+    'co tripod cho mobile phone khong',
+    'can tu van camera',
+    'den led',
+    'may camera'
+  ]) {
+    assert.equal(detectMessageLanguage(text), 'vi', text);
+  }
+});
+
+test('store hours questions skip product retrieval and clarifying questions', async () => {
+  for (const userText of ['what time store open?', 'what are your opening hours?', 'mấy giờ mở cửa']) {
+    const result = await generateReply({
+      userText,
+      history: [],
+      intent: 'general',
+      channel: 'website',
+      sourceKey: 'website/kingcom',
+      sourceGroup: 'website'
+    });
+    assert.notEqual(result.aiSource, 'rule_retrieval_clarification', userText);
+    assert.deepEqual(result.ragProducts, [], userText);
+  }
+});
+
 test('short ambiguous message inherits the recent customer language', () => {
   assert.equal(detectMessageLanguage('yes', [
     { sender_type: 'customer', text: 'Please show me the product price' }

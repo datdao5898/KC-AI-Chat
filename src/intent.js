@@ -1,4 +1,5 @@
 const { detectOrderSupportTopic } = require('./orderSupport');
+const { hasPhoneNumber } = require('./customerInfo');
 
 function normalize(text) {
   return String(text || '')
@@ -37,7 +38,7 @@ function classifyIntent(text) {
   }
 
   const msg = normalize(text);
-  const hasPhoneNumber = /(?:\+?84|0)(?:[\s.-]?\d){8,10}\b/.test(raw);
+  const containsPhoneNumber = hasPhoneNumber(raw);
   if (hasPhrase(msg, [
     'sao khong ai lien he', 'sao ko ai lien he', 'sao chua ai lien he',
     'chua ai lien he', 'khong ai lien he', 'ko ai lien he',
@@ -80,7 +81,7 @@ function classifyIntent(text) {
   ]) || hasWord(msg, ['spec', 'specs', 'specification', 'specifications', 'ram', 'height', 'weight', 'dimensions'])) {
     return { intent: 'product_specs', confidence: 0.9 };
   }
-  if (hasPhoneNumber && (
+  if (containsPhoneNumber && (
     hasPhrase(msg, ['goi toi so', 'goi vao so', 'goi so', 'goi lai so', 'lien he so', 'so dien thoai', 'sdt', 'hotline'])
     || msg.split(/\s+/).filter(Boolean).length <= 10
   )) return { intent: 'human', confidence: 0.95 };

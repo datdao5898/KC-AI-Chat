@@ -352,6 +352,7 @@ function buildJudgePrompt({
     'Conversation context state:',
     contextText,
     `Customer profile: phone already provided = ${customer?.phone ? 'yes' : 'no'}`,
+    `Customer invoice details on file: ${[customer?.company_name, customer?.tax_code ? `tax code ${customer.tax_code}` : ''].filter(Boolean).join(', ') || '(none)'}. A tax code is not a phone number and a company name is not the customer's name.`,
     '',
     'Latest customer message:',
     String(userText || '').trim(),
@@ -488,6 +489,8 @@ function isTrustedDeterministicReplySource(aiSource = '') {
     'rule_conversation_stop',
     'rule_human_handoff',
     'rule_contact_info',
+    'rule_invoice_info',
+    'rule_phone_correction',
     'rule_no_catalog_match',
     'rule_technical_support',
     'rule_replacement_part'

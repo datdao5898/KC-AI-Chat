@@ -1,6 +1,8 @@
-const { getOrCreateCustomer, getOrCreateConversation, saveMessage, getRecentMessages, updateCustomerLearning, updateConversationSummary, flagHandoff, updateConversationContext, markConversationTest } = require('./db');
+const { isPhoneCorrection, isValidVnPhone, isValidTaxCode, digitsOf } = require('./customerInfo');
+const { getOrCreateCustomer, clearCustomerPhone, getOrCreateConversation, saveMessage, getRecentMessages, updateCustomerLearning, updateConversationSummary, flagHandoff, updateConversationContext, markConversationTest } = require('./db');
 const { classifyIntent } = require('./intent');
 const { generateReply, summarizeConversation, summarizeConversationFast, detectMessageLanguage, extractContactInfo } = require('./ai');
+const { understandCustomerMessage, translateReply, runInLanguageScope, setCurrentMessageLanguage } = require('./messageLanguage');
 const { notifyStaff, notifyNewMessage } = require('./staffAlert');
 const { logAiResponse } = require('./aiTrace');
 const {
@@ -335,7 +337,11 @@ function announceNewMessage(payload) {
   notifyNewMessage(payload).catch(e => console.error('notifyNewMessage error:', e.message));
 }
 
-async function processIncoming({ channel, externalUserId, text, externalMessageId, raw, imageUrls = [], visionImageInputs = [], customerAttrs = {}, sendFn, testMode = false }) {
+function processIncoming(message) {
+  return runInLanguageScope(() => handleIncoming(message));
+}
+
+async function handleIncoming({ channel, externalUserId, text, externalMessageId, raw, imageUrls = [], visionImageInputs = [], customerAttrs = {}, sendFn, testMode = false }) {
   const startedAt = Date.now();
   const originalText = String(text || '').trim();
   const mediaUrls = [...new Set((imageUrls || []).filter(Boolean))].slice(0, 3);
@@ -353,9 +359,10 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       })
     : null;
   const storedText = originalText || (mediaUrls.length ? '[Khách gửi hình ảnh sản phẩm]' : '');
-  const processingText = vision?.recognized && vision.searchText
-    ? `${originalText || 'Khách gửi hình ảnh sản phẩm.'}\n\n[Internal image analysis: ${vision.searchText}]`
-    : (originalText || 'Khách gửi hình ảnh sản phẩm và cần hỗ trợ nhận dạng.');
+  const buildProcessingText = customerText => (vision?.recognized && vision.searchText
+    ? `${customerText || 'Khách gửi hình ảnh sản phẩm.'}\n\n[Internal image analysis: ${vision.searchText}]`
+    : (customerText || 'Khách gửi hình ảnh sản phẩm và cần hỗ trợ nhận dạng.'));
+  let processingText = buildProcessingText(originalText);
   const rawWithMedia = mediaUrls.length
     ? {
         ...(raw && typeof raw === 'object' ? raw : { original: raw }),
@@ -366,11 +373,28 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
   const enrichedCustomerAttrs = { ...customerAttrs };
   if (contactInfo.name) enrichedCustomerAttrs.name = contactInfo.name;
   if (contactInfo.phone) enrichedCustomerAttrs.phone = contactInfo.phone;
-  const customer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
+  if (contactInfo.email) enrichedCustomerAttrs.email = contactInfo.email;
+  if (contactInfo.companyName) enrichedCustomerAttrs.companyName = contactInfo.companyName;
+  if (contactInfo.taxCode) enrichedCustomerAttrs.taxCode = contactInfo.taxCode;
+  if (contactInfo.companyAddress) enrichedCustomerAttrs.companyAddress = contactInfo.companyAddress;
+  if (contactInfo.invoiceEmail) enrichedCustomerAttrs.invoiceEmail = contactInfo.invoiceEmail;
+  let customer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
+  // Repairs a profile that took a tax code for a phone: the customer corrected it, or the
+  // saved "phone" has just been given as their tax code.
+  const savedPhone = String(customer.phone || '');
+  const phoneIsTaxCode = Boolean(contactInfo.taxCode) && digitsOf(contactInfo.taxCode).startsWith(digitsOf(savedPhone)) && Boolean(digitsOf(savedPhone));
+  if (savedPhone && !contactInfo.phone && (phoneIsTaxCode || isPhoneCorrection(originalText))) {
+    await clearCustomerPhone(customer.id);
+    delete enrichedCustomerAttrs.phone;
+    if (!contactInfo.taxCode && !customer.tax_code && !isValidVnPhone(savedPhone) && isValidTaxCode(savedPhone)) {
+      enrichedCustomerAttrs.taxCode = digitsOf(savedPhone);
+    }
+    customer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
+  }
   const conversation = await getOrCreateConversation(customer.id, channel, source.sourceKey, source.sourceName, source.sourceGroup);
   if (testMode) await markConversationTest(conversation.id);
-  const { intent, confidence } = classifyIntent(processingText);
-  const parsedCustomerMessage = parseCustomerMessage(processingText, {
+  let { intent, confidence } = classifyIntent(processingText);
+  let parsedCustomerMessage = parseCustomerMessage(processingText, {
     sourceKey: source.sourceKey,
     sourceName: source.sourceName,
     sourceGroup: source.sourceGroup,
@@ -398,7 +422,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
 
   const recentMessages = await getRecentMessages(conversation.id, 12);
   const history = enrichHistoryWithMediaContext(trimHistoryToActiveSession(recentMessages));
-  const conversationContext = resolveConversationContext({
+  let conversationContext = resolveConversationContext({
     userText: processingText,
     history,
     existingContext: conversation.conversation_context,
@@ -493,11 +517,37 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     return { ok: true, skipped: 'staff_active', conversationId: conversation.id };
   }
 
+  // Done only here: messages the AI stays silent on above need no model call.
+  const understood = await understandCustomerMessage({ text: originalText, history });
+  const customerLanguage = understood?.language || '';
+  const foreignCustomer = Boolean(customerLanguage) && customerLanguage !== 'vi';
+  const vietnameseText = foreignCustomer ? understood.vietnamese : originalText;
+  if (understood) setCurrentMessageLanguage('vi');
+  if (foreignCustomer) {
+    processingText = buildProcessingText(vietnameseText);
+    ({ intent, confidence } = classifyIntent(processingText));
+    parsedCustomerMessage = parseCustomerMessage(processingText, {
+      sourceKey: source.sourceKey,
+      sourceName: source.sourceName,
+      sourceGroup: source.sourceGroup,
+      existingContext: conversation.conversation_context
+    });
+    conversationContext = resolveConversationContext({
+      userText: processingText,
+      history,
+      existingContext: conversation.conversation_context,
+      intent,
+      sourceKey: source.sourceKey,
+      sourceName: source.sourceName,
+      sourceGroup: source.sourceGroup,
+      parsedMessage: parsedCustomerMessage
+    });
+  }
   const freshCustomer = await getOrCreateCustomer(channel, externalUserId, enrichedCustomerAttrs);
   const mediaRecognitionFailed = mediaUrls.length > 0 && !vision?.recognized;
   const replyResult = mediaRecognitionFailed
     ? {
-        reply: buildImageFallbackReply(originalText),
+        reply: buildImageFallbackReply(vietnameseText),
         aiUsed: 0,
         aiError: false,
         aiErrorMessage: vision?.error || '',
@@ -540,11 +590,11 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       : detectHandoff({ text: processingText, intent, aiError, ragProducts, aiSource }));
   let handoff = baseHandoff;
   let reply = applyCustomerBranding(
-    normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, originalText || processingText)),
+    normalizeCustomerReply(improveNoDataReply(generatedReply, handoff, vietnameseText || processingText)),
     customerBrand,
     ragProducts
   );
-  reply = avoidRepeatedContactRequest(reply, freshCustomer, originalText || processingText);
+  reply = avoidRepeatedContactRequest(reply, freshCustomer, vietnameseText || processingText);
   const validation = validateAiReply({
     userText: processingText,
     history,
@@ -566,7 +616,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       customerBrand,
       ragProducts
     );
-    reply = avoidRepeatedContactRequest(reply, freshCustomer, originalText || processingText);
+    reply = avoidRepeatedContactRequest(reply, freshCustomer, vietnameseText || processingText);
   }
   const judge = await judgeAiReply({
     channel,
@@ -595,7 +645,7 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       );
     } else {
       reply = applyCustomerBranding(
-        normalizeCustomerReply(buildJudgeRejectedReply(originalText || processingText)),
+        normalizeCustomerReply(buildJudgeRejectedReply(vietnameseText || processingText)),
         customerBrand,
         ragProducts
       );
@@ -607,19 +657,20 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       };
     }
     reply = applyCustomerBranding(
-      normalizeCustomerReply(improveNoDataReply(reply, handoff, originalText || processingText)),
+      normalizeCustomerReply(improveNoDataReply(reply, handoff, vietnameseText || processingText)),
       customerBrand,
       ragProducts
     );
   }
   reply = applyCustomerBranding(reply, customerBrand, ragProducts);
-  reply = avoidRepeatedContactRequest(reply, freshCustomer, originalText || processingText);
+  reply = avoidRepeatedContactRequest(reply, freshCustomer, vietnameseText || processingText);
   // Last gate: hotline/address must match the source FAQ contact section, whichever step produced the reply.
   const contactGuard = enforceVerifiedContactInfo(reply, {
     sourceKey: source.sourceKey,
-    userText: originalText || processingText,
+    userText: vietnameseText || processingText,
     history,
-    customerPhone: freshCustomer?.phone || '',
+    // The customer's own tax code may be quoted back; it is not a store number.
+    customerPhone: [freshCustomer?.phone, freshCustomer?.tax_code].filter(Boolean).join(', '),
     lang: detectMessageLanguage(processingText, history)
   });
   if (!contactGuard.ok) {
@@ -633,6 +684,14 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     sourceKey: source.sourceKey
   });
   await updateConversationContext(conversation.id, finalConversationContext);
+  const vietnameseReply = reply;
+  const translation = foreignCustomer
+    ? await translateReply({ reply, customerText: originalText || storedText })
+    : null;
+  if (translation) {
+    reply = translation.reply;
+    if (translation.error) console.warn(`Reply not translated: ${translation.error}`);
+  }
   const humanDelayMs = testMode ? 0 : estimateHumanReplyDelayMs(reply, Date.now() - startedAt);
   if (humanDelayMs > 0) await sleep(humanDelayMs);
 
@@ -689,6 +748,10 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     text: reply,
     rawJson: {
       reply_to: inbound.id,
+      customerLanguage,
+      vietnameseText: foreignCustomer ? vietnameseText : '',
+      vietnameseReply: foreignCustomer ? vietnameseReply : '',
+      translationError: translation?.error || '',
       handoff,
       validation,
       judge,
@@ -746,6 +809,9 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
     conversationContext: finalConversationContext,
     humanDelayMs,
     reply,
+    customerLanguage,
+    vietnameseReply: foreignCustomer ? vietnameseReply : '',
+    translationError: translation?.error || '',
     validatorBlocked: validation.ok ? false : true,
     validatorReason: validation.reason || '',
     judgeApproved: !!judge?.approve,
@@ -776,6 +842,10 @@ async function processIncoming({ channel, externalUserId, text, externalMessageI
       sourceKey: source.sourceKey,
       sourceName: source.sourceName,
       aiSource: aiSource || (aiUsed ? 'provider' : 'rule_or_fallback'),
+      customerLanguage,
+      vietnameseText: foreignCustomer ? vietnameseText : '',
+      vietnameseReply: foreignCustomer ? vietnameseReply : '',
+      translationError: translation?.error || '',
       draftReply: generatedReply,
       validator: validation.ok ? null : validation.reason,
       judge: judge ? {

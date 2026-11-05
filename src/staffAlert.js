@@ -98,7 +98,9 @@ function formatNewMessageAlert({ channel, externalUserId, customer, text, status
   const contactLine = [
     name ? `Name: ${name}` : '',
     phone ? `Phone: ${phone}` : '',
-    email ? `Email: ${email}` : ''
+    email ? `Email: ${email}` : '',
+    customer?.company_name ? `Company: ${customer.company_name}` : '',
+    customer?.tax_code ? `Tax code: ${customer.tax_code}` : ''
   ].filter(Boolean).join('\n');
   const replyText = String(reply || '').trim();
 

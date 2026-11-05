@@ -250,6 +250,10 @@ async function initDb() {
       ON ai_reply_reviews(source_key, status, created_at DESC);
   `);
   await db.query(`
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS company_name TEXT DEFAULT '';
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS tax_code TEXT DEFAULT '';
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS company_address TEXT DEFAULT '';
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS invoice_email TEXT DEFAULT '';
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rating INTEGER;
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rating_feedback TEXT DEFAULT '';
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_rated_at TIMESTAMPTZ;
@@ -332,16 +336,27 @@ async function refreshConfiguredSourceNames() {
 
 async function getOrCreateCustomer(channel, externalId, attrs = {}) {
   const { rows } = await db.query(`
-    INSERT INTO customers (id, channel, external_id, name, phone, email)
-    VALUES ($1, $2, $3, $4, $5, $6)
+    INSERT INTO customers (id, channel, external_id, name, phone, email, company_name, tax_code, company_address, invoice_email)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     ON CONFLICT(channel, external_id) DO UPDATE SET
       name=COALESCE(NULLIF(EXCLUDED.name, ''), customers.name),
       phone=COALESCE(NULLIF(EXCLUDED.phone, ''), customers.phone),
       email=COALESCE(NULLIF(EXCLUDED.email, ''), customers.email),
+      company_name=COALESCE(NULLIF(EXCLUDED.company_name, ''), customers.company_name),
+      tax_code=COALESCE(NULLIF(EXCLUDED.tax_code, ''), customers.tax_code),
+      company_address=COALESCE(NULLIF(EXCLUDED.company_address, ''), customers.company_address),
+      invoice_email=COALESCE(NULLIF(EXCLUDED.invoice_email, ''), customers.invoice_email),
       updated_at=CURRENT_TIMESTAMP
     RETURNING *
-  `, [uuidv4(), channel, externalId, attrs.name || '', attrs.phone || '', attrs.email || '']);
+  `, [
+    uuidv4(), channel, externalId, attrs.name || '', attrs.phone || '', attrs.email || '',
+    attrs.companyName || '', attrs.taxCode || '', attrs.companyAddress || '', attrs.invoiceEmail || ''
+  ]);
   return rows[0];
+}
+
+async function clearCustomerPhone(customerId) {
+  await db.query(`UPDATE customers SET phone='', updated_at=CURRENT_TIMESTAMP WHERE id=$1`, [customerId]);
 }
 
 async function getOrCreateConversation(customerId, channel, sourceKey = '', sourceName = '', sourceGroup = '') {
@@ -548,7 +563,7 @@ async function getRecentMessages(conversationId, limit = 12) {
 async function listConversations() {
   const limit = Math.max(1, Number(process.env.ADMIN_CONVERSATION_LIST_LIMIT || 5000));
   const { rows } = await db.query(`
-    SELECT c.*, cu.name, cu.phone, cu.email, cu.external_id, cu.profile_summary, cu.interested_products,
+    SELECT c.*, cu.name, cu.phone, cu.email, cu.company_name, cu.tax_code, cu.company_address, cu.invoice_email, cu.external_id, cu.profile_summary, cu.interested_products,
       (SELECT text FROM messages WHERE conversation_id=c.id AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message,
       (SELECT MAX(created_at) FROM messages WHERE conversation_id=c.id AND deleted_at IS NULL) AS last_message_at,
       (SELECT COUNT(*)::int FROM staff_alerts WHERE conversation_id=c.id AND status='open') AS open_alerts,
@@ -571,7 +586,7 @@ async function listConversations() {
 
 async function getConversation(id) {
   const found = await db.query(`
-    SELECT c.*, cu.name, cu.phone, cu.email, cu.external_id, cu.profile_summary, cu.interested_products,
+    SELECT c.*, cu.name, cu.phone, cu.email, cu.company_name, cu.tax_code, cu.company_address, cu.invoice_email, cu.external_id, cu.profile_summary, cu.interested_products,
       COALESCE(r.reply_review_count, 0)::int AS reply_review_count
     FROM conversations c
     JOIN customers cu ON cu.id = c.customer_id
@@ -910,7 +925,7 @@ async function getStats() {
 }
 
 module.exports = {
-  db, initDb, getOrCreateCustomer, getOrCreateConversation, saveMessage, markProcessed, getRecentMessages,
+  db, initDb, getOrCreateCustomer, clearCustomerPhone, getOrCreateConversation, saveMessage, markProcessed, getRecentMessages,
   listConversations, getConversation, updateConversationSummary, updateCustomerLearning, flagHandoff, resolveHandoff,
   updateAlertDelivery, listStaffAlerts, softDeleteMessage, softDeleteConversation, hardDeleteConversation, getWebsiteConversationByVisitor,
   listWebsiteConversationMessages, rateWebsiteConversation, addStaffReply, getStats, addAiReplyReview, listAiReplyReviews,

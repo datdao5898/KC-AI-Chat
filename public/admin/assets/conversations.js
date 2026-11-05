@@ -170,6 +170,8 @@
         conv.channel,
         conv.external_id,
         conv.phone,
+        conv.company_name,
+        conv.tax_code,
         conv.email
       ].some(value => String(value || '').toLowerCase().includes(q));
     }).sort((a, b) => {
@@ -327,6 +329,10 @@
     const rows = [
       [KC.t('phone'), conv.phone],
       [KC.t('email'), conv.email],
+      [KC.t('companyName'), conv.company_name],
+      [KC.t('taxCode'), conv.tax_code],
+      [KC.t('companyAddress'), conv.company_address],
+      [KC.t('invoiceEmail'), conv.invoice_email],
       ['ID', conv.external_id],
       [KC.t('source'), conv.source_name || conv.source_key],
       [KC.t('customerPage'), customerPageUrl],
