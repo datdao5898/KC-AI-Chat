@@ -447,8 +447,11 @@ function approveTrustedSourceStoreInfo(payload = {}) {
   if (!contact) return null;
 
   const normalizedReply = normalizeEvidenceText(payload.reply);
-  const allLinesQuoted = contact.entries.every(entry => normalizedReply.includes(normalizeEvidenceText(entry.text)));
-  if (!allLinesQuoted) return null;
+  const allLinesQuoted = contact.entries
+    .filter(entry => !entry.question)
+    .every(entry => normalizedReply.includes(normalizeEvidenceText(entry.text)));
+  const isExactFaqAnswer = contact.entries.some(entry => entry.answer && normalizedReply === normalizeEvidenceText(entry.answer));
+  if (!allLinesQuoted && !isExactFaqAnswer) return null;
 
   return {
     approve: true,

@@ -1812,14 +1812,14 @@ function buildUnsupportedReply({ label = '', lang = 'vi', sourceKey = '', custom
   return `Dạ hiện ${customerBrand} chưa kinh doanh ${label || 'sản phẩm đó'} ạ.${intro ? ` ${intro}` : ''} Anh/chị cần em tư vấn sản phẩm nào ạ?`;
 }
 
-function buildStoreInfoReply({ sourceKey = '', lang = 'vi' } = {}) {
-  return buildStoreContactReply({ sourceKey, lang });
+function buildStoreInfoReply({ sourceKey = '', lang = 'vi', userText = '' } = {}) {
+  return buildStoreContactReply({ sourceKey, lang, userText });
 }
 
-function storeInfoResult(sourceKey = '', lang = 'vi') {
+function storeInfoResult(sourceKey = '', lang = 'vi', userText = '') {
   const hasContact = Boolean(getVerifiedContact(sourceKey));
   return {
-    reply: buildStoreInfoReply({ sourceKey, lang }),
+    reply: buildStoreInfoReply({ sourceKey, lang, userText }),
     aiUsed: 0,
     aiError: false,
     aiSource: 'rule_source_store_info',
@@ -2537,7 +2537,7 @@ async function generateReplyRaw({
     };
   }
 
-  if (isStoreContactRequest(userText)) return storeInfoResult(sourceKey, messageLanguage);
+  if (isStoreContactRequest(userText)) return storeInfoResult(sourceKey, messageLanguage, userText);
 
   const orderSupport = buildOrderSupportAnswer({ userText, sourceKey, lang: messageLanguage });
   if (orderSupport) {

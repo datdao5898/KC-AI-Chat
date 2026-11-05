@@ -23,6 +23,15 @@ test('trusted source store address is approved without model judgment', async ()
   assert.equal(result.deterministic, true);
 });
 
+test('the exact FAQ hotline answer is approved without model judgment', () => {
+  const payload = { aiSource: 'rule_source_store_info', intent: 'store_info', sourceKey: 'website/kingcom', customerBrand: 'KingCom' };
+  const answer = buildStoreContactReply({ sourceKey: 'website/kingcom', lang: 'vi', userText: 'hotline shop là gì' });
+
+  assert.match(answer, /HOTLINE HCM: 0903 898 478/);
+  assert.equal(approveTrustedSourceStoreInfo({ ...payload, reply: answer })?.deterministic, true);
+  assert.equal(approveTrustedSourceStoreInfo({ ...payload, reply: answer.replace('478', '479') }), null);
+});
+
 test('store address outside source FAQ is not auto-approved', () => {
   const result = approveTrustedSourceStoreInfo({
     aiSource: 'rule_source_store_info',

@@ -94,6 +94,25 @@ test('invented hotline from judge correction is removed and replaced with FAQ co
   assert.match(result.reply, /Anh\/chị cần tư vấn thêm/);
 });
 
+test('a hotline question gets the exact FAQ answer; other contact questions get the store list', () => {
+  const answer = 'Dạ, hotline hỗ trợ khách hàng của shop là HOTLINE HCM: 0903 898 478 và HN: 070 447 1438.';
+  for (const userText of ['Số hotline của shop là gì?', 'cho xin sdt shop', 'hotline bên mình số mấy']) {
+    assert.equal(isStoreContactRequest(userText), true, userText);
+    assert.equal(buildStoreContactReply({ sourceKey: KINGCOM, userText }), answer, userText);
+  }
+
+  for (const userText of ['địa chỉ và hotline của shop', '']) {
+    const list = buildStoreContactReply({ sourceKey: KINGCOM, userText });
+    assert.match(list, /65 Nguyễn Minh Hoàng/);
+    assert.doesNotMatch(list, /là gì\?/, 'the question text never reaches the customer');
+  }
+
+  assert.deepEqual(findContactViolations(answer, { sourceKey: KINGCOM }).badPhones, []);
+  assert.equal(findContactViolations(answer, { sourceKey: KINGCOM }).badAddress, false);
+  // Without that bullet the list stays as it was, e.g. NewLite's own FAQ.
+  assert.match(buildStoreContactReply({ sourceKey: NEWLITE, userText: 'hotline shop là gì' }), /65 Nguyễn Minh Hoàng/);
+});
+
 test('outdated hotline, misquoted address and another brand address are rejected', () => {
   const oldHotline = findContactViolations('Hotline HCM: 028-38-440-798', { sourceKey: KINGCOM });
   assert.deepEqual(oldHotline.badPhones, ['02838440798']);

@@ -60,7 +60,7 @@ test('a foreign question is answered from the FAQ in Vietnamese, then translated
   const { result, sent } = await send('are you open on sundays?');
 
   assert.deepEqual(sent, ['Hotlines: 0903 898 478, 070 447 1438. Open 08:30 – 17:30, Monday to Saturday. Lunch break 12:00 – 13:00.']);
-  assert.match(modelCalls.at(-1).content, /Giờ làm việc: 08:30/, 'the Vietnamese reply quotes the FAQ');
+  assert.match(modelCalls.at(-1).content, /Giờ làm việc: 8h30/, 'the Vietnamese reply quotes the FAQ');
   assert.equal(result.debug.customerLanguage, 'en');
   assert.equal(result.debug.vietnameseText, 'Chủ nhật cửa hàng có làm việc không?');
   assert.equal(modelCalls[0].step, 'understand');
@@ -78,7 +78,7 @@ test('a general question reaches the model with the FAQ instead of a canned clar
 
   const answerCall = modelCalls.find(call => call.step === 'answer');
   assert.ok(answerCall, 'the model writes the answer');
-  assert.match(answerCall.content, /08:30/, 'the FAQ is in the prompt');
+  assert.match(answerCall.content, /8h30/, 'the FAQ is in the prompt');
   assert.equal(result.debug.aiSource, 'provider');
   assert.deepEqual(sent, ['We work Monday to Saturday.']);
 });

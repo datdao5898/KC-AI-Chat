@@ -47,6 +47,11 @@ function streetKeywords(address = '') {
 }
 
 function parseContactLine(line = '') {
+  // A bullet written as "Question? Answer" is the exact reply to that question.
+  const faq = line.match(/^([^:?]+\?)\s*(.+)$/);
+  if (faq) {
+    return { label: '', text: line, question: faq[1], answer: faq[2], address: '', phones: extractPhones(faq[2]), streetKeywords: [] };
+  }
   const colon = line.indexOf(':');
   const label = colon > 0 ? line.slice(0, colon).trim() : '';
   const rest = colon > 0 ? line.slice(colon + 1).trim() : line.trim();
@@ -74,10 +79,20 @@ function buildMissingContactReply(lang = 'vi') {
   return 'Dạ hiện em chưa có thông tin địa chỉ/hotline đã xác thực của cửa hàng. Em đã chuyển nhân viên gửi lại anh/chị thông tin liên hệ chính xác ạ.';
 }
 
-function buildStoreContactReply({ sourceKey = '', lang = 'vi' } = {}) {
+function isHotlineQuestion(text = '') {
+  const msg = normalizeText(text);
+  return /\b(hotline|tong dai|so dien thoai|so dt|sdt|so lien he)\b/.test(msg)
+    && !/\b(dia chi|o dau|gio|chi nhanh)\b/.test(msg);
+}
+
+function buildStoreContactReply({ sourceKey = '', lang = 'vi', userText = '' } = {}) {
   const contact = getVerifiedContact(sourceKey);
   if (!contact) return buildMissingContactReply(lang);
-  const lines = contact.entries.map(entry => `- ${entry.text}`).join('\n');
+  if (lang === 'vi' && isHotlineQuestion(userText)) {
+    const hotlineAnswer = contact.entries.find(entry => entry.question && /\bhotline\b/.test(normalizeText(entry.question)));
+    if (hotlineAnswer) return hotlineAnswer.answer;
+  }
+  const lines = contact.entries.filter(entry => !entry.question).map(entry => `- ${entry.text}`).join('\n');
   if (lang === 'en') return `You can contact or visit our stores:\n${lines}`;
   if (lang === 'zh') return `您可以联系或前往以下门店：\n${lines}`;
   return `Dạ anh/chị có thể liên hệ hoặc đến cửa hàng bên em:\n${lines}`;
