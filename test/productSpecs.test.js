@@ -105,7 +105,7 @@ test('catalog evidence extracts the requested Ulanzi MT85 height from KingCom ca
   assert.equal(product?.sku, 'FUCB8A');
   assert.ok(facts.some(fact => /Chi/i.test(fact.label) && /1\.5m|150cm/i.test(fact.value)));
   assert.match(reply, /1\.5m|150cm/);
-  assert.match(reply, /ulanzi-mt85-automatic-pop-up-phone-tripod-magsafe/);
+  assert.match(reply, /kingcom\.com\.vn\/products\/[^\s]*mt85/);
 });
 
 test('generateReply answers Ulanzi MT85 height directly from catalog evidence', async () => {

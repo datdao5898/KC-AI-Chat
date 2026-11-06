@@ -318,6 +318,8 @@ function buildJudgePrompt({
   const webSourcesText = summarizeWebSources(webSources);
   const contextText = summarizeConversationContext(conversationContext);
   const needsTrustedKnowledge = /store_info|warranty|policy|invoice/i.test(String(intent || ''))
+    || aiSource === 'provider_policy'
+    || !!detectPolicyTopic(userText)
     || /\b(full vat|vat|hoa don|xuat hoa don|xuat vat|bao hanh|doi tra|chinh sach|invoice)\b/i.test(String(userText || ''));
   const trustedSourceKnowledge = needsTrustedKnowledge ? summarizeTrustedKnowledge(sourceKey, userText, intent) : '';
   const validationText = validation?.ok === false

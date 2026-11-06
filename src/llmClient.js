@@ -81,8 +81,11 @@ async function chatCompletion({
         throw new Error('OpenAI returned invalid JSON');
       }
 
+      // A reasoning model that runs out of tokens returns half a sentence with
+      // finish_reason=length; treat it like an empty reply (retry with more tokens, then
+      // let the caller fall back) instead of sending the cut-off text to a customer.
       const content = extractAssistantText(data);
-      if (content) return content;
+      if (content && data?.choices?.[0]?.finish_reason !== 'length') return content;
 
       lastEmptyError = createEmptyResponseError(data);
       if (attempt < attempts) {

@@ -163,7 +163,7 @@ test('product URL matches by slug across KingCom and NewLite domains', () => {
   );
 
   assert.equal(products[0]?.sku, 'FB334');
-  assert.match(products[0]?.url || '', /store\.kingcom\.com\.vn/);
+  assert.match(products[0]?.url || '', /\/\/kingcom\.com\.vn\//);
 });
 
 test('full product name outranks accessory products with overlapping words', () => {
@@ -190,7 +190,7 @@ test('same query stays isolated by website source products', () => {
     { sourceKey: 'website/newlite', requireIdentityMatch: true }
   );
 
-  assert.match(kingcomProducts[0]?.url || '', /store\.kingcom\.com\.vn/);
+  assert.match(kingcomProducts[0]?.url || '', /\/\/kingcom\.com\.vn\//);
   assert.match(newliteProducts[0]?.url || '', /newlite\.vn/);
   assert.notEqual(kingcomProducts[0]?.url, newliteProducts[0]?.url);
 });

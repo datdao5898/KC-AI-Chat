@@ -356,6 +356,46 @@ ${languageRule}`;
   }
 }
 
+// The code picks the policy section (VAT, warranty, shipping...) from policies.md; the model
+// answers the customer's actual question using only that section's lines, so "giá đã gồm VAT
+// chưa" gets a direct answer instead of the whole section. The verbatim quote is the fallback.
+async function composePolicyReply({ userText, history, lang, sourceKey, customerBrand, policy }) {
+  const fallback = { reply: policy.reply, aiUsed: 0, aiError: false, aiSource: 'rule_policy', ragProducts: [], handoff: policy.handoff };
+  // Installment keeps its approved sentence verbatim ("đang tích hợp" must not become "đã có").
+  if (policy.handoff?.needed || policy.topic === 'installment') return fallback;
+  const historyText = (history || []).slice(-6).map(m => `[${m.sender_type === 'customer' ? 'Khách hàng' : customerBrand}]: ${m.text}`).join('\n');
+  const languageRule = lang === 'en'
+    ? 'Reply in English only.'
+    : lang === 'zh' ? 'Reply in Simplified Chinese only.' : 'Trả lời bằng tiếng Việt.';
+  const prompt = `Bạn là nhân viên tư vấn của ${customerBrand}. Trả lời ngắn gọn, lịch sự, tự nhiên như người thật đang chat với khách.
+
+Chính sách liên quan của ${customerBrand} (nguồn duy nhất được dùng):
+${policy.reply.replace(/^[^\n]*\n/, '')}
+
+Lịch sử gần đây:
+${historyText}
+
+Tin nhắn mới nhất của khách: ${userText}
+
+Quy tắc:
+- Câu đầu tiên trả lời thẳng điều khách hỏi. Chỉ nêu những ý trong chính sách ở trên liên quan tới câu hỏi; khách hỏi chung về chính sách thì mới nêu đủ các ý.
+- Giữ đúng nội dung và con số của chính sách, không thêm, không suy diễn, không hứa điều chính sách không ghi. Chính sách không có câu trả lời thì nói nhân viên ${customerBrand} sẽ kiểm tra.
+- Không gửi link, không nêu sản phẩm.
+- Xưng "em", gọi khách là "anh/chị", mở đầu bằng "Dạ". Không xưng là AI, bot hay trợ lý ảo.
+
+${languageRule}`;
+
+  try {
+    const rawReply = await callOpenAI(applyCustomerBranding(prompt, customerBrand, []), Number(process.env.AI_TIMEOUT_MS || 45000));
+    const sanitized = sanitizeProviderReply(rawReply, '');
+    if (!sanitized || /https?:\/\//i.test(sanitized)) return fallback;
+    return { ...fallback, reply: sanitized, aiUsed: 1, aiSource: 'provider_policy' };
+  } catch (e) {
+    console.error('Policy reply error:', e.message);
+    return { ...fallback, aiError: true, aiErrorMessage: e.message };
+  }
+}
+
 function buildContactInfoReply(userText, lang = 'vi') {
   if (!isContactInfoMessage(userText)) return null;
   const { phone, name } = extractContactInfo(userText);
@@ -2767,14 +2807,7 @@ async function generateReplyRaw({
 
   const policyRuleReply = buildPolicyRuleReply(userText, messageLanguage, sourceKey, customerBrand, intent);
   if (policyRuleReply) {
-    return {
-      reply: policyRuleReply.reply,
-      aiUsed: 0,
-      aiError: false,
-      aiSource: 'rule_policy',
-      ragProducts: [],
-      handoff: policyRuleReply.handoff
-    };
+    return composePolicyReply({ userText, history, lang: messageLanguage, sourceKey, customerBrand, policy: policyRuleReply });
   }
 
   const technicalSupportReply = await buildTechnicalSupportReply({

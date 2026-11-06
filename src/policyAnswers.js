@@ -17,7 +17,7 @@ const POLICY_TOPICS = [
     question: /\b(bao hanh|warranty|bao loi|(mat|that lac|khong con|lam mat) hoa don|hoa don (bi )?(mat|that lac))\b/
   },
   { id: 'refund', label: 'hoàn tiền', heading: /^(chinh sach )?(hoan tien|doi tra hoan tien)/, question: /\b(hoan tien|refund)\b/ },
-  { id: 'return', label: 'đổi trả', heading: /^(chinh sach )?doi tra/, question: /\b(doi tra|(?<!kiem )tra hang|tra lai hang|doi hang|doi moi|return policy|exchange)\b/ },
+  { id: 'return', label: 'đổi trả', heading: /^(chinh sach )?doi tra/, question: /\b(doi tra|(?<!kiem )tra hang|tra lai hang|doi hang|doi moi|doi (duoc|sang)|nhan (duoc )?hang (bi )?(loi|hong|tray|vo)|return policy|exchange)\b/ },
   { id: 'vat', label: 'hóa đơn VAT', heading: /^(chinh sach )?(hoa don|vat)/, question: /\b(full vat|vat|hoa don|xuat hoa don|invoice)\b/ },
   { id: 'shipping', label: 'giao hàng', heading: /^(chinh sach )?(giao hang|van chuyen)/, question: /\b(giao hang|van chuyen|ship|shipping|phi ship|thoi gian giao|delivery)\b/ },
   // Installment is a payment method, so it lives in the payment section; an installment
@@ -39,7 +39,7 @@ function detectPolicyTopic(userText = '', intent = '') {
   const normalized = normalizeText(userText);
   const topic = POLICY_TOPICS.find(item => item.question.test(normalized));
   if (topic) return topic;
-  return intent === 'warranty' ? POLICY_TOPICS[0] : null;
+  return intent === 'warranty' ? POLICY_TOPICS.find(item => item.id === 'warranty') : null;
 }
 
 // Returns null when the message is not a policy question or is not Vietnamese
