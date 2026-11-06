@@ -49,3 +49,12 @@ test('"is <model> good" gives the model that product', async () => {
   assert.ok(result.reply.startsWith(MODEL_REPLY), result.reply);
   assert.ok((result.ragProducts || []).some(product => /mt85/i.test(product.name || '')));
 });
+
+test('the model is told to answer "is X good" directly with what X is good for, from catalog data', async () => {
+  prompts.length = 0;
+  await generateReply({ ...ASK, userText: 'nanlite có tốt không' });
+  const prompt = prompts.find(text => text.includes('Khach hoi san pham/thuong hieu co tot khong'));
+  assert.ok(prompt, 'the opinion instruction is in the prompt');
+  assert.match(prompt, /la lua chon tot cho/);
+  assert.match(prompt, /Khong neu giai thuong, so lieu, so sanh voi hang khac/);
+});

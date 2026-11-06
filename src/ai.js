@@ -3389,6 +3389,9 @@ ${intent === 'greeting'
     policyQuestion
       ? '- Khach dang hoi VAT/hoa don/bao hanh/doi tra/chinh sach. Chi tra loi theo FAQ va Chinh sach trong du lieu tham khao. Khong liet ke san pham moi, khong dinh link san pham, khong doi sang mau san pham khac. Neu can xac nhan theo model/don hang, noi da chuyen nhan vien KingCom kiem tra.'
       : '',
+    opinionQuestion && !isComparisonQuestion(userText)
+      ? '- Khach hoi san pham/thuong hieu co tot khong. Cau dau tien phai tra loi thang cau hoi (vi du "Dạ, <ten> la lua chon tot cho ..."), roi neu 2-3 diem manh cu the lay tu thong so/mo ta cua san pham trong catalog (chat luong anh sang, cong suat, tinh nang, bao hanh chinh hang neu du lieu co). Khong neu giai thuong, so lieu, so sanh voi hang khac hay nhan xet ma du lieu khong co. Cuoi cung goi y mau phu hop va hoi ngan nhu cau de tu van sat hon.'
+      : '',
     guidanceQuestion
       ? '- Khach dang hoi cach su dung san pham. Hay huong dan tung buoc ngan gon, chi tap trung vao model khop nhat. Co the dung kien thuc san pham pho thong de huong dan, nhung khong bia chi tiet ky thuat, nut bam, cong ket noi, phu kien kem theo hoac tinh nang neu khong chac chan. Neu can, hoi them thiet bi khach dang dung hoac de nghi nhan vien KingCom xac nhan.'
       : specsQuestion
