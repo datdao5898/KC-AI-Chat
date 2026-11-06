@@ -116,3 +116,28 @@ test('generateReply answers policy and unsupported product from markdown', async
   assert.match(unsupported.reply, /chưa kinh doanh laptop\/ThinkPad/);
   assert.match(unsupported.reply, /chuyên phụ kiện nhiếp ảnh, quay phim, livestream và thiết bị sáng tạo nội dung chính hãng 100%/);
 });
+
+test('an installment question quotes only the installment line of the payment section', () => {
+  for (const userText of ['mua hàng trả góp', 'shop có cho mua trả góp không', 'có hỗ trợ góp 0% không']) {
+    const result = buildPolicyAnswer({ userText, sourceKey: 'website/kingcom', lang: 'vi' });
+    assert.equal(result.topic, 'installment', userText);
+    assert.match(result.reply, /trả góp/, userText);
+    assert.match(result.reply, /VNPAY/, userText);
+    assert.doesNotMatch(result.reply, /COD|chuyển khoản/, userText);
+  }
+});
+
+test('a payment question still lists installment among the payment methods', () => {
+  const result = buildPolicyAnswer({ userText: 'thanh toán thế nào', sourceKey: 'website/kingcom', lang: 'vi' });
+  assert.equal(result.topic, 'payment');
+  assert.match(result.reply, /trả góp/);
+  assert.match(result.reply, /COD/);
+});
+
+test('a payment section that never mentions installment is quoted whole for an installment question', () => {
+  withTempSource({ 'policies.md': '# P\n\n## Thanh toán\n- Thanh toán khi nhận hàng.\n' }, sourceKey => {
+    const result = buildPolicyAnswer({ userText: 'mua trả góp được không', sourceKey, lang: 'vi' });
+    assert.equal(result.topic, 'payment');
+    assert.match(result.reply, /Thanh toán khi nhận hàng/);
+  });
+});

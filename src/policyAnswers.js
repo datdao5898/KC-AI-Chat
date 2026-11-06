@@ -20,6 +20,15 @@ const POLICY_TOPICS = [
   { id: 'return', label: 'đổi trả', heading: /^(chinh sach )?doi tra/, question: /\b(doi tra|(?<!kiem )tra hang|tra lai hang|doi hang|doi moi|return policy|exchange)\b/ },
   { id: 'vat', label: 'hóa đơn VAT', heading: /^(chinh sach )?(hoa don|vat)/, question: /\b(full vat|vat|hoa don|xuat hoa don|invoice)\b/ },
   { id: 'shipping', label: 'giao hàng', heading: /^(chinh sach )?(giao hang|van chuyen)/, question: /\b(giao hang|van chuyen|ship|shipping|phi ship|thoi gian giao|delivery)\b/ },
+  // Installment is a payment method, so it lives in the payment section; an installment
+  // question quotes only the payment lines about it (the whole section if none mention it).
+  {
+    id: 'installment',
+    label: 'trả góp',
+    heading: /^(chinh sach )?thanh toan/,
+    question: /\b(tra gop|mua gop|gop 0|installment)\b/,
+    lineFilter: /\b(tra gop|installment)\b/
+  },
   { id: 'payment', label: 'thanh toán', heading: /^(chinh sach )?thanh toan/, question: /\b(thanh toan|cod|chuyen khoan|tra gop|vnpay|payment)\b/ }
 ];
 
@@ -36,10 +45,16 @@ function detectPolicyTopic(userText = '', intent = '') {
 // Returns null when the message is not a policy question or is not Vietnamese
 // (non-Vietnamese replies are written by the model from the same markdown).
 function buildPolicyAnswer({ userText = '', intent = '', sourceKey = '', lang = 'vi', customerBrand = 'KingCom' } = {}) {
-  const topic = detectPolicyTopic(userText, intent);
-  if (!topic || lang !== 'vi') return null;
+  const detected = detectPolicyTopic(userText, intent);
+  if (!detected || lang !== 'vi') return null;
 
-  const section = findSection(sourceKey, topic.heading);
+  let topic = detected;
+  let section = findSection(sourceKey, topic.heading);
+  if (section && topic.lineFilter) {
+    const lines = section.lines.filter(line => topic.lineFilter.test(normalizeText(line)));
+    if (lines.length) section = { ...section, lines };
+    else topic = POLICY_TOPICS.find(item => item.id === 'payment') || topic;
+  }
   if (!section) {
     return {
       topic: topic.id,
