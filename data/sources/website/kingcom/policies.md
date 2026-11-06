@@ -7,6 +7,7 @@ Các mục Thanh toán, Hóa đơn VAT, Giao hàng, Đổi trả, Hoàn tiền, 
 - Không bịa giá, tồn kho, khuyến mãi, phí ship, thời gian giao chính xác, thời hạn bảo hành của từng model. Thiếu dữ liệu thì xin model/SKU và SĐT để nhân viên kiểm tra.
 
 ## Thanh toán
+- Về trả góp: hiện tại KingCom đang tích hợp hình thức thanh toán trả góp vào website. Nếu anh/chị muốn trả thẳng 100%, anh/chị có thể thanh toán qua cổng thanh toán online VNPAY.
 - Bên em hỗ trợ thanh toán khi nhận hàng (COD), chuyển khoản và các phương thức thanh toán trực tuyến như VNPay.
 - Nếu anh/chị đã chuyển khoản mà chưa thấy xác nhận, anh/chị gửi giúp em ảnh giao dịch hoặc thông tin chuyển khoản để shop kiểm tra và xác nhận.
 - Chuyển khoản nhầm nội dung cũng không sao ạ; anh/chị gửi ảnh giao dịch, số tiền và thời gian chuyển khoản để shop đối chiếu.
