@@ -268,9 +268,14 @@ function structuredMessageSearchText(parsed = {}) {
         parsed.budget.exact ? `gia ${parsed.budget.exact}` : ''
       ]
     : [];
+  // A low-confidence guess from a brand or category word alone (e.g. "nanlite có tốt không")
+  // must not narrow the search to that one product.
+  const weakProductGuess = !parsed.signals?.has_product_url
+    && !(parsed.signals?.code_words || []).length
+    && Number(parsed.confidence || 0) < 0.75;
   return [
-    parsed.product,
-    parsed.product_sku,
+    weakProductGuess ? '' : parsed.product,
+    weakProductGuess ? '' : parsed.product_sku,
     parsed.brand,
     categoryFromStaleContext ? '' : parsed.category,
     parsed.use_case,

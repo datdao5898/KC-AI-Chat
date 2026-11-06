@@ -130,7 +130,8 @@ function extractCustomerInfo(text) {
   const info = {
     phone: '', name: '', email: '',
     companyName: '', taxCode: '', companyAddress: '', invoiceEmail: '',
-    isInvoiceInfo: false
+    isInvoiceInfo: false,
+    remainingText: ''
   };
   const hasBusinessContext = BUSINESS_CONTEXT.test(state.folded);
 
@@ -205,6 +206,8 @@ function extractCustomerInfo(text) {
     const canUseHonorific = info.phone || /(?<![a-z])(?:goi|lien he|sdt|so dien thoai)(?![a-z])/.test(state.folded);
     if (canUseHonorific) info.name = findHonorificName(state.raw);
   }
+  // What is left once the identifiers are removed, e.g. the product the customer asks about.
+  info.remainingText = state.raw.replace(/\s+/g, ' ').trim();
   return info;
 }
 

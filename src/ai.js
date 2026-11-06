@@ -198,6 +198,164 @@ function buildPhoneCorrectionReply(lang = 'vi') {
   return 'Dạ em xin lỗi anh/chị vì đã nhận nhầm số. Em đã bỏ số đó khỏi thông tin liên hệ. Nếu anh/chị muốn nhân viên gọi lại, anh/chị cho em xin số điện thoại nhé ạ.';
 }
 
+// The code decides what the customer sent and hands it to staff; the model writes the reply
+// from those facts, the FAQ and the catalog, so a question in the same message is answered too.
+// The fixed replies above are used only when the model cannot answer.
+async function composeCustomerInfoReply({ situation, info, userText, history, lang, sourceKey, customerBrand, contactInstruction, conversationContext }) {
+  const isInvoice = situation === 'invoice';
+  const fallback = isInvoice ? buildInvoiceInfoReply(info, lang, customerBrand) : buildPhoneCorrectionReply(lang);
+  const handoff = {
+    needed: true,
+    replyComplete: true,
+    reason: isInvoice ? 'Khách gửi thông tin xuất hóa đơn, cần nhân viên xác nhận' : 'Khách báo số đã lưu không phải số điện thoại'
+  };
+  const searchQuery = isInvoice ? info.remainingText : '';
+  const { context, products } = buildContext(searchQuery, {
+    sourceKey,
+    topK: searchQuery ? 3 : 0,
+    includeDescriptions: true,
+    descriptionMaxChars: 800,
+    requireIdentityMatch: true
+  });
+  const facts = isInvoice
+    ? [
+        'Khách vừa gửi thông tin xuất hóa đơn. Hệ thống đã nhận dạng, lưu vào hồ sơ và chuyển nhân viên kiểm tra:',
+        info.companyName ? `- Tên công ty: ${info.companyName}` : '',
+        info.taxCode ? `- Mã số thuế: ${info.taxCode}` : '',
+        info.companyAddress ? `- Địa chỉ công ty: ${info.companyAddress}` : '',
+        info.invoiceEmail ? `- Email nhận hóa đơn: ${info.invoiceEmail}` : '',
+        info.phone ? `- Số điện thoại của khách: ${info.phone}` : '',
+        'Việc cần làm: xác nhận đã nhận thông tin xuất hóa đơn, nêu tên công ty và mã số thuế để khách đối chiếu, nói đã chuyển nhân viên kiểm tra và xác nhận. Nếu tin nhắn còn nhắc sản phẩm hoặc câu hỏi khác thì trả lời luôn theo dữ liệu tham khảo. Không hứa thời điểm xuất hóa đơn nếu dữ liệu không ghi. Không xin lại thông tin khách đã gửi.'
+      ]
+    : [
+        'Khách vừa báo số mà shop đã ghi nhận trước đó không phải số điện thoại. Hệ thống đã bỏ số đó khỏi thông tin liên hệ và báo nhân viên.',
+        'Việc cần làm: xin lỗi ngắn gọn vì nhận nhầm, nói đã bỏ số đó khỏi thông tin liên hệ. Không gọi số đó là số điện thoại. Nếu cần nhân viên gọi lại thì mời khách cho số điện thoại đúng.'
+      ];
+  const historyText = (history || []).slice(-8).map(m => `[${m.sender_type === 'customer' ? 'Khách hàng' : customerBrand}]: ${m.text}`).join('\n');
+  const languageRule = lang === 'en'
+    ? 'Reply in English only.'
+    : lang === 'zh' ? 'Reply in Simplified Chinese only.' : 'Trả lời bằng tiếng Việt.';
+  const prompt = `Bạn là nhân viên tư vấn của ${customerBrand}. ${storeIntroPromptLine(sourceKey)} Trả lời ngắn gọn, lịch sự, tự nhiên như người thật đang chat với khách.
+
+${buildContactPromptBlock(sourceKey)}
+
+Thông tin liên hệ của khách: ${contactInstruction}
+
+${facts.filter(Boolean).join('\n')}
+
+Lịch sử gần đây:
+${historyText}
+
+Dữ liệu tham khảo:
+${context}
+
+Tin nhắn mới nhất của khách: ${userText}
+
+Quy tắc:
+- Xưng "em", gọi khách là "anh/chị", mở đầu bằng "Dạ". Không xưng là AI, bot hay trợ lý ảo.
+- Chỉ nêu giá, sản phẩm, link và chính sách có trong "Dữ liệu tham khảo", không tự tạo thông tin. Thiếu dữ liệu thì nói nhân viên ${customerBrand} sẽ kiểm tra.
+- Địa chỉ và hotline của cửa hàng chỉ dùng đúng phần thông tin liên hệ cửa hàng ở trên.
+
+${languageRule}`;
+
+  try {
+    const rawReply = await callOpenAI(
+      applyCustomerBranding(prompt, customerBrand, products),
+      Number(process.env.AI_TIMEOUT_MS || 45000)
+    );
+    const sanitized = sanitizeProviderReply(rawReply, fallback);
+    return {
+      reply: hasUnapprovedProductUrl(sanitized, products) ? fallback : sanitized,
+      aiUsed: 1,
+      aiError: false,
+      aiSource: 'provider_customer_info',
+      searchQuery,
+      ragProducts: products,
+      handoff,
+      conversationContext
+    };
+  } catch (e) {
+    console.error('Customer info reply error:', e.message);
+    return {
+      reply: fallback,
+      aiUsed: 0,
+      aiError: true,
+      aiErrorMessage: e.message,
+      aiSource: 'fallback',
+      searchQuery,
+      ragProducts: [],
+      handoff,
+      conversationContext
+    };
+  }
+}
+
+// The code only knows that the product match is unsure; the model reads the actual message and
+// decides whether to ask which model the customer means or to answer a question that is not
+// about a product at all (opening hours, address, policy...). The fixed text is used only when
+// the model cannot answer.
+async function composeClarificationReply({ userText, history, lang, sourceKey, customerBrand, contactInstruction, options = [], categories = [], fallback, fallbackSource, searchQuery, conversationContext }) {
+  const candidates = (options || []).map(item => ({
+    name: productDisplayName({
+      name: item.name || item.title || item.current_product_name || '',
+      sku: item.sku || item.current_product_sku || ''
+    }, ''),
+    url: item.url || item.link || item.product_url || item.current_product_url || ''
+  })).filter(item => item.name).slice(0, 3);
+  const candidateLines = candidates.map(item => `- ${item.name}${item.url ? ` (${item.url})` : ''}`);
+  const categoryLines = (categories || []).map(categoryLabel).filter(Boolean).map(label => `- ${label}`);
+  const { context } = buildContext('', { sourceKey, topK: 0 });
+  const historyText = (history || []).slice(-8).map(m => `[${m.sender_type === 'customer' ? 'Khách hàng' : customerBrand}]: ${m.text}`).join('\n');
+  const languageRule = lang === 'en'
+    ? 'Reply in English only.'
+    : lang === 'zh' ? 'Reply in Simplified Chinese only.' : 'Trả lời bằng tiếng Việt.';
+  const prompt = `Bạn là nhân viên tư vấn của ${customerBrand}. ${storeIntroPromptLine(sourceKey)} Trả lời ngắn gọn, lịch sự, tự nhiên như người thật đang chat với khách.
+
+${buildContactPromptBlock(sourceKey)}
+
+Thông tin liên hệ của khách: ${contactInstruction}
+
+Hệ thống tìm sản phẩm chưa chắc khách đang nói tới sản phẩm nào.
+${candidateLines.length ? `Các mẫu gần khớp nhất:\n${candidateLines.join('\n')}` : ''}
+${categoryLines.length ? `Các nhóm sản phẩm có thể liên quan:\n${categoryLines.join('\n')}` : ''}
+
+Lịch sử gần đây:
+${historyText}
+
+Dữ liệu tham khảo (FAQ, chính sách):
+${context}
+
+Tin nhắn mới nhất của khách: ${userText}
+
+Việc cần làm:
+- Đọc kỹ tin nhắn mới nhất. Nếu khách không hỏi về sản phẩm (ví dụ giờ làm việc, địa chỉ, giao hàng, bảo hành, chính sách) thì trả lời đúng câu đó theo dữ liệu tham khảo và không nhắc tới các mẫu ở trên.
+- Nếu khách hỏi về sản phẩm mà chưa rõ mẫu nào, hỏi lại ngắn gọn khách đang hỏi mẫu nào, có thể nêu các mẫu gần khớp ở trên. Chưa nêu giá hay thông số khi chưa rõ mẫu.
+- Không tự tạo sản phẩm, giá, link hay chính sách ngoài dữ liệu ở trên.
+- Xưng "em", gọi khách là "anh/chị", mở đầu bằng "Dạ". Không xưng là AI, bot hay trợ lý ảo.
+
+${languageRule}`;
+
+  const base = {
+    searchQuery,
+    ragProducts: [],
+    conversationContext
+  };
+  try {
+    const rawReply = await callOpenAI(
+      applyCustomerBranding(prompt, customerBrand, []),
+      Number(process.env.AI_TIMEOUT_MS || 45000)
+    );
+    const sanitized = sanitizeProviderReply(rawReply, '');
+    if (!sanitized || hasUnapprovedProductUrl(sanitized, candidates)) {
+      return { ...base, reply: fallback, aiUsed: 1, aiError: false, aiSource: fallbackSource };
+    }
+    return { ...base, reply: sanitized, aiUsed: 1, aiError: false, aiSource: 'provider_clarification' };
+  } catch (e) {
+    console.error('Clarification reply error:', e.message);
+    return { ...base, reply: fallback, aiUsed: 0, aiError: true, aiErrorMessage: e.message, aiSource: fallbackSource };
+  }
+}
+
 function buildContactInfoReply(userText, lang = 'vi') {
   if (!isContactInfoMessage(userText)) return null;
   const { phone, name } = extractContactInfo(userText);
@@ -220,7 +378,7 @@ function buildContactInfoReply(userText, lang = 'vi') {
 }
 
 function productDisplayName(product, fallback = 'product') {
-  const name = product.name || product.title || product.sku || fallback;
+  const name = product?.name || product?.title || product?.sku || fallback;
   return String(name).replace(/\s*-\s*default title\s*$/i, '').trim() || fallback;
 }
 
@@ -1288,10 +1446,20 @@ function catalogMatchProducts(query = '', sourceKey = '') {
   return scored.sort((a, b) => b.score - a.score).slice(0, 4).map(item => item.product);
 }
 
+// Sizes and ratings such as 80cm, 5w, 2500k or 10000mah are not model codes.
+const MEASUREMENT_TOKEN = /^\d+(?:[.,]\d+)?(cm|mm|m|km|inch|in|w|kw|v|mah|ah|k|kg|g|gb|tb|mb|hz|khz|fps|p|l|ml|h|s|x)$/i;
+
+// A model code must match a whole word: "80cm" must not match inside "180cm".
+function identityHasToken(identity = '', variant = '') {
+  if (!identity || !variant) return false;
+  const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(identity);
+}
+
 function extractModelTokens(text = '') {
   return [...new Set(
     queryWords(text)
-      .filter(token => /[a-z]+\d|\d+[a-z]+/i.test(token))
+      .filter(token => /[a-z]+\d|\d+[a-z]+/i.test(token) && !MEASUREMENT_TOKEN.test(token))
       .map(token => token.toLowerCase())
   )];
 }
@@ -1320,14 +1488,14 @@ function findExactProductMatch(token = '', sourceKey = '') {
       product.title || '',
       product.url || product.link || product.product_url || ''
     ].join(' '));
-    return variants.some(variant => identity.includes(variant));
+    return variants.some(variant => identityHasToken(identity, variant));
   }) || null;
 }
 
 function productMatchesModelToken(product = {}, token = '') {
   const identity = productIdentityKey(product);
   if (!identity) return false;
-  return modelTokenVariants(token).some(variant => identity.includes(variant));
+  return modelTokenVariants(token).some(variant => identityHasToken(identity, variant));
 }
 
 function resolveOpinionProducts({
@@ -1387,7 +1555,7 @@ function resolveOpinionProducts({
     }
     const exact = candidates.find(product => {
       const identity = productIdentityKey(product);
-      return modelTokenVariants(token).some(variant => identity.includes(variant));
+      return modelTokenVariants(token).some(variant => identityHasToken(identity, variant));
     });
     if (exact) {
       add(exact);
@@ -1711,6 +1879,15 @@ function isProductSpecsRequest(userText, history = []) {
 }
 
 const STORE_HOURS_QUESTION = /\b(mo cua|dong cua|gio lam viec|nghi trua|(opening|business|working|store|shop|your) hours)\b|\b(what time|when (do|does|is|are|will)|how late)\b.*\b(open|opens|opening|close|closes|closing)\b/;
+// "thời gian làm việc" / "lịch làm việc" / "làm việc đến mấy giờ" ask about the shop's hours,
+// but "thời gian làm việc của pin/đèn" asks how long a device runs, which is a product question.
+const STORE_WORK_SCHEDULE_QUESTION = /\b(thoi gian lam viec|lich lam viec|lam viec (tu |den )?may gio|(thu \d|thu bay|chu nhat|ngay le|le tet|cuoi tuan)\b.*\blam viec)\b/;
+const DEVICE_RUNTIME_WORDS = /\b(pin|battery|sac|den (led|flash|video|quay|chieu|nay|do)|mic|micro|camera|tripod|gimbal|man hinh|san pham|lien tuc)\b/;
+
+function isStoreHoursQuestion(normalizedText) {
+  return STORE_HOURS_QUESTION.test(normalizedText)
+    || (STORE_WORK_SCHEDULE_QUESTION.test(normalizedText) && !DEVICE_RUNTIME_WORDS.test(normalizedText));
+}
 
 // Also covers store hours: not a product question, so the model answers from the FAQ
 // without product retrieval, clarifying questions or product links.
@@ -1718,7 +1895,7 @@ function isCommercialPolicyQuestion(userText, intent) {
   const raw = String(userText || '');
   return Boolean(detectPolicyTopic(raw, intent))
     || /\b(chinh sach|loi san pham)\b/i.test(normalize(raw))
-    || STORE_HOURS_QUESTION.test(normalize(raw))
+    || isStoreHoursQuestion(normalize(raw))
     || /(保修|退换|发票|發票|增值税|政策)/.test(raw);
 }
 
@@ -2493,26 +2670,22 @@ async function generateReplyRaw({
     invoiceProfile ? `Thông tin xuất hóa đơn khách đã gửi: ${invoiceProfile}.` : ''
   ].filter(Boolean).join(' ');
   const structuredIntentForPrompt = JSON.stringify(resolvedConversationContext.customer_intent || {});
-  if (isPhoneCorrection(userText) && !extractContactInfo(userText).phone) {
-    return {
-      reply: buildPhoneCorrectionReply(messageLanguage),
-      aiUsed: 0,
-      aiError: false,
-      aiSource: 'rule_phone_correction',
-      ragProducts: [],
-      handoff: { needed: true, reason: 'Khách báo số đã lưu không phải số điện thoại' }
-    };
-  }
   const customerInfo = extractContactInfo(userText);
-  if (customerInfo.isInvoiceInfo) {
-    return {
-      reply: buildInvoiceInfoReply(customerInfo, messageLanguage, customerBrand),
-      aiUsed: 0,
-      aiError: false,
-      aiSource: 'rule_invoice_info',
-      ragProducts: [],
-      handoff: { needed: true, reason: 'Khách gửi thông tin xuất hóa đơn, cần nhân viên xác nhận' }
-    };
+  const customerInfoSituation = customerInfo.isInvoiceInfo
+    ? 'invoice'
+    : (isPhoneCorrection(userText) && !customerInfo.phone ? 'phone_correction' : '');
+  if (customerInfoSituation) {
+    return composeCustomerInfoReply({
+      situation: customerInfoSituation,
+      info: customerInfo,
+      userText,
+      history,
+      lang: messageLanguage,
+      sourceKey,
+      customerBrand,
+      contactInstruction: existingContactInstruction,
+      conversationContext: resolvedConversationContext
+    });
   }
   const contactInfoReply = buildContactInfoReply(userText, messageLanguage);
   if (contactInfoReply) {
@@ -2701,17 +2874,22 @@ async function generateReplyRaw({
 
   if (
     resolvedConversationContext.needs_clarification
+    && !policyQuestion
     && (guidanceQuestion || specsQuestion || isFollowUpLinkRequest(userText) || ['product_specs', 'price'].includes(intent))
   ) {
-    return {
-      reply: buildClarificationReply(resolvedConversationContext, messageLanguage),
-      aiUsed: 0,
-      aiError: false,
-      aiSource: 'rule_context_clarification',
+    return composeClarificationReply({
+      userText,
+      history,
+      lang: messageLanguage,
+      sourceKey,
+      customerBrand,
+      contactInstruction: existingContactInstruction,
+      options: resolvedConversationContext.clarification_options || [],
+      fallback: buildClarificationReply(resolvedConversationContext, messageLanguage),
+      fallbackSource: 'rule_context_clarification',
       searchQuery: userText,
-      ragProducts: [],
       conversationContext: resolvedConversationContext
-    };
+    });
   }
   const directPriceReply = buildDirectPriceReply(userText, {
     sourceKey,
@@ -2903,15 +3081,20 @@ ${intent === 'greeting'
         current_brand: product.vendor || product.brand || ''
       }))
     };
-    return {
-      reply: buildRetrievalClarificationReply(retrievalUncertainty, messageLanguage, customerBrand),
-      aiUsed: 0,
-      aiError: false,
-      aiSource: 'rule_retrieval_clarification',
+    return composeClarificationReply({
+      userText,
+      history,
+      lang: messageLanguage,
+      sourceKey,
+      customerBrand,
+      contactInstruction: existingContactInstruction,
+      options: retrievalUncertainty.products || [],
+      categories: retrievalUncertainty.reason === 'ambiguous_category' ? retrievalUncertainty.categories : [],
+      fallback: buildRetrievalClarificationReply(retrievalUncertainty, messageLanguage, customerBrand),
+      fallbackSource: 'rule_retrieval_clarification',
       searchQuery,
-      ragProducts: [],
       conversationContext: clarificationContext
-    };
+    });
   }
   const productPageContext = productUrlQuestion
     ? await readProductPageContext(userText, { products })
@@ -2999,7 +3182,9 @@ ${intent === 'greeting'
       console.warn('Product specs web search skipped after error:', webSpecs.error);
     }
   }
-  if (opinionQuestion) {
+  // "Is X good?" is answered by the model from the products found; the fixed assessment text
+  // could only paste catalog fields and praised whatever product came first.
+  if (opinionQuestion && isComparisonQuestion(userText)) {
     const opinionReply = buildOpinionReply({
       userText,
       products,
@@ -3107,6 +3292,7 @@ ${intent === 'greeting'
     && products.length
     && !guidanceQuestion
     && !policyQuestion
+    && !opinionQuestion
   ) {
     return {
       reply: buildCategoryProductsReply(
@@ -3426,5 +3612,6 @@ module.exports = {
   buildProductSpecsFallbackReply,
   buildCompatibilityEvidenceReply,
   buildReplacementPartReply,
-  buildTechnicalSupportReply
+  buildTechnicalSupportReply,
+  isCommercialPolicyQuestion
 };

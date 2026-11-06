@@ -6,7 +6,7 @@ const { SOURCES_DIR, DATA_DIR, readSourceConfig } = require('./sourceRegistry');
 // Haravan storefront JSON (public, no token):
 // /collections/all/products.json for products/variants/stock and /collections.json for
 // categories. Enable per source in source.json:
-//   "catalogSync": { "enabled": true, "storeUrl": "https://store.kingcom.com.vn" }
+//   "catalogSync": { "enabled": true, "storeUrl": "https://kingcom.com.vn" }
 const PAGE_SIZE = 50; // Haravan storefront caps every page at 50 items
 const MAX_PAGES = 200;
 const DESCRIPTION_LIMIT = 6000;

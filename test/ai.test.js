@@ -12,7 +12,8 @@ const {
   assessRetrievalUncertainty,
   buildCompatibilityEvidenceReply,
   buildReplacementPartReply,
-  buildTechnicalSupportReply
+  buildTechnicalSupportReply,
+  isCommercialPolicyQuestion
 } = require('../src/ai');
 const { normalize, parsePriceNumber } = require('../src/rag');
 
@@ -262,18 +263,37 @@ test('Vietnamese with or without marks stays Vietnamese', () => {
 });
 
 test('store hours questions skip product retrieval and clarifying questions', async () => {
-  for (const userText of ['what time store open?', 'what are your opening hours?', 'mấy giờ mở cửa']) {
-    const result = await generateReply({
-      userText,
-      history: [],
-      intent: 'general',
-      channel: 'website',
-      sourceKey: 'website/kingcom',
-      sourceGroup: 'website'
-    });
-    assert.notEqual(result.aiSource, 'rule_retrieval_clarification', userText);
-    assert.deepEqual(result.ragProducts, [], userText);
+  for (const userText of [
+    'what time store open?',
+    'what are your opening hours?',
+    'mấy giờ mở cửa',
+    'thời gian làm việc',
+    'thời gian làm việc của shop',
+    'lịch làm việc bên mình thế nào',
+    'shop làm việc đến mấy giờ',
+    'chủ nhật có làm việc không'
+  ]) {
+    // The intent classifier sometimes labels these as product questions; that must not matter.
+    for (const intent of ['general', 'product_specs', 'price']) {
+      const result = await generateReply({
+        userText,
+        history: [],
+        intent,
+        channel: 'website',
+        sourceKey: 'website/kingcom',
+        sourceGroup: 'website'
+      });
+      assert.ok(!/clarification/.test(result.aiSource), `${userText} (${intent}): ${result.aiSource}`);
+      assert.deepEqual(result.ragProducts, [], `${userText} (${intent})`);
+    }
   }
+});
+
+test('how long a device runs is still a product question, not store hours', () => {
+  for (const userText of ['thời gian làm việc của pin bao lâu', 'đèn làm việc liên tục mấy giờ']) {
+    assert.equal(isCommercialPolicyQuestion(userText, 'general'), false, userText);
+  }
+  assert.equal(isCommercialPolicyQuestion('thời gian làm việc', 'general'), true);
 });
 
 test('short ambiguous message inherits the recent customer language', () => {
@@ -989,7 +1009,7 @@ test('comparison questions are answered from catalog specs instead of handing of
   assert.doesNotMatch(replyNorm, /nhan vien|staff/);
 });
 
-test('subjective product questions answer from catalog facts before escalating', async () => {
+test('subjective product questions are not answered by the fixed assessment template', async () => {
   const result = await generateReply({
     channel: 'haravan_website',
     userText: 'ulanzi mt85 nghe on khong',
@@ -1007,11 +1027,9 @@ test('subjective product questions answer from catalog facts before escalating',
     }
   });
 
-  const replyNorm = normalize(result.reply);
-  assert.equal(result.aiSource, 'direct_catalog_subjective_assessment');
-  assert.match(replyNorm, /mt85/);
-  assert.match(replyNorm, /20n|25n|150cm|remote bluetooth|385g/);
-  assert.doesNotMatch(replyNorm, /nhan vien|staff|phone number/);
+  // The model writes this answer (see test/opinionReply.test.js); here it is unavailable.
+  assert.notEqual(result.aiSource, 'direct_catalog_subjective_assessment');
+  assert.ok((result.ragProducts || []).some(product => /mt85/i.test(product.name || '')));
 });
 
 test('opinion product lookup stays scoped to the active website catalog', async () => {

@@ -121,7 +121,7 @@ function handoffAppendText(lang) {
 }
 
 function improveNoDataReply(reply, handoff, customerText = '') {
-  if (!handoff?.needed) return reply;
+  if (!handoff?.needed || handoff.replyComplete) return reply;
   if (!replyAlreadyMentionsStaffSupport(reply)) {
     return `${reply}\n\n${handoffAppendText(detectMessageLanguage(customerText || reply))}`;
   }

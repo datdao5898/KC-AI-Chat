@@ -104,7 +104,8 @@ function compactText(text, maxChars = 800) {
 }
 
 function summarizeProducts(ragProducts = [], includeDescriptions = false) {
-  return (ragProducts || []).slice(0, 2).map((product, index) => {
+  // Show every product the reply may list (category replies list 3), or the judge flags the rest as invented.
+  return (ragProducts || []).slice(0, 5).map((product, index) => {
     const name = product.name || product.title || product.sku || `Product ${index + 1}`;
     const price = product.price || product.gia || product.compare_at_price || '';
     const url = product.url || product.link || product.product_url || '';
@@ -138,9 +139,10 @@ function summarizeWebSources(webSources = []) {
 }
 
 function summarizeHistory(history = []) {
-  return (history || []).slice(-2).map(message => {
+  // Long enough to see what the latest message refers to, such as invoice details sent just before.
+  return (history || []).slice(-6).map(message => {
     const sender = message.sender_type || message.senderType || 'unknown';
-    const text = compactText(message.text || '', 160);
+    const text = compactText(message.text || '', 500);
     const createdAt = message.created_at || message.createdAt || '';
     return `${createdAt ? `[${createdAt}] ` : ''}${sender}: ${text}`;
   }).join('\n');
@@ -492,8 +494,6 @@ function isTrustedDeterministicReplySource(aiSource = '') {
     'rule_conversation_stop',
     'rule_human_handoff',
     'rule_contact_info',
-    'rule_invoice_info',
-    'rule_phone_correction',
     'rule_no_catalog_match',
     'rule_technical_support',
     'rule_replacement_part'
