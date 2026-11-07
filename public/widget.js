@@ -551,6 +551,8 @@
   let htmlOverflowBeforeChat = '';
   let mobileScrollLocked = false;
   let mobileViewportBaseline = 0;
+  let viewportWatchUntil = 0;
+  let viewportWatchFrame = 0;
   let activeConversationId = '';
   let hasCustomerMessage = false;
   let customerRating = null;
@@ -656,7 +658,9 @@
     }
 
     const viewport = window.visualViewport;
-    const viewportHeight = Math.max(320, Math.round(viewport?.height || window.innerHeight));
+    // No large minimum here: with the keyboard and the browser's autofill bar
+    // open, a small phone can show well under 320px of page.
+    const viewportHeight = Math.max(160, Math.floor(viewport?.height || window.innerHeight));
     const viewportTop = Math.max(0, Math.round(viewport?.offsetTop || 0));
     if (!mobileViewportBaseline || viewportHeight > mobileViewportBaseline) {
       mobileViewportBaseline = viewportHeight;
@@ -666,6 +670,24 @@
     box.style.setProperty('--kc-mobile-top', `${viewportTop}px`);
     box.classList.toggle('kc-keyboard-open', keyboardOpen);
     if (keyboardOpen) scrollToLatestMessage();
+  }
+
+  // Mobile keyboards slide in over several hundred ms and some browsers
+  // (Brave/Chrome Android with the autofill bar) don't fire a final
+  // visualViewport resize, so keep re-measuring for a short while.
+  function watchMobileViewport(durationMs = 1000) {
+    if (!mobileMedia.matches) return;
+    viewportWatchUntil = Math.max(viewportWatchUntil, performance.now() + durationMs);
+    if (viewportWatchFrame) return;
+    const tick = () => {
+      syncMobileViewport();
+      if (performance.now() < viewportWatchUntil) {
+        viewportWatchFrame = window.requestAnimationFrame(tick);
+      } else {
+        viewportWatchFrame = 0;
+      }
+    };
+    viewportWatchFrame = window.requestAnimationFrame(tick);
   }
 
   window.KingComChat = {
@@ -684,6 +706,7 @@
   launcher.onclick = openChat;
   window.visualViewport?.addEventListener('resize', syncMobileViewport);
   window.visualViewport?.addEventListener('scroll', syncMobileViewport);
+  window.addEventListener('resize', syncMobileViewport);
   window.addEventListener('orientationchange', () => {
     mobileViewportBaseline = 0;
     setTimeout(syncMobileViewport, 100);
@@ -905,11 +928,16 @@
   input.addEventListener('focus', () => {
     box.classList.add('kc-compose-focused');
     syncMobileViewport();
+    watchMobileViewport();
     scrollToLatestMessage();
   });
   input.addEventListener('blur', () => {
     box.classList.remove('kc-compose-focused');
-    setTimeout(syncMobileViewport, 100);
+    watchMobileViewport();
+  });
+  [nameInput, phoneInput].forEach(field => {
+    field.addEventListener('focus', () => watchMobileViewport());
+    field.addEventListener('blur', () => watchMobileViewport());
   });
   input.onkeydown = e => { if (e.key === 'Enter') send(); };
   add(agentName, 'Xin chào! Bạn cần tư vấn sản phẩm gì ạ?', 'bot');
