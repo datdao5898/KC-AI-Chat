@@ -106,3 +106,16 @@ test('sync refuses to overwrite when the store returns far fewer products', asyn
     assert.match(state.lastError, /not overwriting/);
   });
 });
+
+test('collection crawl waits for the night window (Vietnam time) unless never fetched or very stale', () => {
+  const { collectionsRefreshDue } = require('../src/catalogSync');
+  const at = vnTime => new Date(`${vnTime}+07:00`);
+  const fetched = at('2026-03-01T03:00:00').toISOString();
+
+  assert.equal(collectionsRefreshDue('', at('2026-03-01T14:00:00')), true, 'first sync fetches right away');
+  assert.equal(collectionsRefreshDue(fetched, at('2026-03-02T14:00:00')), false, 'daytime waits');
+  assert.equal(collectionsRefreshDue(fetched, at('2026-03-01T04:30:00')), false, 'same night, already fetched');
+  assert.equal(collectionsRefreshDue(fetched, at('2026-03-02T02:10:00')), true, 'next night refreshes');
+  assert.equal(collectionsRefreshDue(fetched, at('2026-03-02T05:00:00')), false, 'window ends at 5:00');
+  assert.equal(collectionsRefreshDue(fetched, at('2026-03-04T14:00:00')), true, 'three days stale refreshes anyway');
+});

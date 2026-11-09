@@ -11,7 +11,14 @@ const PAGE_SIZE = 50; // Haravan storefront caps every page at 50 items
 const MAX_PAGES = 200;
 const DESCRIPTION_LIMIT = 6000;
 const REQUEST_DELAY_MS = Number(process.env.CATALOG_SYNC_REQUEST_DELAY_MS || 150);
-const COLLECTIONS_REFRESH_MS = 24 * 60 * 60 * 1000;
+// The collection crawl is ~400 storefront requests for KingCom, so it runs only at night
+// (Vietnam time, UTC+7) once a day; the hourly product/price/stock sync is unaffected.
+const VN_UTC_OFFSET_HOURS = 7;
+const NIGHT_START_HOUR = Number(process.env.CATALOG_SYNC_NIGHT_START_HOUR || 2);
+const NIGHT_END_HOUR = Number(process.env.CATALOG_SYNC_NIGHT_END_HOUR || 5);
+const COLLECTIONS_MIN_AGE_MS = 12 * 60 * 60 * 1000;
+// If the night runs keep failing or the server is down at night, refresh anyway after this.
+const COLLECTIONS_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 const MIN_KEEP_RATIO = 0.8; // refuse to overwrite when the fetch returns far fewer products
 const BACKUP_KEEP = 24;
 const SKIPPED_COLLECTION = /(sale|flash|khuyen-mai|uu-dai|deal|black-friday|out-of-stock|het-hang)/i;
@@ -98,11 +105,24 @@ async function fetchPaged(baseUrl, pathname, key) {
   return items;
 }
 
-// productId -> collection titles, refreshed at most once a day.
+function isNightInVietnam(now = new Date()) {
+  const hour = (now.getUTCHours() + VN_UTC_OFFSET_HOURS) % 24;
+  return hour >= NIGHT_START_HOUR && hour < NIGHT_END_HOUR;
+}
+
+function collectionsRefreshDue(fetchedAt, now = new Date()) {
+  const fetchedMs = Date.parse(fetchedAt || '');
+  if (!Number.isFinite(fetchedMs)) return true; // first sync: nothing cached yet
+  const age = now.getTime() - fetchedMs;
+  if (age >= COLLECTIONS_MAX_AGE_MS) return true;
+  return isNightInVietnam(now) && age >= COLLECTIONS_MIN_AGE_MS;
+}
+
+// productId -> collection titles, refreshed once a night (see collectionsRefreshDue).
 async function collectionMap(sourceKey, storeUrl, state, force) {
   const cached = state.collections;
-  if (!force && cached?.fetchedAt && Date.now() - Date.parse(cached.fetchedAt) < COLLECTIONS_REFRESH_MS) {
-    return cached.byProduct || {};
+  if (!force && cached?.byProduct && !collectionsRefreshDue(cached.fetchedAt)) {
+    return cached.byProduct;
   }
   const collections = (await fetchPaged(storeUrl, '/collections.json', 'collections'))
     .filter(collection => collection.handle !== 'all' && !SKIPPED_COLLECTION.test(collection.handle || ''));
@@ -294,6 +314,7 @@ function startCatalogSyncScheduler() {
 
 module.exports = {
   HEADERS,
+  collectionsRefreshDue,
   htmlToText,
   mapProduct,
   toCsv,
